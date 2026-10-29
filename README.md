@@ -1,5 +1,17 @@
 # Bar Sabores da Canastra
 
+## Plano do negócio familiar
+
+O negócio em operação hoje é um bar na zona rural, próximo a São João Batista do Glória (MG). A produção de salgados para venda na cidade por moto, a ampliação das entregas e o delivery noturno são propostas em planejamento; números, preços e cronogramas dos documentos devem ser confirmados pela família antes da execução.
+
+- [Plano de negócios familiar](01_plano_negocio_familiar.md): situação atual, objetivos, operação e expansão da venda de rua.
+- [Investimentos e gastos](02_investimentos_e_gastos.md): custos previstos, prioridades e cenários financeiros.
+- [Divulgação por WhatsApp e Figma](03_divulgacao_whatsapp_e_figma.md): apresentação, comunicação e materiais visuais.
+- [Delivery noturno](04_plano_delivery_noturno.md): proposta de cardápio, logística e operação de entregas.
+- [Doces artesanais](05_doces_artesanais_receitas_e_negocio.md): receitas e proposta comercial.
+
+Os arquivos acima são documentos internos de planejamento. O cardápio e a infraestrutura do bar continuam descritos abaixo; o planejamento anterior da Semana do Flashback está em [Issue.md](Issue.md).
+
 > Documento Interno de Gestão, Cardápio Base e Infraestrutura de Eventos
 > Propriedade: Bar Sabores da Canastra (Zona Rural — 5 km da Cidade)
 > Última Atualização: Outubro de 2026

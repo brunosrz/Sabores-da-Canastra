@@ -4,8 +4,8 @@
 
 Esta página descreve o bootstrap e as decisões das etapas seguintes. ERP e PDV
 têm infraestrutura e rotas iniciais, mas ainda não implementam os fluxos de
-negócio. A API remota de preview foi publicada sem rota pública; faltam habilitar
-Access e publicar os apps web. Produção permanece separada.
+negócio nem estão ligados à API. Domínios e recursos remotos são planejados,
+não publicados.
 
 ## Aplicações
 
@@ -21,10 +21,8 @@ ERP e PDV são interfaces independentes, implantáveis e versionadas
 separadamente. ERP e PDV executam localmente como Workers independentes e ainda
 têm rotas iniciais e verificação de saúde. A API executa em `127.0.0.1:3000`;
 D1, KV, R2, Durable Objects e Workflows usam simuladores locais. Recursos
-recursos remotos de preview foram provisionados. A API já está publicada e
-depende apenas de Service Bindings; os apps web aguardam Access para expor seus
-domínios. Os arquivos Python continuam sendo a referência funcional durante a
-migração, não os backends dos novos apps.
+remotos, domínios e credenciais ainda não estão ligados. Os arquivos Python continuam sendo a
+referência funcional durante a migração, não os backends dos novos apps.
 
 ## Backend e banco compartilhados
 
@@ -40,8 +38,8 @@ Start atuarão como camada de interface/BFF: recebem a sessão da requisição,
 chamam o backend via Cloudflare Service Binding e entregam os resultados ao
 cliente. O navegador não terá credenciais de D1 nem acesso direto ao banco. A
 API não precisa de um terceiro site público; o binding de serviço conecta os
-Workers internamente. Os Service Bindings entre os três Workers estão
-configurados por ambiente.
+Workers internamente. Os bindings entre os três Workers ainda não estão
+configurados.
 
 As sessões serão emitidas para autenticação nos dois subdomínios, com cookies
 `Secure`, `HttpOnly` e política de domínio/CSRF definida na etapa de autenticação.
@@ -111,28 +109,10 @@ uma reformatação em massa foi evitada. Os apps web têm formatação Prettier 
 hooks próprios. Os comandos publicados no PR são os mesmos definidos no
 `package.json` da raiz.
 
-`uv run scons api-preview` aplica migrations remotas idempotentes e publica a
-API sem rota pública. `uv run scons preview` valida primeiro que os domínios
-estão protegidos por políticas Cloudflare Access que permitem um e-mail
-específico, depois publica API, ERP e PDV. Produção mantém IDs de exemplo e é
-recusada até que seus recursos sejam provisionados.
-
-O preview usa `erp-preview.brunosrz.com` e `pdv-preview.brunosrz.com`; produção
-usa `erp.brunosrz.com` e `pdv.brunosrz.com`. Custom Domains criam DNS e TLS na
-zona Cloudflare. A API continua sem hostname público e só é acessada via
-Service Bindings. O plano Free inclui D1, KV, R2 Standard, Durable Objects com
-backend SQLite e Workflows, cada qual com limites de uso; exceder uma cota Free
-pode fazer operações falharem. Antes do deploy web, habilite Zero Trust/Access e
-crie aplicações protegidas com políticas para um e-mail individual. O SCons
-valida aplicação e política e aborta se Access estiver desativado, ausente ou
-com regra `bypass`.
-
-`.env.example` contém somente nomes e campos de configuração local. Secrets
-remotos ficam em `apps/api/.env.preview` e `apps/api/.env.production`; o SCons
-os envia com Wrangler `secret bulk`, sem imprimir os valores. `CLOUDFLARE_API_TOKEN`
-precisa ser um token Cloudflare de escopo mínimo para a API de exportação; sem
-ele, o Worker publica, mas backups remotos ficam indisponíveis. Nunca coloque
-senhas ou tokens em `vars` versionadas.
+Nenhum comando desta etapa publica Workers ou acessa D1 remoto. O `wrangler.jsonc`
+declara recursos com IDs distintos de exemplo para preview e produção; os
+scripts de deploy recusam esses valores até que os recursos reais sejam
+provisionados. Nenhum recurso remoto foi criado ou alterado nesta etapa.
 
 ### Idempotência Cloudflare
 

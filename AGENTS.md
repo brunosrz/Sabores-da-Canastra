@@ -16,10 +16,13 @@ trabalho estiver nesses aplicativos.
 
 ## Revisão completa pelo CodeRabbit
 
-Sempre que solicitar `@coderabbitai full review`, publique **antes** um
-walkthrough escrito pelo agente como comentário no PR. Não peça ao CodeRabbit
-para inventar o walkthrough nem dispare a revisão antes de fornecer esse
-contexto.
+Sempre que solicitar `@coderabbitai full review`, publique **um único
+comentário de topo** no PR contendo, juntos, o walkthrough escrito pelo agente,
+os links/relações das issues e o comando `@coderabbitai full review`. O comando
+e o contexto precisam estar no mesmo comentário: o bot pode tratar cada
+mensagem separadamente e não se deve presumir que ele lerá comentários
+anteriores ou seguintes. Nunca publique o walkthrough e o comando em comentários
+separados, nem dispare primeiro a revisão para depois complementar o contexto.
 
 O walkthrough deve ser específico ao PR e conter:
 
@@ -37,9 +40,10 @@ O walkthrough deve ser específico ao PR e conter:
    a relação de cada uma e não dê a entender que uma issue foi concluída quando
    apenas é dependência ou trabalho futuro.
 
-Depois de publicar o walkthrough, faça um comentário separado no PR começando
-com `@coderabbitai full review`. Peça revisão do diff inteiro em relação à
-branch base, referencie o walkthrough publicado e solicite achados em
-português. Confirme que o bot reconheceu a solicitação e acompanhe o estado da
-revisão. Se novos commits alterarem materialmente o escopo, atualize o
-walkthrough e solicite outra revisão completa.
+No mesmo comentário, termine com o comando `@coderabbitai full review` e peça
+revisão do diff inteiro contra a branch base, com achados em português. Confirme
+que o bot reconheceu a solicitação e acompanhe o estado da revisão sem enviar
+comentário adicional apenas para completar o walkthrough. Se novos commits
+alterarem materialmente o escopo, publique uma nova mensagem única com o
+walkthrough atualizado, as relações de issues pertinentes e o comando de full
+review juntos.

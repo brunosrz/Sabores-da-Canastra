@@ -137,4 +137,39 @@ describe("rotas locais da API", () => {
       error: expect.stringContaining("db:backup:local"),
     });
   });
+
+  it("limita o corpo da venda lendo o stream e cancela acima de 1 MB", async () => {
+    const getByName = vi.fn();
+    const response = await app.request(
+      "https://api.example.test/api/sales",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer pdv-token",
+          "idempotency-key": "sale-size-limit-1",
+        },
+        body: "x".repeat(1_000_001),
+      },
+      {
+        DB: {} as D1Database,
+        SALE_COORDINATOR: { getByName } as unknown as DurableObjectNamespace,
+        PDV_WRITE_TOKEN: "pdv-token",
+      },
+    );
+    expect(response.status).toBe(413);
+    expect(getByName).not.toHaveBeenCalled();
+  });
+
+  it("retorna 404 quando o caminho do arquivo de backup tem escape inválido", async () => {
+    const response = await app.request(
+      "https://api.example.test/api/backups/file/backups/d1/%E0%A4%A.sql",
+      { headers: { authorization: "Bearer backup-token" } },
+      {
+        DB: {} as D1Database,
+        PRIVATE_FILES: {} as R2Bucket,
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
+      },
+    );
+    expect(response.status).toBe(404);
+  });
 });

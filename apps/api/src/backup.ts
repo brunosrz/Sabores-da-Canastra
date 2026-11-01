@@ -24,11 +24,40 @@ type ExportResult = {
   };
 };
 
+type InitialExportState = {
+  bookmark: string | null;
+  signedUrl: string | undefined;
+};
+
+export function initialExportState(body: ExportResult): InitialExportState {
+  if (body.success === false) {
+    throw new Error(
+      body.errors?.[0]?.message ?? "API D1 não iniciou a exportação.",
+    );
+  }
+  if (body.result?.status === "error") {
+    throw new Error(body.result.error ?? "A exportação D1 falhou.");
+  }
+  if (body.result?.status === "complete") {
+    const signedUrl = body.result.result?.signed_url;
+    if (!signedUrl) {
+      throw new Error("Exportação D1 concluída sem URL para baixar o SQL.");
+    }
+    return { bookmark: body.result.at_bookmark ?? null, signedUrl };
+  }
+  if (!body.result?.at_bookmark) {
+    throw new Error(
+      body.errors?.[0]?.message ?? "API D1 não iniciou a exportação.",
+    );
+  }
+  return { bookmark: body.result.at_bookmark, signedUrl: undefined };
+}
+
 export interface BackupManifest {
   contract: "sabores-da-canastra/d1-backup";
   contract_version: 1;
   database_id: string;
-  bookmark: string;
+  bookmark: string | null;
   created_at: string;
   sql_key: string;
   size_bytes: number;
@@ -36,9 +65,10 @@ export interface BackupManifest {
   restore: string;
 }
 
-export function backupPrefix(bookmark: string, runId = bookmark): string {
-  const safeBookmark = bookmark.replace(/[^A-Za-z0-9_-]/g, "_");
+export function backupPrefix(bookmark: string | null, runId: string): string {
   const safeRunId = runId.replace(/[^A-Za-z0-9_-]/g, "_");
+  if (bookmark === null) return `backups/d1/${safeRunId}`;
+  const safeBookmark = bookmark.replace(/[^A-Za-z0-9_-]/g, "_");
   return `backups/d1/${safeBookmark}-${safeRunId}`;
 }
 
@@ -243,22 +273,29 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     };
-    const bookmark = await step.do("Iniciar exportação do D1", async () => {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ output_format: "polling" }),
-      });
-      const body = (await response.json()) as ExportResult;
-      if (!response.ok || body.success === false || !body.result?.at_bookmark) {
-        throw new Error(
-          body.errors?.[0]?.message ?? "API D1 não iniciou a exportação.",
-        );
-      }
-      return body.result.at_bookmark;
-    });
+    const initialExport = await step.do(
+      "Iniciar exportação do D1",
+      async () => {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ output_format: "polling" }),
+        });
+        const body = (await response.json()) as ExportResult;
+        if (!response.ok) {
+          throw new Error(
+            body.errors?.[0]?.message ?? "API D1 não iniciou a exportação.",
+          );
+        }
+        return initialExportState(body);
+      },
+    );
 
-    let signedUrl: string | undefined;
+    const bookmark = initialExport.bookmark;
+    let signedUrl: string | undefined = initialExport.signedUrl;
+    if (!signedUrl && !bookmark) {
+      throw new Error("Exportação D1 pendente sem bookmark para polling.");
+    }
     for (let attempt = 0; attempt < 30 && !signedUrl; attempt += 1) {
       signedUrl = await step.do(
         `Consultar exportação D1 ${attempt + 1}`,
@@ -268,7 +305,7 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
             headers,
             body: JSON.stringify({
               output_format: "polling",
-              current_bookmark: bookmark,
+              current_bookmark: bookmark!,
             }),
           });
           const body = (await response.json()) as ExportResult;
@@ -327,14 +364,14 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
         uploadResponse.body,
         "application/sql",
         firstDigest,
-        { bookmark },
+        bookmark ? { bookmark } : {},
       );
       await putImmutableBackupObject(
         this.env.PRIVATE_FILES,
         manifestKey,
         JSON.stringify(manifest, null, 2),
         "application/json",
-        { bookmark, sql_sha256: firstDigest.sha256 },
+        { ...(bookmark ? { bookmark } : {}), sql_sha256: firstDigest.sha256 },
       );
 
       const retentionDays = Number(this.env.BACKUP_RETENTION_DAYS || "90");

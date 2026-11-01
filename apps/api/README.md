@@ -21,6 +21,9 @@ Defina valores aleatórios locais para `LOCAL_IMPORT_TOKEN`, `PDV_WRITE_TOKEN`,
 `CATALOG_READ_TOKEN` e `BACKUP_DOWNLOAD_TOKEN` em `apps/api/.dev.vars`. O Wrangler executa simuladores
 locais de D1, KV, R2, Durable Objects e Workflows. O servidor responde em
 `http://127.0.0.1:3000`; nenhum comando de desenvolvimento usa `--remote`.
+Ao desenvolver uma tela que chama a API por Service Binding, mantenha também
+`pnpm dev:api` em execução; o Vite plugin conecta os Workers locais pelo nome
+do serviço.
 
 ## Responsabilidade de cada binding
 
@@ -58,6 +61,9 @@ produção. D1, namespace KV, bucket R2 e Workflow têm identificadores/nome
 separados em preview e produção. IDs fictícios impedem o deploy até os recursos
 reais serem provisionados e registrados. Deploy não cria recursos por
 execução; provisionamento e configuração de secrets são uma etapa operacional.
+O Worker da API não publica rota `workers.dev`; ERP e PDV têm Service Bindings
+internos apontando para o Worker da API no ambiente correspondente. O nome base
+do Worker é exclusivo do ambiente local e não coincide com produção.
 
 Secrets precisam ser cadastrados em cada ambiente separadamente; nunca versionar
 valores:
@@ -70,8 +76,9 @@ pnpm --filter @sabores/api exec wrangler secret put D1_BACKUP_TOKEN --env previe
 ```
 
 Repita para `production` com secrets diferentes. `D1_BACKUP_TOKEN` deve ter
-somente a permissão necessária para exportar o D1 correspondente. Conta e ID do
-banco de backup são variáveis próprias de cada ambiente.
+somente a permissão necessária para exportar o D1 correspondente. A conta é
+configurada por ambiente, e `BACKUP_DATABASE_ID` deve ser exatamente o mesmo ID
+de `d1_databases[0].database_id`; o guard interrompe o deploy se divergirem.
 
 ```powershell
 pnpm --filter @sabores/api deploy:preview

@@ -20,6 +20,42 @@ type Bindings = {
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
+const MAX_SALE_BODY_BYTES = 1_000_000;
+
+async function readBodyWithinLimit(
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<Uint8Array | null> {
+  if (!body) return new Uint8Array();
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        try {
+          await reader.cancel();
+        } catch {
+          // Preserve the size-limit response if cancellation is unavailable.
+        }
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const result = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
 
 async function bearerMatches(
   authorization: string | undefined,
@@ -82,13 +118,30 @@ app.post("/api/sales", async (context) => {
     );
   }
   const contentLength = Number(context.req.header("content-length") ?? "0");
-  if (contentLength > 1_000_000) {
+  if (contentLength > MAX_SALE_BODY_BYTES) {
+    try {
+      await context.req.raw.body?.cancel();
+    } catch {
+      // A runtime may already have consumed or locked the request stream.
+    }
     return context.json({ error: "Corpo da venda excede 1 MB." }, 413);
   }
-  const requestBody = await context.req.text();
-  if (new TextEncoder().encode(requestBody).byteLength > 1_000_000) {
+  let requestBytes: Uint8Array | null;
+  try {
+    requestBytes = await readBodyWithinLimit(
+      context.req.raw.body,
+      MAX_SALE_BODY_BYTES,
+    );
+  } catch {
+    return context.json(
+      { error: "Não foi possível ler o corpo da venda." },
+      400,
+    );
+  }
+  if (!requestBytes) {
     return context.json({ error: "Corpo da venda excede 1 MB." }, 413);
   }
+  const requestBody = new TextDecoder().decode(requestBytes);
   const coordinator = context.env.SALE_COORDINATOR.getByName(idempotencyKey);
   const response = await coordinator.fetch(
     new Request("https://sale-coordinator.local/", {
@@ -184,9 +237,14 @@ app.get("/api/backups/file/*", async (context) => {
       { error: "Unauthorized" },
       context.env.BACKUP_DOWNLOAD_TOKEN ? 401 : 503,
     );
-  const key = decodeURIComponent(
-    context.req.path.slice("/api/backups/file/".length),
-  );
+  let key: string;
+  try {
+    key = decodeURIComponent(
+      context.req.path.slice("/api/backups/file/".length),
+    );
+  } catch {
+    return context.json({ error: "Not found" }, 404);
+  }
   if (
     !key.startsWith("backups/d1/") ||
     key.includes("..") ||

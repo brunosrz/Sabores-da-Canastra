@@ -5,8 +5,15 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "@tanstack/react-start/server-entry",
 	"observability": { "enabled": true },
+	"services": [{ "binding": "API", "service": "sabores-canastra-api-local" }],
 	"env": {
-		"preview": { "name": "sabores-canastra-pdv-preview" },
-		"production": { "name": "sabores-canastra-pdv" },
+		"preview": {
+			"name": "sabores-canastra-pdv-preview",
+			"services": [{ "binding": "API", "service": "sabores-canastra-api-preview" }],
+		},
+		"production": {
+			"name": "sabores-canastra-pdv",
+			"services": [{ "binding": "API", "service": "sabores-canastra-api" }],
+		},
 	},
 }

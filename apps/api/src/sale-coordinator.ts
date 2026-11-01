@@ -29,7 +29,17 @@ export class SaleCoordinator extends DurableObject<Env> {
     } catch {
       return Response.json({ error: "Corpo JSON inválido." }, { status: 400 });
     }
-    if (!validateSale(payload))
+    let validSale: boolean;
+    try {
+      validSale = await validateSale(payload, this.env.DB);
+    } catch (error) {
+      console.error("Falha ao validar produtos da venda no D1.", error);
+      return Response.json(
+        { error: "Não foi possível validar os produtos da venda." },
+        { status: 503 },
+      );
+    }
+    if (!validSale)
       return Response.json(
         { error: "Dados da venda inválidos ou totais divergentes." },
         { status: 422 },

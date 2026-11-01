@@ -44,6 +44,11 @@ if (
     `Bindings ${environment} ainda têm identificadores de exemplo. Crie recursos isolados e substitua os identificadores antes do deploy.`,
   );
 }
+if (target.vars?.BACKUP_DATABASE_ID !== d1?.database_id) {
+  throw new Error(
+    `BACKUP_DATABASE_ID de ${environment} precisa corresponder ao database_id do binding D1.`,
+  );
+}
 
 const other = config.env[environment === "preview" ? "production" : "preview"];
 const otherValues = [

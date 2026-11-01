@@ -1,7 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "sabores-canastra-api",
+  "name": "sabores-canastra-api-local",
   "main": "src/index.ts",
+  "workers_dev": false,
   "compatibility_date": "2026-10-30",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true, "head_sampling_rate": 1 },
@@ -43,6 +44,7 @@
   "env": {
     "preview": {
       "name": "sabores-canastra-api-preview",
+      "workers_dev": false,
       "d1_databases": [
         {
           "binding": "DB",
@@ -87,6 +89,7 @@
     },
     "production": {
       "name": "sabores-canastra-api",
+      "workers_dev": false,
       "d1_databases": [
         {
           "binding": "DB",

@@ -134,4 +134,5 @@ horário configurado para a rotina diária é 06:00 UTC, e a rota manual deve se
 usada na mesma janela operacional. Confirme que esse horário está fora do
 expediente antes de ativar produção. D1 Time Travel é a primeira opção para
 recuperações pontuais. Alertas externos dependem do provisionamento futuro da
-conta.
+conta. O Worker API é privado sem rota `workers.dev`; ERP e PDV o acessam por
+Service Bindings internos configurados por ambiente.

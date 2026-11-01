@@ -5,6 +5,7 @@ import {
   backupExpired,
   backupPrefix,
   hashStream,
+  initialExportState,
   putImmutableBackupStream,
   putImmutableBackupObject,
 } from "../src/backup";
@@ -57,23 +58,41 @@ describe("bindings Cloudflare locais", () => {
     expect(response.status).toBe(200);
   });
 
-  it("valida campos opcionais e pagamentos malformados antes de somar", () => {
-    expect(validateSale({ ...payload, payments: [null] })).toBe(false);
-    expect(validateSale({ ...payload, customer: { nome: "cliente" } })).toBe(
-      false,
-    );
+  it("valida campos opcionais e pagamentos malformados antes de somar", async () => {
+    expect(await validateSale({ ...payload, payments: [null] })).toBe(false);
     expect(
-      validateSale({
+      await validateSale({ ...payload, customer: { nome: "cliente" } }),
+    ).toBe(false);
+    expect(
+      await validateSale({
         ...payload,
         items: [{ ...payload.items[0], product_id: [] }],
       }),
     ).toBe(false);
     expect(
-      validateSale({
+      await validateSale({
         ...payload,
         payments: [{ ...payload.payments[0], method_label: 123 }],
       }),
     ).toBe(false);
+  });
+
+  it("rejeita product_id sem registro no catálogo e aceita ID existente", async () => {
+    const sale = {
+      ...payload,
+      items: [{ ...payload.items[0], product_id: "product-1" }],
+    };
+    const all = vi.fn(async () => ({
+      results: [] as { product_id: string }[],
+    }));
+    const db = {
+      prepare: vi.fn(() => ({
+        bind: vi.fn(() => ({ all })),
+      })),
+    } as unknown as D1Database;
+    expect(await validateSale(sale, db)).toBe(false);
+    all.mockResolvedValue({ results: [{ product_id: "product-1" }] });
+    expect(await validateSale(sale, db)).toBe(true);
   });
 
   it("protege a leitura de preços e custos do catálogo", async () => {
@@ -140,7 +159,23 @@ describe("bindings Cloudflare locais", () => {
         body: JSON.stringify(body),
       });
     const first = await stub.fetch(makeRequest(payload));
-    const replay = await stub.fetch(makeRequest(payload));
+    const reorderedPayload = {
+      payments: payload.payments.map((payment) => ({
+        fee_cents: payment.fee_cents,
+        amount_cents: payment.amount_cents,
+        fee_rate: payment.fee_rate,
+        method: payment.method,
+      })),
+      items: payload.items.map((item) => ({
+        unit_cost_cents: item.unit_cost_cents,
+        unit_price_cents: item.unit_price_cents,
+        quantity: item.quantity,
+        category: item.category,
+        name: item.name,
+      })),
+      occurred_on: payload.occurred_on,
+    };
+    const replay = await stub.fetch(makeRequest(reorderedPayload));
     expect(first.status).toBe(201);
     expect(replay.status).toBe(200);
     expect((await replay.json<{ replayed: boolean }>()).replayed).toBe(true);
@@ -272,6 +307,26 @@ describe("bindings Cloudflare locais", () => {
     );
     expect(backupExpired("2026-09-30T00:00:00.000Z", now, 30)).toBe(true);
     expect(backupExpired("2026-10-31T00:00:00.000Z", now, 30)).toBe(false);
+  });
+
+  it("aceita exportação D1 já concluída sem bookmark", () => {
+    expect(
+      initialExportState({
+        success: true,
+        result: {
+          status: "complete",
+          result: { signed_url: "https://example.test/export.sql" },
+        },
+      }),
+    ).toEqual({
+      bookmark: null,
+      signedUrl: "https://example.test/export.sql",
+    });
+    expect(() =>
+      initialExportState({
+        result: { status: "error", error: "Falha" },
+      }),
+    ).toThrow("Falha");
   });
 
   it("faz escrita idempotente de backup no R2 e recusa colisão", async () => {

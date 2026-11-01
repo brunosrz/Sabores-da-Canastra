@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -17,9 +18,14 @@ if (!sqlPath || !manifestPath) {
 const baseDir = process.env.INIT_CWD ?? process.cwd();
 const resolvedSqlPath = resolve(baseDir, sqlPath);
 const resolvedManifestPath = resolve(baseDir, manifestPath);
-const sql = await readFile(resolvedSqlPath);
 const manifest = JSON.parse(await readFile(resolvedManifestPath, "utf8"));
-const sha256 = createHash("sha256").update(sql).digest("hex");
+const sqlHash = createHash("sha256");
+let sqlSize = 0;
+for await (const chunk of createReadStream(resolvedSqlPath)) {
+  sqlHash.update(chunk);
+  sqlSize += chunk.byteLength;
+}
+const sha256 = sqlHash.digest("hex");
 if (
   !manifest ||
   typeof manifest !== "object" ||
@@ -28,7 +34,7 @@ if (
   typeof manifest.sql_key !== "string" ||
   !manifest.sql_key.startsWith("backups/d1/") ||
   !Number.isSafeInteger(manifest.size_bytes) ||
-  manifest.size_bytes !== sql.byteLength ||
+  manifest.size_bytes !== sqlSize ||
   typeof manifest.sha256 !== "string" ||
   manifest.sha256 !== sha256
 ) {

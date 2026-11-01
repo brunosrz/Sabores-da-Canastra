@@ -46,7 +46,10 @@ function isMoney(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
-export function validateSale(input: unknown): input is SaleInput {
+export async function validateSale(
+  input: unknown,
+  db?: D1Database,
+): Promise<boolean> {
   if (!input || typeof input !== "object") return false;
   const sale = input as Partial<SaleInput>;
   if (!isOptionalText(sale.customer, 200)) return false;
@@ -110,6 +113,26 @@ export function validateSale(input: unknown): input is SaleInput {
     )
       return false;
   }
+  const productIds = [
+    ...new Set(
+      sale.items.flatMap((item) =>
+        typeof item.product_id === "string" ? [item.product_id] : [],
+      ),
+    ),
+  ];
+  if (productIds.length > 0) {
+    if (!db) return false;
+    const placeholders = productIds.map(() => "?").join(", ");
+    const { results } = await db
+      .prepare(
+        `SELECT product_id FROM products WHERE product_id IN (${placeholders})`,
+      )
+      .bind(...productIds)
+      .all<{ product_id: string }>();
+    const existingIds = new Set(results.map((product) => product.product_id));
+    if (productIds.some((productId) => !existingIds.has(productId)))
+      return false;
+  }
   const gross = sale.items.reduce(
     (sum, item) => sum + Math.round(item.quantity * item.unit_price_cents),
     0,
@@ -135,12 +158,24 @@ async function sha256(value: string): Promise<string> {
     .join("");
 }
 
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, nested]) => [key, canonicalize(nested)]),
+  );
+}
+
 export async function createIdempotentSale(
   db: D1Database,
   idempotencyKey: string,
   input: SaleInput,
 ): Promise<{ result: SaleResult; replayed: boolean }> {
-  const canonicalRequest = JSON.stringify(input);
+  const canonicalRequest = JSON.stringify(canonicalize(input));
+  if (canonicalRequest === undefined)
+    throw new Error("Não foi possível normalizar os dados da venda.");
   const requestHash = await sha256(canonicalRequest);
   const previous = await db
     .prepare(

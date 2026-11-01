@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality-and-tests:
-    name: Python quality and tests
+  python-utils:
+    name: Python utilities and tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,17 +33,22 @@ jobs:
           version: "0.12.1"
           enable-cache: true
 
-      - name: Install locked dependencies
+      - name: Install locked Python dependencies
         run: uv sync --locked --group dev
 
-      - name: Run repository hooks
-        run: SKIP=web-format,web-eslint,web-typecheck,markdownlint uvx --from pre-commit==4.7.0 pre-commit run --all-files
+      - name: Check repository configuration and Python lint
+        run: >-
+          SKIP=erp-format,erp-lint,pdv-format,pdv-lint,markdownlint
+          uvx --from pre-commit==4.7.0 pre-commit run --all-files
 
       - name: Run Python tests
         run: uv run pytest
 
-  cloudflare-apps:
-    name: Cloudflare ERP and PDV quality, tests and build
+      - name: Validate workbook utility
+        run: uv run sabores validar
+
+  erp:
+    name: ERP lint, tests and build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -60,23 +65,77 @@ jobs:
           version: 12.11.2
           run_install: false
 
-      - name: Install locked dependencies
+      - name: Install locked web dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint Markdown
-        run: pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml README.md docs/json-contract.md docs/arquitetura-web.md apps/erp/README.md apps/pdv/README.md
+      - name: Check ERP formatting
+        run: pnpm format:check:erp
 
-      - name: Lint
-        run: pnpm lint:web
+      - name: Lint ERP
+        run: pnpm lint:erp
 
-      - name: Check formatting
-        run: pnpm format:check:web
+      - name: Typecheck ERP
+        run: pnpm typecheck:erp
 
-      - name: Typecheck
-        run: pnpm typecheck:web
+      - name: Test ERP
+        run: pnpm test:erp
 
-      - name: Test Worker runtime
-        run: pnpm test:web
+      - name: Build ERP
+        run: pnpm build:erp
 
-      - name: Build Vite app and Worker
-        run: pnpm build:web
+  pdv:
+    name: PDV lint, tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.12.0"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 12.11.2
+          run_install: false
+
+      - name: Install locked web dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check PDV formatting
+        run: pnpm format:check:pdv
+
+      - name: Lint PDV
+        run: pnpm lint:pdv
+
+      - name: Typecheck PDV
+        run: pnpm typecheck:pdv
+
+      - name: Test PDV
+        run: pnpm test:pdv
+
+      - name: Build PDV
+        run: pnpm build:pdv
+
+  documentation:
+    name: Documentation lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.12.0"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 12.11.2
+          run_install: false
+
+      - name: Lint documentation
+        run: pnpm lint:docs

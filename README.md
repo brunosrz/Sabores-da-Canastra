@@ -64,7 +64,7 @@ uvx --from pre-commit==4.7.0 pre-commit install
 uvx --from pre-commit==4.7.0 pre-commit run --all-files
 ```
 
-Os hooks validam Python, JSON, YAML, TOML e Markdown, detectam conflitos/chaves privadas e executam verificações Ruff sem reformatar em massa o código Python legado. A CI executa os hooks e `uv run pytest` em pull requests e pushes para `master`; ela não publica nem faz deploy. O CodeRabbit está configurado para revisar automaticamente pull requests; a revisão depende de o app CodeRabbit estar habilitado no repositório.
+Os hooks do ERP e do PDV são separados e verificam formatação e lint. Os hooks Python verificam sintaxe e Ruff; testes e validação da planilha são executados na CI. O código Python legado não passa hoje pela formatação automática do Ruff, então não foi incluída uma reformatação ampla. A CI tem jobs separados para Python/utilitários, ERP, PDV e documentação, com typecheck, testes e build dos apps. Ela não publica nem faz deploy. O CodeRabbit está configurado para revisar pull requests; a revisão depende de o app CodeRabbit estar habilitado no repositório.
 
 Arquivos locais de ambiente (`.env`, `.dev.vars`), estado do Wrangler, bancos SQLite e artefatos web gerados são ignorados pelo Git. Mantenha somente modelos sem segredos, como `.env.example`, versionados.
 
@@ -72,7 +72,7 @@ Arquivos locais de ambiente (`.env`, `.dev.vars`), estado do Wrangler, bancos SQ
 
 O bootstrap web segue como iniciativa independente em relação aos aplicativos Python, que permanecem no repositório como referência funcional e fonte de engenharia reversa. Agora há dois apps web: [`apps/erp/README.md`](apps/erp/README.md) e [`apps/pdv/README.md`](apps/pdv/README.md). Os endereços planejados são `erp.brunosrz.com` e `pdv.brunosrz.com`; ainda não foram configurados nem publicados.
 
-Para executar localmente, instale as dependências web na raiz com `pnpm install` e use `pnpm dev:erp` ou `pnpm dev:pdv`. Os dois apps usam TanStack Start/Query e Cloudflare Workers; por enquanto não foram ligados a recursos Cloudflare remotos. A seleção de bibliotecas está descrita em [`docs/arquitetura-web.md`](docs/arquitetura-web.md).
+Para executar localmente, instale as dependências web na raiz com `pnpm install` e use `pnpm dev:erp` ou `pnpm dev:pdv`. Os dois apps usam TanStack Start/Query e Cloudflare Workers; por enquanto não foram ligados a recursos remotos. O backend será um Worker compartilhado com acesso único ao D1; ERP e PDV usarão server functions como camada de interface e chamarão o backend por binding interno. Essa arquitetura e a seleção de bibliotecas estão descritas em [`docs/arquitetura-web.md`](docs/arquitetura-web.md).
 
 ## Uso diário
 

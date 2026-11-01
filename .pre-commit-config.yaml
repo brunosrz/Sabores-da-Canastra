@@ -17,30 +17,37 @@ repos:
 
   - repo: local
     hooks:
-      - id: web-format
-        name: ERP and PDV formatting
-        entry: pnpm format:check:web
+      - id: erp-format
+        name: ERP formatting
+        entry: pnpm format:check:erp
         language: system
         types_or: [javascript, jsx, ts, tsx, css]
-        files: ^apps/(erp|pdv)/.*\.(js|jsx|ts|tsx|css|mts)$
+        files: ^apps/erp/.*\.(js|jsx|ts|tsx|css|mts)$
         pass_filenames: false
-      - id: web-eslint
-        name: ERP and PDV ESLint
-        entry: pnpm lint:web
+      - id: erp-lint
+        name: ERP ESLint
+        entry: pnpm lint:erp
         language: system
         types_or: [javascript, jsx, ts, tsx]
-        files: ^apps/(erp|pdv)/.*\.(js|jsx|ts|tsx)$
+        files: ^apps/erp/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false
-      - id: web-typecheck
-        name: ERP and PDV TypeScript
-        entry: pnpm typecheck:web
+      - id: pdv-format
+        name: PDV formatting
+        entry: pnpm format:check:pdv
+        language: system
+        types_or: [javascript, jsx, ts, tsx, css]
+        files: ^apps/pdv/.*\.(js|jsx|ts|tsx|css|mts)$
+        pass_filenames: false
+      - id: pdv-lint
+        name: PDV ESLint
+        entry: pnpm lint:pdv
         language: system
         types_or: [javascript, jsx, ts, tsx]
-        files: ^apps/(erp|pdv)/.*\.(js|jsx|ts|tsx)$
+        files: ^apps/pdv/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false
       - id: markdownlint
         name: markdown lint
-        entry: npx --yes markdownlint-cli2@0.23.3
+        entry: pnpm lint:docs
         language: system
         types: [markdown]
         files: ^(README\.md|docs/(json-contract|arquitetura-web)\.md|apps/(erp|pdv)/README\.md)$
@@ -50,3 +57,4 @@ repos:
     hooks:
       - id: ruff-check
         args: [--select=E4,E7,E9]
+        files: ^(src/sabores|tests)/.*\.py$

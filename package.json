@@ -5,10 +5,21 @@
   "scripts": {
     "dev:erp": "pnpm --filter @sabores/erp dev",
     "dev:pdv": "pnpm --filter @sabores/pdv dev",
-    "build:web": "pnpm --filter @sabores/erp build && pnpm --filter @sabores/pdv build",
-    "lint:web": "pnpm --filter @sabores/erp lint && pnpm --filter @sabores/pdv lint",
-    "format:check:web": "pnpm --filter @sabores/erp format:check && pnpm --filter @sabores/pdv format:check",
-    "typecheck:web": "pnpm --filter @sabores/erp typecheck && pnpm --filter @sabores/pdv typecheck",
-    "test:web": "pnpm --filter @sabores/erp test && pnpm --filter @sabores/pdv test"
+    "build:erp": "pnpm --filter @sabores/erp build",
+    "lint:erp": "pnpm --filter @sabores/erp lint",
+    "format:check:erp": "pnpm --filter @sabores/erp format:check",
+    "typecheck:erp": "pnpm --filter @sabores/erp typecheck",
+    "test:erp": "pnpm --filter @sabores/erp test",
+    "build:pdv": "pnpm --filter @sabores/pdv build",
+    "lint:pdv": "pnpm --filter @sabores/pdv lint",
+    "format:check:pdv": "pnpm --filter @sabores/pdv format:check",
+    "typecheck:pdv": "pnpm --filter @sabores/pdv typecheck",
+    "test:pdv": "pnpm --filter @sabores/pdv test",
+    "build:web": "pnpm build:erp && pnpm build:pdv",
+    "lint:web": "pnpm lint:erp && pnpm lint:pdv",
+    "format:check:web": "pnpm format:check:erp && pnpm format:check:pdv",
+    "typecheck:web": "pnpm typecheck:erp && pnpm typecheck:pdv",
+    "test:web": "pnpm test:erp && pnpm test:pdv",
+    "lint:docs": "pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml README.md docs/json-contract.md docs/arquitetura-web.md apps/erp/README.md apps/pdv/README.md"
   }
 }

@@ -7,10 +7,34 @@
 - `apps/pdv`: ponto de venda em `pdv.brunosrz.com`, para registrar pedidos e
   pagamentos.
 
-São aplicações independentes e implantáveis separadamente. Neste bootstrap,
-ambas executam localmente como Workers pela integração oficial Vite/Cloudflare.
-Bindings D1/KV/R2/DO, domínios e credenciais ficam para as etapas de
-infraestrutura e produto.
+ERP e PDV são interfaces independentes, implantáveis e versionadas
+separadamente. Neste bootstrap, cada uma executa localmente como Worker e tem
+somente rotas de interface e uma verificação de saúde; recursos Cloudflare,
+domínios e credenciais ainda não estão ligados.
+
+## Backend e banco compartilhados
+
+O backend de negócio será um único serviço interno, planejado para `apps/api`.
+Ele será o único Worker com binding direto ao D1 e será responsável por
+autenticação, regras de negócio, validação, operações de catálogo/receitas,
+estoque, vendas, compras, despesas e ledger. O banco será o mesmo para ERP e
+PDV, evitando cópias divergentes de dados e regras.
+
+ERP e PDV continuarão sendo dois apps. Suas rotas e server functions do TanStack
+Start atuarão como camada de interface/BFF: recebem a sessão da requisição,
+chamam o backend via Cloudflare Service Binding e entregam os resultados ao
+cliente. O navegador não terá credenciais de D1 nem acesso direto ao banco. A
+API não precisa de um terceiro site público; o binding de serviço conecta os
+Workers internamente.
+
+As sessões serão emitidas para autenticação nos dois subdomínios, com cookies
+`Secure`, `HttpOnly` e política de domínio/CSRF definida na etapa de autenticação.
+Não haverá cadastro aberto. Os Workers de preview usarão recursos e dados de
+preview separados dos recursos de produção.
+
+Esse backend compartilhado ainda não faz parte do bootstrap. Os endpoints
+`/api/health` existentes só indicam que cada app está ativo; eles não representam
+a API de negócio.
 
 ## Bibliotecas TanStack
 
@@ -44,11 +68,26 @@ infraestrutura e produto.
 - **Config**: voltado a publicar/manter pacotes, não é necessário para estes
   dois aplicativos.
 
+O catálogo completo do TanStack está registrado aqui para orientar decisões de
+produto. A API compartilhada será uma aplicação/Worker próprio, não mais uma
+biblioteca TanStack; o CI ganhará um job independente para ela quando for
+introduzida.
+
 ## Comandos na raiz
 
 - `pnpm dev:erp` / `pnpm dev:pdv`
-- `pnpm build:web`, `pnpm test:web`, `pnpm lint:web`, `pnpm typecheck:web`
-- `pnpm format:check:web`
+- `pnpm build:erp`, `pnpm test:erp`, `pnpm lint:erp`, `pnpm typecheck:erp`,
+  `pnpm format:check:erp`
+- `pnpm build:pdv`, `pnpm test:pdv`, `pnpm lint:pdv`, `pnpm typecheck:pdv`,
+  `pnpm format:check:pdv`
+- Os aliases `*:web` executam o mesmo comando para os dois apps.
+- `pnpm lint:docs` verifica a documentação Markdown.
+
+O CI executa jobs independentes para os utilitários/testes Python, ERP, PDV e
+documentação. O lint Ruff legado seleciona erros críticos; o formatador Python
+não está habilitado para o código existente porque ele não segue o formato
+Ruff e uma reformatação em massa foi evitada. Os apps web têm formatação
+Prettier em hooks próprios.
 
 Nenhum comando deste bootstrap publica Workers. Cada app tem ambientes locais,
 preview e produção descritos no `wrangler.jsonc`, sem IDs de recursos ou

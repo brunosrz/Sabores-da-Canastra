@@ -580,14 +580,18 @@ class LedgerApp(tk.Tk):
         name=tk.StringVar(value=product["name"] if product else "");category=tk.StringVar(value=product["category"] if product else "Salgados")
         price=tk.StringVar(value="" if not product or product["sale_price_cents"] is None else str(Decimal(product["sale_price_cents"])/100))
         unit=tk.StringVar(value=product["unit"] if product else "un");active=tk.BooleanVar(value=bool(product["active"]) if product else True)
+        barcode=tk.StringVar(value=product.get("barcode") or "" if product else "")
+        auxiliary_code=tk.StringVar(value=product.get("auxiliary_code") or "" if product else "")
         self._field(box,"Nome",ttk.Entry(box,textvariable=name));self._field(box,"Categoria",ttk.Combobox(box,textvariable=category,values=["Salgados","Bebidas","Doces","Molhos","Outros"]))
+        self._field(box,"Código de barras",ttk.Entry(box,textvariable=barcode));self._field(box,"Código auxiliar",ttk.Entry(box,textvariable=auxiliary_code))
         self._field(box,"Preço de venda (R$)",ttk.Entry(box,textvariable=price));self._field(box,"Unidade",ttk.Combobox(box,textvariable=unit,values=["un","lata","garrafa","porção","frasco"]))
         ttk.Checkbutton(box,text="Ativo para lançamento de vendas",variable=active).pack(anchor="w",pady=6)
         def save():
             try:
                 cents=parse_money(price.get()) if price.get().strip() else None
                 pid=product["product_id"] if product else "product-"+uuid.uuid4().hex[:12]
-                self.ledger.upsert_product(product_id=pid,name=name.get(),category=category.get(),unit=unit.get(),sale_price_cents=cents,active=active.get())
+                self.ledger.upsert_product(product_id=pid,name=name.get(),category=category.get(),unit=unit.get(),sale_price_cents=cents,
+                    barcode=barcode.get(),auxiliary_code=auxiliary_code.get(),active=active.get())
             except Exception as exc:messagebox.showerror("Produto",str(exc),parent=dialog);return
             dialog.destroy();self.refresh_recipe_products()
         buttons=tk.Frame(box,bg=PANEL);buttons.pack(fill="x",pady=(14,0))

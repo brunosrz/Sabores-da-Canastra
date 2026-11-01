@@ -28,7 +28,7 @@ Não transforme uma estimativa em cotação confirmada sem fonte e data reais.
 
 ## Produtos
 
-`product_id` (único), `name`, `category` (`Salgados`, `Bebidas`, `Doces`, `Molhos`, `Outros`), `unit`, `sale_price_cents` (inteiro ou `null`), `active` (boolean), `notes`. Produtos podem não ter receita, por exemplo refrigerantes, doces comprados ou molhos vendidos em frasco.
+`product_id` (código interno único), `barcode` (código de barras opcional e único), `auxiliary_code` (código auxiliar opcional e único), `name`, `category` (`Salgados`, `Bebidas`, `Doces`, `Molhos`, `Outros`), `unit`, `sale_price_cents` e `unit_cost_cents` (centavos ou `null`), `active` (boolean), `notes`. O PDV localiza por código interno, código de barras, código auxiliar ou nome; a categoria pertence ao cadastro do produto e não é escolhida na venda. Produtos podem não ter receita, por exemplo refrigerantes, doces comprados ou molhos vendidos em frasco.
 
 ## Receitas
 
@@ -48,7 +48,7 @@ Cada receita contém `recipe_id` (único), `product_name`, `version` (`E`, `R`, 
   "preserve_ledger": true,
   "ingredients": [{"name":"Farinha","base_unit":"g","pack_quantity":"1000","pack_price_cents":750,"supplier":null,"price_date":null,"price_status":"Estimado","source":null,"notes":null}],
   "recipes": [{"recipe_id":"PAO_E","product_name":"Pão salgado","version":"E","yield_units":10,"source":null,"instructions":"","lines":[{"ingredient_name":"Farinha","quantity":"500","unit":"g","stage":"Massa"}]}],
-  "products": [{"product_id":"pao-salgado","name":"Pão salgado","category":"Salgados","unit":"un","sale_price_cents":700,"active":true,"notes":null}],
+  "products": [{"product_id":"pao-salgado","barcode":null,"auxiliary_code":"SAL-001","name":"Pão salgado","category":"Salgados","unit":"un","sale_price_cents":700,"unit_cost_cents":null,"active":true,"notes":null}],
   "daily_mix": [{"recipe_id":"PAO_E","quantity":5,"selected_version":"E"}],
   "parameters": {"days_month":{"value":"20","unit":"dias","status":"Estimado"}}
 }

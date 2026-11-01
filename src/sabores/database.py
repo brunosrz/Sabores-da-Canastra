@@ -103,12 +103,17 @@ class Ledger:
                 CREATE TABLE IF NOT EXISTS products (
                     product_id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE,
                     category TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'un',
-                    sale_price_cents INTEGER, unit_cost_cents INTEGER, active INTEGER NOT NULL DEFAULT 1,
+                    sale_price_cents INTEGER, unit_cost_cents INTEGER, barcode TEXT, auxiliary_code TEXT,
+                    active INTEGER NOT NULL DEFAULT 1,
                     notes TEXT
                 )
             """)
             product_columns={row[1] for row in db.execute("PRAGMA table_info(products)")}
             if "unit_cost_cents" not in product_columns:db.execute("ALTER TABLE products ADD COLUMN unit_cost_cents INTEGER")
+            if "barcode" not in product_columns:db.execute("ALTER TABLE products ADD COLUMN barcode TEXT")
+            if "auxiliary_code" not in product_columns:db.execute("ALTER TABLE products ADD COLUMN auxiliary_code TEXT")
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode) WHERE barcode IS NOT NULL AND barcode<>''")
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_auxiliary_code ON products(auxiliary_code) WHERE auxiliary_code IS NOT NULL AND auxiliary_code<>''")
             db.execute("""CREATE TABLE IF NOT EXISTS sale_groups (
                 group_id TEXT PRIMARY KEY,entry_date TEXT NOT NULL,total_cents INTEGER NOT NULL,created_at TEXT NOT NULL)""")
             db.execute("""CREATE TABLE IF NOT EXISTS sale_payments (
@@ -452,18 +457,22 @@ class Ledger:
 
     def upsert_product(self, *, product_id: str, name: str, category: str, unit: str = "un",
                        sale_price_cents: int | None = None, unit_cost_cents: int | None = None,
+                       barcode: str | None = None, auxiliary_code: str | None = None,
                        active: bool = True, notes: str | None = None) -> None:
         if not product_id.strip() or not name.strip() or not category.strip():
             raise ValueError("ID, nome e categoria do produto são obrigatórios")
         if sale_price_cents is not None and sale_price_cents < 0:
             raise ValueError("Preço de venda não pode ser negativo")
         if unit_cost_cents is not None and unit_cost_cents < 0:raise ValueError("Custo unitário não pode ser negativo")
+        barcode = (barcode or "").strip() or None
+        auxiliary_code = (auxiliary_code or "").strip() or None
         with self._connect() as db:
-            db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,unit_cost_cents,active,notes)
-                VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET name=excluded.name,
+            db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,unit_cost_cents,barcode,auxiliary_code,active,notes)
+                VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET name=excluded.name,
                 category=excluded.category,unit=excluded.unit,sale_price_cents=excluded.sale_price_cents,
-                unit_cost_cents=excluded.unit_cost_cents,active=excluded.active,notes=excluded.notes""",
-                (product_id.strip(),name.strip(),category.strip(),unit,sale_price_cents,unit_cost_cents,int(active),notes))
+                unit_cost_cents=excluded.unit_cost_cents,barcode=excluded.barcode,auxiliary_code=excluded.auxiliary_code,
+                active=excluded.active,notes=excluded.notes""",
+                (product_id.strip(),name.strip(),category.strip(),unit,sale_price_cents,unit_cost_cents,barcode,auxiliary_code,int(active),notes))
 
     def list_products(self, active_only: bool = False) -> list[dict]:
         query="SELECT * FROM products" + (" WHERE active=1" if active_only else "") + " ORDER BY category,name"
@@ -541,6 +550,9 @@ class Ledger:
         for product in products:
             if not isinstance(product,dict) or not product.get("product_id") or not product.get("name") or not product.get("category"):
                 raise ValueError("Produto precisa de product_id, name e category")
+            for field in ("barcode", "auxiliary_code"):
+                if product.get(field) is not None and not isinstance(product[field],str):
+                    raise ValueError(f"{field} precisa ser texto ou null")
         for item in mix:
             if item.get("recipe_id") not in recipe_ids or int(item.get("quantity",-1))<0 or item.get("selected_version","E") not in {"E","R"}:
                 raise ValueError("Linha de mix inválida")
@@ -562,11 +574,12 @@ class Ledger:
                 db.executemany("INSERT INTO recipe_lines(recipe_id,ingredient_name,quantity,unit,stage) VALUES(?,?,?,?,?)",
                     [(recipe["recipe_id"],line["ingredient_name"],str(line["quantity"]),line["unit"],line.get("stage")) for line in recipe["lines"]])
             for product in products:
-                db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,unit_cost_cents,active,notes) VALUES(?,?,?,?,?,?,?,?)
+                db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,unit_cost_cents,barcode,auxiliary_code,active,notes) VALUES(?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(product_id) DO UPDATE SET name=excluded.name,category=excluded.category,unit=excluded.unit,
                     sale_price_cents=excluded.sale_price_cents,unit_cost_cents=excluded.unit_cost_cents,
+                    barcode=excluded.barcode,auxiliary_code=excluded.auxiliary_code,
                     active=excluded.active,notes=excluded.notes""",
-                    (product["product_id"],product["name"],product["category"],product.get("unit","un"),product.get("sale_price_cents"),product.get("unit_cost_cents"),int(product.get("active",True)),product.get("notes")))
+                    (product["product_id"],product["name"],product["category"],product.get("unit","un"),product.get("sale_price_cents"),product.get("unit_cost_cents"),product.get("barcode"),product.get("auxiliary_code"),int(product.get("active",True)),product.get("notes")))
             for key,value in params.items():
                 db.execute("""INSERT INTO parameters(name,value,unit,status) VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET
                     value=excluded.value,unit=excluded.unit,status=excluded.status""",

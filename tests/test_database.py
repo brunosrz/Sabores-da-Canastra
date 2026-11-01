@@ -104,6 +104,22 @@ def test_json_import_rejects_invalid_recipe_atomically_and_keeps_ledger(tmp_path
     assert len(ledger.list_entries())==1
 
 
+def test_product_codes_roundtrip_and_are_unique(tmp_path):
+    ledger = Ledger(tmp_path / "product-codes.db")
+    ledger.upsert_product(product_id="internal-1", name="Refrigerante", category="Bebidas",
+                          barcode="7890001", auxiliary_code="REF-01", sale_price_cents=600,
+                          unit_cost_cents=350)
+    payload = ledger.export_configuration()
+    other = Ledger(tmp_path / "product-codes-copy.db")
+    other.import_configuration(payload)
+    product = other.list_products()[0]
+    assert product["barcode"] == "7890001"
+    assert product["auxiliary_code"] == "REF-01"
+    assert product["unit_cost_cents"] == 350
+    with pytest.raises(Exception):
+        other.upsert_product(product_id="internal-2", name="Outro", category="Bebidas", barcode="7890001")
+
+
 def test_pos_sale_split_fees_cost_and_period_report(tmp_path):
     ledger = Ledger(tmp_path / "pos.db")
     sale = ledger.record_pos_sale(

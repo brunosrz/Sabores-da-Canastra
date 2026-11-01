@@ -1,19 +1,21 @@
 # Sabores da Canastra PDV
 
-Aplicação web independente para operação de ponto de venda. O bootstrap prepara
-a base; os fluxos de venda serão implementados nas próximas etapas.
+Aplicação web independente para registrar vendas no caixa, planejada para
+`pdv.brunosrz.com`. O bootstrap configura a base técnica; busca de produtos,
+montagem de pedidos e pagamentos serão entregues em etapas posteriores. O
+domínio ainda não está publicado e o app não está ligado a dados de produção.
 
 ## Desenvolvimento local
 
-Na raiz do repositório, instale as dependências uma vez e inicie o app:
+Na raiz do repositório, instale as dependências uma vez e inicie o Worker local:
 
 ```sh
 pnpm install
 pnpm dev:pdv
 ```
 
-O servidor local usa `http://127.0.0.1:3002`. O endpoint `/api/health` permite
-verificar o Worker local.
+O servidor local usa `http://127.0.0.1:3002`. `GET /api/health` verifica
+somente se este app está ativo; não é a futura API de negócio.
 
 ## Stack
 
@@ -23,5 +25,20 @@ verificar o Worker local.
 - Cloudflare Vite plugin e Wrangler para desenvolvimento local e futuros
   ambientes preview/produção.
 
-Não configure recursos Cloudflare remotos nem publique sem a etapa de
-infraestrutura correspondente.
+## Verificações
+
+```sh
+pnpm format:check:pdv
+pnpm lint:pdv
+pnpm typecheck:pdv
+pnpm test:pdv
+pnpm build:pdv
+```
+
+O backend de negócio será compartilhado com o ERP e terá o único acesso ao D1.
+Este app usará server functions para chamar esse backend por binding interno;
+essa integração ainda não foi implementada. O SQLite do sistema Python legado
+é independente e não sincroniza com D1.
+
+Consulte [a arquitetura web](../../docs/arquitetura-web.md) para as decisões de
+backend, bibliotecas e ambientes.

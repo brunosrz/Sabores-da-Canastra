@@ -1,5 +1,12 @@
 # Arquitetura dos apps web
 
+## Estado deste documento
+
+Esta página descreve o bootstrap e as decisões para as etapas seguintes. ERP e
+PDV têm infraestrutura e rotas iniciais, mas ainda não implementam os fluxos de
+negócio nem estão ligados ao banco remoto. Domínios são planejados, não
+publicados.
+
 ## Aplicações
 
 - `apps/erp`: ERP em `erp.brunosrz.com`, para produtos, ingredientes, receitas,
@@ -9,8 +16,9 @@
 
 ERP e PDV são interfaces independentes, implantáveis e versionadas
 separadamente. Neste bootstrap, cada uma executa localmente como Worker e tem
-somente rotas de interface e uma verificação de saúde; recursos Cloudflare,
-domínios e credenciais ainda não estão ligados.
+rotas iniciais e uma verificação de saúde; recursos remotos, domínios e
+credenciais ainda não estão ligados. Os arquivos Python continuam sendo a
+referência funcional durante a migração, não os backends dos novos apps.
 
 ## Backend e banco compartilhados
 
@@ -34,7 +42,8 @@ preview separados dos recursos de produção.
 
 Esse backend compartilhado ainda não faz parte do bootstrap. Os endpoints
 `/api/health` existentes só indicam que cada app está ativo; eles não representam
-a API de negócio.
+a API de negócio. O SQLite do legado Python é um banco local independente: não
+será compartilhado remotamente com D1 nem sincronizado automaticamente.
 
 ## Bibliotecas TanStack
 
@@ -84,10 +93,12 @@ introduzida.
 - `pnpm lint:docs` verifica a documentação Markdown.
 
 O CI executa jobs independentes para os utilitários/testes Python, ERP, PDV e
-documentação. O lint Ruff legado seleciona erros críticos; o formatador Python
-não está habilitado para o código existente porque ele não segue o formato
-Ruff e uma reformatação em massa foi evitada. Os apps web têm formatação
-Prettier em hooks próprios.
+documentação. O pre-commit usa hooks de formatação e lint separados para cada
+frontend. O lint Ruff legado seleciona erros críticos; o formatador Python não
+está habilitado para o código existente porque ele não segue o formato Ruff e
+uma reformatação em massa foi evitada. Os apps web têm formatação Prettier em
+hooks próprios. Os comandos publicados no PR são os mesmos definidos no
+`package.json` da raiz.
 
 Nenhum comando deste bootstrap publica Workers. Cada app tem ambientes locais,
 preview e produção descritos no `wrangler.jsonc`, sem IDs de recursos ou

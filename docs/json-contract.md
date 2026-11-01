@@ -1,4 +1,9 @@
-# Contrato JSON de catálogo/configuração
+# Contrato JSON do sistema Python legado
+
+> Este contrato pertence à importação/exportação do aplicativo Python. Ele não
+> é o protocolo da futura API web e não sincroniza o SQLite local com o D1.
+> Para a arquitetura planejada dos apps web, consulte
+> [arquitetura-web.md](arquitetura-web.md).
 
 O app exporta e importa somente os dados editáveis de operação. Os lançamentos financeiros (`entries`: vendas, compras e gastos) **não fazem parte do arquivo**. A importação nunca limpa, substitui ou reescreve o ledger SQLite.
 

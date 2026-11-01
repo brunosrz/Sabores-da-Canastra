@@ -1,20 +1,22 @@
 # Sabores da Canastra ERP
 
-Aplicação web independente para cadastro e gestão operacional/financeira. O
-bootstrap prepara a base; os fluxos de ERP serão implementados nas próximas
-etapas.
+Aplicação web independente para operação administrativa do bar, planejada para
+`erp.brunosrz.com`. O bootstrap configura a base técnica; cadastro de produtos,
+ingredientes, receitas, estoque, custos e demais fluxos serão entregues em
+etapas posteriores. O domínio ainda não está publicado e o app não está ligado
+a dados de produção.
 
 ## Desenvolvimento local
 
-Na raiz do repositório, instale as dependências uma vez e inicie o app:
+Na raiz do repositório, instale as dependências uma vez e inicie o Worker local:
 
 ```sh
 pnpm install
 pnpm dev:erp
 ```
 
-O servidor local usa `http://127.0.0.1:3001`. O endpoint `/api/health` permite
-verificar o Worker local.
+O servidor local usa `http://127.0.0.1:3001`. `GET /api/health` verifica
+somente se este app está ativo; não é a futura API de negócio.
 
 ## Stack
 
@@ -25,5 +27,20 @@ verificar o Worker local.
 - Cloudflare Vite plugin e Wrangler para desenvolvimento local e futuros
   ambientes preview/produção.
 
-Não configure recursos Cloudflare remotos nem publique sem a etapa de
-infraestrutura correspondente.
+## Verificações
+
+```sh
+pnpm format:check:erp
+pnpm lint:erp
+pnpm typecheck:erp
+pnpm test:erp
+pnpm build:erp
+```
+
+O backend de negócio será compartilhado com o PDV e terá o único acesso ao D1.
+Este app usará server functions para chamar esse backend por binding interno;
+essa integração ainda não foi implementada. O SQLite do sistema Python legado
+é independente e não sincroniza com D1.
+
+Consulte [a arquitetura web](../../docs/arquitetura-web.md) para as decisões de
+backend, bibliotecas e ambientes.

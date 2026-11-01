@@ -58,31 +58,34 @@ do serviço.
 
 O arquivo `wrangler.jsonc` declara bindings próprios para local, preview e
 produção. D1, namespace KV, bucket R2 e Workflow têm identificadores/nome
-separados em preview e produção. IDs fictícios impedem o deploy até os recursos
-reais serem provisionados e registrados. Deploy não cria recursos por
-execução; provisionamento e configuração de secrets são uma etapa operacional.
-O Worker da API não publica rota `workers.dev`; ERP e PDV têm Service Bindings
-internos apontando para o Worker da API no ambiente correspondente. O nome base
+separados em preview e produção. Os recursos de preview já foram provisionados;
+produção ainda usa identificadores de exemplo e exige provisionamento separado.
+O Worker da API não publica rota `workers.dev` e já está publicado em preview;
+ERP e PDV têm Service Bindings internos apontando para o Worker da API no
+ambiente correspondente. O nome base
 do Worker é exclusivo do ambiente local e não coincide com produção.
 
-Secrets precisam ser cadastrados em cada ambiente separadamente; nunca versionar
-valores:
+Secrets são mantidos em arquivos ignorados pelo Git e enviados em lote pelo SCons.
+Copie os exemplos e preencha valores exclusivos para cada ambiente:
 
 ```powershell
-pnpm --filter @sabores/api exec wrangler secret put PDV_WRITE_TOKEN --env preview
-pnpm --filter @sabores/api exec wrangler secret put CATALOG_READ_TOKEN --env preview
-pnpm --filter @sabores/api exec wrangler secret put BACKUP_DOWNLOAD_TOKEN --env preview
-pnpm --filter @sabores/api exec wrangler secret put D1_BACKUP_TOKEN --env preview
+Copy-Item .env.example .env
+Copy-Item apps/api/.env.preview.example apps/api/.env.preview
+uv run scons api-preview
+uv run scons preview
 ```
 
-Repita para `production` com secrets diferentes. `D1_BACKUP_TOKEN` deve ter
-somente a permissão necessária para exportar o D1 correspondente. A conta é
-configurada por ambiente, e `BACKUP_DATABASE_ID` deve ser exatamente o mesmo ID
-de `d1_databases[0].database_id`; o guard interrompe o deploy se divergirem.
+`D1_BACKUP_TOKEN` deve ter somente a permissão necessária para exportar o D1
+correspondente. `BACKUP_DATABASE_ID` precisa ser o mesmo ID de
+`d1_databases[0].database_id`; o guard interrompe o deploy se divergirem. Antes
+de `scons preview`, habilite Cloudflare Access e proteja os hostnames de preview
+com uma política Allow para seu e-mail individual. O SCons verifica a política
+e não publica se Access estiver ausente ou contiver regra bypass. A API não tem
+rota pública; os apps chamam o Worker por Service Binding.
 
 ```powershell
-pnpm --filter @sabores/api deploy:preview
-pnpm --filter @sabores/api deploy:production
+Copy-Item apps/api/.env.production.example apps/api/.env.production
+uv run scons prod
 ```
 
 Os scripts recusam os identificadores de exemplo e verificam que preview e

@@ -49,14 +49,14 @@
         {
           "binding": "DB",
           "database_name": "sabores-canastra-preview",
-          "database_id": "00000000-0000-0000-0000-000000000002",
+          "database_id": "c9152e33-9220-44e7-8f46-32aee3fe682c",
           "migrations_dir": "migrations",
         },
       ],
       "kv_namespaces": [
         {
           "binding": "CATALOG_CACHE",
-          "id": "00000000000000000000000000000002",
+          "id": "de083c3910c24bb1ac2a75126b136e6a",
         },
       ],
       "r2_buckets": [
@@ -81,8 +81,8 @@
         },
       ],
       "vars": {
-        "BACKUP_ACCOUNT_ID": "REPLACE_WITH_PREVIEW_ACCOUNT_ID",
-        "BACKUP_DATABASE_ID": "REPLACE_WITH_PREVIEW_D1_ID",
+        "BACKUP_ACCOUNT_ID": "94e04fd3c2a3c68a6cae057ad33cb4db",
+        "BACKUP_DATABASE_ID": "c9152e33-9220-44e7-8f46-32aee3fe682c",
         "BACKUP_RETENTION_DAYS": "30",
       },
       "observability": { "enabled": true, "head_sampling_rate": 1 },

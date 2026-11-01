@@ -1,0 +1,155 @@
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from sabores.d1_migration import MigrationValidationError, build_import_bundle
+from sabores.database import Ledger
+
+ROOT = Path(__file__).resolve().parents[1]
+SCHEMA = ROOT / "apps" / "api" / "migrations" / "0001_initial_schema.sql"
+
+
+@pytest.fixture
+def workbook(tmp_path):
+	from openpyxl import Workbook
+
+	book = Workbook()
+	book.active.title = "Painel"
+	for name in ("Parametros", "Insumos", "Fichas", "Composicao", "Mix diario", "Fontes", "Compras"):
+		book.create_sheet(name)
+	params = book["Parametros"]
+	params["B7"] = 1
+	for cell in ("B18", "B19", "B20", "B21", "B38", "B39"):
+		params[cell] = 0
+	book["Insumos"].append([None] * 7)
+	book["Insumos"].append([None] * 7)
+	book["Insumos"].append([None] * 7)
+	book["Insumos"].append(["INGREDIENTE", "UNID. BASE", "QTD. NO PACOTE", "PREÇO PACOTE"])
+	book["Insumos"].append(["Farinha de trigo", "g", 1000, 8.2])
+	book["Insumos"].append(["Queijo", "g", 1000, 20])
+	book["Fichas"].append([None] * 19)
+	book["Fichas"].append([None] * 19)
+	book["Fichas"].append([None] * 19)
+	book["Fichas"].append(["ID RECEITA", "ID SABOR", "PRODUTO", "VERSÃO", "RENDE", "FONTE", "PREPARO"])
+	book["Fichas"].append(["JOELHO_E", "JOELHO", "Joelho", "Econômica", 14, None, "Misturar"])
+	book["Fichas"].append(["PIZZA_E", "PIZZA", "Pizza", "Econômica", 10, None, "Assar"])
+	book["Composicao"].append([None] * 9)
+	book["Composicao"].append([None] * 9)
+	book["Composicao"].append([None] * 9)
+	book["Composicao"].append(["ID RECEITA", "ETAPA", "INGREDIENTE", "QTDE", "UNID."])
+	book["Composicao"].append(["JOELHO_E", "Massa", "Farinha de trigo", 500, "g"])
+	book["Composicao"].append(["PIZZA_E", "Recheio", "Queijo", 300, "g"])
+	book["Mix diario"].append([None] * 16)
+	book["Mix diario"].append([None] * 16)
+	book["Mix diario"].append([None] * 16)
+	book["Mix diario"].append(["ID SABOR", "PRODUTO", "QTD/DIA", "VERSÃO"])
+	book["Mix diario"].append(["JOELHO", "Joelho", 1, "E"])
+	book["Mix diario"].append(["PIZZA", "Pizza", 0, "E"])
+	path = tmp_path / "source.xlsx"
+	book.save(path)
+	return path
+
+
+def test_bundle_merges_workbook_and_sqlite_and_reconciles_financial_history(tmp_path, workbook):
+	database = tmp_path / "legacy.db"
+	ledger = Ledger(database)
+	ledger.upsert_ingredient(name="Farinha de trigo", base_unit="g", pack_quantity="1000",
+							pack_price_cents=820, price_status="Confirmado", price_date="2026-10-30",
+							supplier="Fornecedor editado")
+	ledger.upsert_ingredient(name="Item adicional", base_unit="un", pack_quantity="1", pack_price_cents=25)
+	ledger.upsert_recipe(recipe_id="JOELHO_E", product_name="Joelho editado", version="E", yield_units=11,
+						 lines=[("Farinha de trigo", "400", "g", "Massa")])
+	ledger.upsert_product(product_id="suco", name="Suco", category="Bebidas", sale_price_cents=500,
+						 unit_cost_cents=200, barcode="789100")
+	ledger.record_pos_sale(entry_date="2026-11-01", items=[{
+		"name": "Suco", "category": "Bebidas", "quantity": 2, "unit_price_cents": 500,
+		"amount_cents": 1000, "unit_cost_cents": 200,
+	}], payments=[{"method": "Dinheiro", "amount_cents": 400, "fee_rate": "0"},
+				  {"method": "Crédito", "amount_cents": 600, "fee_rate": "0.02"}], customer="Balcão")
+	ledger.add_entry(entry_date="2026-11-01", kind="Compra", category="Insumos", description="Farinha",
+				  amount_cents=820, quantity="1", unit_price_cents=820, payment_method="Pix",
+				  supplier_or_customer="Fornecedor")
+	ledger.add_entry(entry_date="2026-11-01", kind="Gasto", category="Gás", description="Botijão",
+				  amount_cents=12000, payment_method="Dinheiro")
+	legacy_report = ledger.pos_report("2026-11-01", "2026-11-01")
+	assert (legacy_report["gross_cents"], legacy_report["fees_cents"], legacy_report["net_cents"],
+			legacy_report["known_cost_cents"], legacy_report["profit_cents"]) == (1000, 12, 988, 400, 588)
+
+	bundle = build_import_bundle(database, workbook)
+	second = build_import_bundle(database, workbook)
+	assert bundle["import_id"] == second["import_id"]
+	assert bundle["row_counts"]["ingredients"] == 3
+	assert bundle["row_counts"]["recipes"] == 2
+	assert bundle["row_counts"]["recipeLines"] == 2
+	assert bundle["row_counts"]["quotes"] == 3
+	assert bundle["row_counts"]["ledgerEntries"] == 3
+	assert bundle["reconciliation"]["financial"]["Venda"]["matches"] is True
+	assert bundle["reconciliation"]["financial"]["Compra"]["source_cents"] == 820
+	assert bundle["reconciliation"]["financial"]["Gasto"]["source_cents"] == 12000
+	merged_ingredient = next(row for row in bundle["tables"]["ingredients"] if row["name"] == "Farinha de trigo")
+	assert merged_ingredient["supplier"] == "Fornecedor editado"
+	assert len([row for row in bundle["tables"]["quotes"] if row["ingredientId"] == merged_ingredient["ingredientId"]]) == 1
+	sale = bundle["tables"]["sales"][0]
+	assert (sale["grossCents"], sale["feeCents"], sale["netCents"]) == (1000, 12, 988)
+	assert bundle["tables"]["saleItems"][0]["unitCostCents"] == 200
+	assert bundle["tables"]["saleItems"][0]["productId"] == "suco"
+	assert bundle["tables"]["ledgerEntries"][0]["occurredOn"] == "2026-11-01"
+	assert bundle["tables"]["ledgerEntries"][0]["occurredAt"].endswith("Z")
+
+
+def test_rejects_unbalanced_legacy_sale_without_producing_partial_bundle(tmp_path, workbook):
+	database = tmp_path / "unbalanced.db"
+	ledger = Ledger(database)
+	ledger.record_pos_sale(entry_date="2026-11-01", items=[{
+		"name": "Produto", "category": "Outros", "quantity": 1,
+		"unit_price_cents": 1000, "amount_cents": 1000,
+	}], payments=[{"method": "Pix", "amount_cents": 1000, "fee_rate": "0"}])
+	with sqlite3.connect(database) as db:
+		db.execute("UPDATE sale_payments SET amount_cents=900")
+
+	with pytest.raises(MigrationValidationError, match="pagamentos totalizam"):
+		build_import_bundle(database, workbook)
+
+
+def test_rejects_negative_legacy_ledger_amount(tmp_path, workbook):
+	database = tmp_path / "negative.db"
+	ledger = Ledger(database)
+	ledger.add_entry(entry_date="2026-11-01", kind="Gasto", category="Teste", description="Invalid",
+					 amount_cents=10)
+	with sqlite3.connect(database) as db:
+		db.execute("PRAGMA ignore_check_constraints=ON")
+		db.execute("UPDATE entries SET amount_cents=-10")
+
+	with pytest.raises(MigrationValidationError, match="valor negativo"):
+		build_import_bundle(database, workbook)
+
+
+def test_d1_schema_enforces_append_only_ledger_and_integer_money(tmp_path):
+	database = sqlite3.connect(tmp_path / "schema.db")
+	database.execute("PRAGMA foreign_keys=ON")
+	schema = SCHEMA.read_text(encoding="utf-8")
+	database.executescript(schema)
+	objects_before = database.execute(
+		"SELECT type, name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+	).fetchall()
+	columns_before = database.execute("PRAGMA table_info(products)").fetchall()
+	# Reapplying the schema must not duplicate tables, indexes, triggers, or columns.
+	database.executescript(schema)
+	assert database.execute(
+		"SELECT type, name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"
+	).fetchall() == objects_before
+	assert database.execute("PRAGMA table_info(products)").fetchall() == columns_before
+	database.execute("INSERT INTO categories(category_id,name,created_at) VALUES('drinks','Bebidas','2026-11-01T00:00:00Z')")
+	database.execute("""INSERT INTO ledger_entries(ledger_id,idempotency_key,entry_type,occurred_on,recorded_at,
+		amount_cents,description,category,source_system,source_id)
+		VALUES('entry-1','key-1','expense','2026-11-01','2026-11-01T00:00:00Z',100,'Teste','Outros','test','1')""")
+	with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+		database.execute("UPDATE ledger_entries SET amount_cents=200 WHERE ledger_id='entry-1'")
+	with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+		database.execute("DELETE FROM ledger_entries WHERE ledger_id='entry-1'")
+	with pytest.raises(sqlite3.IntegrityError):
+		database.execute("""INSERT INTO ledger_entries(ledger_id,idempotency_key,entry_type,occurred_on,recorded_at,
+			amount_cents,description,category,source_system,source_id)
+			VALUES('entry-negative','key-negative','expense','2026-11-01','2026-11-01T00:00:00Z',-1,'Inválido','Outros','test','negative')""")
+	database.close()

@@ -7,7 +7,7 @@ name = "sabores-da-canastra"
 version = "0.1.0"
 description = "App desktop local de custos e livro-caixa do Sabores da Canastra"
 requires-python = ">=3.12"
-dependencies = ["openpyxl>=3.1,<4"]
+dependencies = ["openpyxl>=3.1,<4", "tzdata>=2025.2"]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

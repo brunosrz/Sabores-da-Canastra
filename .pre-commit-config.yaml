@@ -45,12 +45,26 @@ repos:
         types_or: [javascript, jsx, ts, tsx]
         files: ^apps/pdv/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false
+      - id: api-format
+        name: API formatting
+        entry: pnpm format:check:api
+        language: system
+        types_or: [javascript, ts]
+        files: ^apps/api/.*\.(js|mjs|ts|json|jsonc)$
+        pass_filenames: false
+      - id: api-lint
+        name: API ESLint
+        entry: pnpm lint:api
+        language: system
+        types_or: [javascript, ts]
+        files: ^apps/api/.*\.(js|mjs|ts)$
+        pass_filenames: false
       - id: markdownlint
         name: markdown lint
         entry: pnpm lint:docs
         language: system
         types: [markdown]
-        files: ^(README\.md|docs/(json-contract|arquitetura-web)\.md|apps/(erp|pdv)/README\.md)$
+        files: ^(AGENTS\.md|README\.md|docs/(json-contract|arquitetura-web)\.md|apps/(erp|pdv|api)/README\.md)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3

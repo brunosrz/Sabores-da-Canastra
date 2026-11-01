@@ -13,10 +13,7 @@ dependencies = ["openpyxl>=3.1,<4", "tzdata>=2025.2"]
 test = ["pytest>=8"]
 
 [dependency-groups]
-dev = [
-    "pytest>=8",
-    "scons>=4.11.1",
-]
+dev = ["pytest>=8"]
 
 [tool.uv]
 package = true

@@ -71,4 +71,4 @@ repos:
     hooks:
       - id: ruff-check
         args: [--select=E4,E7,E9]
-        files: ^(SConstruct|src/sabores/.*\.py|tests/.*\.py)$
+        files: ^(src/sabores|tests)/.*\.py$

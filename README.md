@@ -4,8 +4,8 @@ Repositório dos sistemas operacionais do Bar Sabores da Canastra. A evolução
 principal é uma plataforma web mobile first, composta por dois aplicativos
 independentes: **ERP** (`erp.brunosrz.com`) e **PDV** (`pdv.brunosrz.com`). Os
 aplicativos Python e a planilha Excel permanecem no repositório como legado
-funcional, utilitários e referência para a migração. A API de preview já está
-publicada sem rota pública; falta concluir Access e publicar ERP/PDV.
+funcional, utilitários e referência para a migração. Os domínios e serviços
+remotos ainda não estão publicados.
 
 ## Aplicativos web
 
@@ -66,38 +66,14 @@ usam banco remoto. Deploy em preview/produção só é permitido após provision
 recursos Cloudflare separados e substituir IDs de exemplo. Os scripts
 `deploy:preview` e `deploy:production` fazem essa validação.
 
-### Publicação Cloudflare
-
-O SCons coordena migrations D1, secrets da API e deploy explícito. Preview usa
-`erp-preview.brunosrz.com` e `pdv-preview.brunosrz.com`; produção usa
-`erp.brunosrz.com` e `pdv.brunosrz.com`. Antes de publicar as interfaces,
-configure Cloudflare Access com políticas que permitam somente seu e-mail.
-
-```powershell
-uv sync --group dev
-Copy-Item .env.example .env
-Copy-Item apps/api/.env.preview.example apps/api/.env.preview
-uv run scons api-preview
-uv run scons preview
-```
-
-Preencha `.env` com o token Cloudflare, Account ID e Zone ID. Gere os três
-tokens de aplicação em `apps/api/.env.preview`; `D1_BACKUP_TOKEN` pode ficar
-vazio no primeiro deploy, mas backups remotos só funcionarão depois de
-configurá-lo com um token Cloudflare de escopo mínimo. Arquivos preenchidos são
-ignorados pelo Git. `scons api-preview` publica somente a API sem rota pública;
-`scons preview` valida políticas Access para os dois domínios antes de publicar
-ERP e PDV. `uv run scons prod` usa secrets, bindings e políticas Access
-separados e não deve ser executado até provisionar e revisar produção.
-
 ## Backend e banco de dados
 
 ERP e PDV usam **um único backend de negócio compartilhado** e um D1 por
 ambiente. O Worker Hono em `apps/api` contém schema e bindings. KV mantém
 apenas cache descartável; R2 guarda backups privados; Durable Objects coordenam
 retries; Workflows exportam D1 diariamente em produção. A autenticação de
-usuários ainda será implementada; os Service Bindings entre os frontends e a
-API estão declarados por ambiente. O SQLite do Python permanece
+usuários e os bindings entre os frontends e o backend ainda serão implementados.
+Os domínios planejados não estão publicados. O SQLite do Python permanece
 independente, sem sincronização automática com D1; a migração é uma cópia
 inicial validada.
 

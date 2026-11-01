@@ -1,86 +1,73 @@
-# Bar Sabores da Canastra
+# Sabores da Canastra — custos e planejamento
 
-## Plano do negócio familiar
+Projeto local em Python + Excel para fichas técnicas, premissas financeiras, compras e acompanhamento da produção de salgados assados e refrigerantes. A planilha continua sendo a interface editável; o Python valida os cadastros e calcula os indicadores de referência com `Decimal`.
 
-O negócio em operação hoje é um bar na zona rural, próximo a São João Batista do Glória (MG). A produção de salgados para venda na cidade por moto, a ampliação das entregas e o delivery noturno são propostas em planejamento; números, preços e cronogramas dos documentos devem ser confirmados pela família antes da execução.
+## Conteúdo
 
-- [Plano de negócios familiar](01_plano_negocio_familiar.md): situação atual, objetivos, operação e expansão da venda de rua.
-- [Investimentos e gastos](02_investimentos_e_gastos.md): custos previstos, prioridades e cenários financeiros.
-- [Divulgação por WhatsApp e Figma](03_divulgacao_whatsapp_e_figma.md): apresentação, comunicação e materiais visuais.
-- [Delivery noturno](04_plano_delivery_noturno.md): proposta de cardápio, logística e operação de entregas.
-- [Doces artesanais](05_doces_artesanais_receitas_e_negocio.md): receitas e proposta comercial.
+- `sabores_da_canastra_custos_salgados.xlsx`: planilha original preservada e ampliada. Antes da primeira atualização, o programa cria um backup com data.
+- `src/sabores/finance.py`: custos normalizados, lotes, combustível, taxas, lista agregada de ingredientes e referência financeira.
+- `src/sabores/workbook.py`: inspeção, validação e integração não destrutiva da pasta de trabalho.
+- `src/sabores/cli.py`: comandos locais.
+- `tests/`: testes do motor e da preservação da planilha.
+- `docs/metodologia.md`: regras de cálculo, dados e limitações.
 
-Os arquivos acima são documentos internos de planejamento. O cardápio e a infraestrutura do bar continuam descritos abaixo; o planejamento anterior da Semana do Flashback está em [Issue.md](Issue.md).
+## Instalação e comandos
 
-> Documento Interno de Gestão, Cardápio Base e Infraestrutura de Eventos
-> Propriedade: Bar Sabores da Canastra (Zona Rural — 5 km da Cidade)
-> Última Atualização: Outubro de 2026
+Requer Python 3.12+. No Windows:
 
-## Cardápio
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+py -m pip install -e ".[test]"
+py -m sabores inspecionar
+py -m sabores validar
+py -m sabores simular
+py -m sabores atualizar-excel
+```
 
-Este é o cardápio oficial de petiscos, porções e bebidas do Bar Sabores da Canastra. Para evitar o desperdício de insumos na cozinha devido ao fluxo oscilante da roça, trabalhamos com um sistema de estoque em 3 categorias:
+O argumento `--excel` aponta para outra pasta de trabalho. Exemplo:
 
-- 🟢 Alta Disponibilidade (Preparo Rápido / Baixo Risco): Salgados fritos, batata frita simples, calabresa e bebidas em geral. Podem ser servidos a qualquer momento.
-- 🟡 Estoque Sob Demanda (Descongelamento Progressivo): Tilápia, contrafilé, costelinha, coxinha da asa e torresmo. Em dias de movimento previsto ou eventos, as porções são retiradas do freezer gradativamente ao longo do dia.
-- 🔴 Especial de Grupo: Batata Frita Grande Completa (ideal para mesas com 4 ou mais pessoas).
+```powershell
+py -m sabores validar --excel "D:\caminho\custos.xlsx"
+```
 
-### Porções da Casa
+Comandos adicionais aceitos: `calcular-receitas`, `planejar-producao` e `gerar-compras`. As fichas e necessidades detalhadas continuam editadas na planilha; esses atalhos estão reservados para próximos fluxos de cálculo por lote.
 
-- Contrafilé com Acompanhamento (R$ 85,00)
-   Tiras suculentas de contrafilé acebolado, servidas com opção de mandioca cozida/frita ou batata frita crocante.
-- Costelinha de Porco com Mandioca (R$ 60,00)
-   Costelinha suína frita e bem temperada, acompanhada de mandioca macia e saborosa.
-- Coxinha da Asa - 800g (R$ 45,00)
-   Porção generosa de tulipas/coxinhas da asa crocantes por fora e suculentas por dentro, servidas com molho especial.
-- Calabresa Acebolada - 400g (R$ 45,00)
-   Fatias de calabresa salteadas com cebola, acompanhadas de fatias de pão/torradas da casa e alface decorativa.
-- Isca de Tilápia em Pedaços - 1 kg (R$ 60,00)
-   Pedaços seletos de tilápia empanados e fritos na hora, acompanhados de fatias de limão e molho especial da casa.
-- Batata Frita Simples - 800g (R$ 50,00)
-   Porção grande de batatas palito bem crocantes e sequinhas.
-- Batata Frita Especial da Casa - 1,6 kg (R$ 140,00)
-   A maior porção do bar! 1,6 kg de batata frita servida em travessa, coberta com bastante bacon crocante, calabresa fatiada e derretida em queijo muçarela.
-- Torresmo com Mandioca (R$ 60,00)
-   Torresmo pururucado e crocante combinado com mandioca cozida na hora.
-- Salgados Fritos Unidade (R$ 5,00)
-   Salgados variados (coxinhas, rissóis, pastéis) fritos na hora. Opção rápida para tira-gosto.
+## Usar a planilha
 
-### Bebidas, Drinks &  Doses
+1. Edite premissas em **Parametros**. Valores zero para trabalho e tributos indicam dados ainda não definidos, não custo real nulo.
+2. Atualize preços, embalagem e unidade de compra em **Insumos**. Valores existentes são estimativas conservadoras, não cotações verificadas.
+3. Registre cada cotação normal, não promocional, na aba **Pesquisa de preços**, com data, quantidade/embalagem, fonte e status. Preços ausentes ficam vazios; não há média automática de valores promocionais ou inventados.
+4. Ajuste quantidades da receita em **Composicao** e rendimento real em **Fichas** depois de pesar uma produção. As fichas existentes são estimativas de teste.
+5. No **Mix diario**, altere a quantidade e escolha E (econômica) ou R (reforçada); a soma deve corresponder ao parâmetro diário.
+6. Use **Producao** para registrar lotes e saídas, **Estoque** para entradas/consumo/validade e **Vendas** para operações reais. Os registros são manuais; o programa não inventa movimentos.
+7. Rode `py -m sabores validar` antes de confiar nos dados e `py -m sabores simular` para o cálculo Python de referência.
 
-- Caipirinha Tradicional (R$ 12,00): Feita com limão taiti fresco, açúcar e cachaça da roça.
-- Doses Tradicionais (R$ 4,00): Velho Barreiro, Conhaque Presidente, Pinga Amarela, Paratini ou Paratudo.
-- Dose Cortezano (R$ 5,00): Dose de aperitivo alcoólico Cortezano.
-- Vinho Pérgola: Garrafa (750ml) por R$ 38,00 | Taça por R$ 12,00.
-Cervejas Trincando
-- Cerveja Litrinho 300ml (R$ 5,00): Antarctica, Brahma ou Original. (Formato econômico e sempre bem gelado).
+As células azuis/amarelas na planilha significam entrada editável segundo o estilo existente; cabeçalhos, filtros, congelamento de painéis e listas de validação ajudam na navegação. O Excel recalcula fórmulas ao abrir. `openpyxl` não calcula as fórmulas e não atualiza seus valores em cache: abra/salve no Excel ou LibreOffice para atualizar valores de fórmulas no próprio arquivo.
 
-### Sem Álcool & Sucos
+## Parâmetros iniciais conferidos
 
-- Refrigerante Lata 350ml: Coca-Cola (R$ 6,00) | Fanta Laranja ou Guaraná Antarctica (R$ 5,00).
-- Refrigerante 2 Litros: Coca-Cola (R$ 15,00) | Fanta Laranja ou Guaraná Antarctica (R$ 12,00).
-- Suco Del Valle 1 Litro (R$ 10,00): Sabores variados.
-- Água Mineral com ou sem Gás 500ml (R$ 5,00).
+| Indicador | Resultado |
+|---|---:|
+| Faturamento diário | R$ 295,00 |
+| Faturamento mensal (20 dias) | R$ 5.900,00 |
+| Custo mensal das latas a R$ 3,50 | R$ 1.400,00 |
+| Combustível mínimo (22 km/dia) | R$ 77,00 |
+| Combustível com 15% de folga | R$ 88,55 |
+| Taxas ponderadas (25% débito + 25% crédito) | R$ 69,77/mês |
+| Saldo referência sem custo de salgados/outros (combustível mínimo) | R$ 4.353,23 |
+| Mesmo saldo com 15% de folga de combustível | R$ 4.341,68 |
 
-## Planejamento de Eventos Internos
+O custo de lata agregado de R$ 3,50 já inclui a estimativa de R$ 0,50 para frio/gelo. Não some esses mesmos custos novamente em outra rubrica. A aba Painel também tem uma referência separada de saldo mínimo/planejado; demais custos permanecem fora desses dois valores.
 
-### Semana do Flashback 70/80
+## Pesquisa e fontes
 
-- Data do Evento: 02 de novembro (Segunda-feira - Feriado de Finados) a 07 de novembro (Sábado).
-- Conceito de Estrutura Única: Todos os dias terão exatamente a mesma estrutura contínua e completa ativa na varanda:
-  - TV ligada na janela transmitindo os videoclipes dos anos 70, 80 e 90.
-  - Som ambiente distribuído com qualidade pelas caixas do salão.
-  - Microfone/Karaokê à disposição para os clientes cantarem se desejarem.
-- Diretriz de Comunicação e Divulgação:
-  - Divulgação Oficial (Panfletos, Redes e Banners): Foco exclusivo na 'Semana do Flashback 70/80', divulgando a semana temática, os vídeos na TV, a opção de karaokê e a culinária do bar.
-  - Comunicação Privada (Boca a Boca / WhatsApp para Amigos): Convites diretos aos conhecidos e familiares para aproveitarem a segunda-feira de feriado (02/11).
-- Operação Mídia Offline: A trilha sonora e os videoclipes rodarão 100% via pendrives e arquivos locais em MP3/MP4, garantindo zero travamentos no som/vídeo e mantendo a internet rádio (Máxima) livre para os pagamentos via Pix e maquininha de cartão.
+Endereços/canais oficiais e materiais de referência estão na aba **Fontes**. A pesquisa de preços no prompt não forneceu cotações atuais normais verificáveis para os três atacadistas; os campos começam como **Pendente**. Os encartes encontrados são promocionais e, portanto, não alimentam o preço regular. Confirme o pacote e o preço no canal da loja antes de marcar Confirmado. Consulte `docs/metodologia.md` para URLs e regras.
 
-## Inventário & Infraestrutura de Equipamentos
+## Limitações
 
-Relação técnica de equipamentos que compõem o sistema definitivo de som, iluminação e entretenimento do bar:
-
-- 02x Caixas de Som Passivas Philips (2-Way Bass Reflex — 6 Ω cada): Caixas instaladas estrategicamente nas paredes opostas do salão/varanda para distribuição sonora ambiente e uniforme.
-- 01x Amplificador e Controladora Taramps THS 1900 (Classe D — 60W RMS): Central do som do bar. Possui suporte a USB (pendrives MP3), Bluetooth, entradas RCA para áudio da TV, P2 e entrada de microfone.
-- 01x Televisor com Suporte Basculante de Parede + Fire TV Stick: Instalada na janela do quarto direcionada para a varanda. Exibe videoclipes clássicos em MP4 (offline) ou via streaming durante os eventos.
-- 01x Amazon Echo Show 5 (Alexa 2ª Geração): Equipamento auxiliar/reserva de áudio e automação.
-- Conjunto de Pendrives (Áudio MP3 & Vídeo MP4): Dispositivos de armazenamento locais abastecidos com playlists temáticas de Flashback, sertanejo e rock clássico, garantindo a música sem necessidade de conexão com a internet.
+- A planilha anterior tinha mais de 1.200 fórmulas e oito abas; elas foram preservadas. O sistema acrescenta estrutura de registro, mas não sincroniza vendas, estoque ou histórico automaticamente: a pessoa usuária registra as movimentações.
+- As oito receitas em versões econômica/reforçada usam quantidades de teste. Referências culinárias ajudam a definir técnica, mas não provam que o lote da planilha rende o número estimado.
+- Datas, taxas, custos fixos, despesas e rendimento devem ser confirmados localmente. Sem cotações atuais não existe “menor preço” ou média de loja calculável.
+- A precisão do cálculo não elimina incerteza das hipóteses. Excel é fonte autoritativa para entradas; Python valida e calcula a referência financeira a partir dos parâmetros lidos.
+- Refrigeração, congelamento, validade, rotulagem, tributos e requisitos para venda ambulante precisam de procedimento/avaliação apropriados antes da operação.

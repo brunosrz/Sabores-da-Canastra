@@ -28,7 +28,7 @@ Não transforme uma estimativa em cotação confirmada sem fonte e data reais.
 
 ## Produtos
 
-`product_id` (código interno único), `barcode` (código de barras opcional e único), `auxiliary_code` (código auxiliar opcional e único), `name`, `category` (`Salgados`, `Bebidas`, `Doces`, `Molhos`, `Outros`), `unit`, `sale_price_cents` e `unit_cost_cents` (centavos ou `null`), `active` (boolean), `notes`. O PDV localiza por código interno, código de barras, código auxiliar ou nome; a categoria pertence ao cadastro do produto e não é escolhida na venda. Produtos podem não ter receita, por exemplo refrigerantes, doces comprados ou molhos vendidos em frasco.
+`product_id` (código interno único), `barcode` (código de barras opcional e único), `auxiliary_code` (código auxiliar opcional e único), `name`, `category` (`Salgados`, `Bebidas`, `Doces`, `Molhos`, `Porções`, `Lanches`, `Pizzas`, `Outros`), `unit`, `sale_price_cents` e `unit_cost_cents` (centavos ou `null`), `active` (boolean), `notes`. O PDV localiza por código interno, código de barras, código auxiliar ou nome; a categoria pertence ao cadastro do produto e não é escolhida na venda. Produtos podem não ter receita, por exemplo refrigerantes, doces comprados ou molhos vendidos em frasco.
 
 ## Receitas
 

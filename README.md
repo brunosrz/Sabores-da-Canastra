@@ -7,7 +7,7 @@ Aplicativo desktop local para registrar a operação diária e acompanhar custos
 - PDV em aplicativo desktop separado para registrar cestas de produtos e vendas, ligado ao mesmo banco SQLite do caixa.
 - Divisão de cada venda entre dinheiro, débito, crédito e Pix, com taxas editáveis de cartão e total bruto, taxas, recebido líquido e lucro estimado.
 - Relatórios de vendas por período com calendário, comparação com período anterior de mesma duração, gráficos diários e detalhamento por produto e pagamento.
-- Cardápio inicial com Monster 473 ml por R$ 12,00 e refrigerantes 350 ml por R$ 6,00, em sabores cadastrados no catálogo.
+- Catálogo inicial comum aos dois apps com salgados, porções, bebidas, doces, molhos, lanches e pizzas; preços conhecidos entram preenchidos e valores ainda indefinidos ficam pendentes para edição.
 - Registro de lançamentos datados, com categoria, descrição, quantidade, preço unitário, valor total, forma de pagamento e fornecedor/cliente.
 - Histórico filtrável por período e tipo, exclusão de lançamento selecionado.
 - Banco SQLite local em `%USERPROFILE%\.sabores-da-canastra\sabores.db`.
@@ -55,7 +55,7 @@ uv run sabores simular
 uv run sabores inspecionar
 ```
 
-O app cria o banco automaticamente na primeira execução. A primeira abertura importa o catálogo e as fichas da planilha do repositório para o banco local, sem substituir cotações ou marcar estimativas como confirmadas. Na aba **Receitas**, cadastre também bebidas, doces e molhos como produtos vendáveis e informe o preço; depois eles aparecem na cesta do caixa por categoria. Para usar outro arquivo SQLite em desenvolvimento, instancie `Ledger("caminho/arquivo.db")`; os dados são locais e não há sincronização em nuvem.
+O app cria o banco automaticamente na primeira execução. A primeira abertura importa o catálogo e as fichas da planilha do repositório para o banco local, sem substituir cotações ou marcar estimativas como confirmadas. O cardápio base do bar é compartilhado pelos dois apps. No cadastro de produtos da Gestão, ajuste preços pendentes e mantenha o catálogo atualizado. Para usar outro arquivo SQLite em desenvolvimento, instancie `Ledger("caminho/arquivo.db")`; os dados são locais e não há sincronização em nuvem.
 
 ## Uso diário
 

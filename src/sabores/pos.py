@@ -108,6 +108,7 @@ class PosApp(tk.Tk):
             if product_id not in existing:
                 self.ledger.upsert_product(product_id=product_id, name=f"Refrigerante 350 ml — {flavor}", category="Bebidas",
                                            unit="350 ml", sale_price_cents=600, notes="Cadastro inicial do PDV")
+        self.ledger.seed_bar_catalog()
 
     def _configure_style(self):
         style = ttk.Style(self)
@@ -302,8 +303,7 @@ class PosApp(tk.Tk):
         self._date_entry(box, variable).pack(fill="x", pady=(3, 0))
 
     def _refresh_products(self):
-        products = [p for p in self.ledger.list_products(active_only=True)
-                    if p["sale_price_cents"] is not None and p["sale_price_cents"] > 0]
+        products = self.ledger.list_products(active_only=True)
         self.products = products
         if self.product_var.get() not in {p["name"] for p in products}:
             self.product_var.set("")
@@ -341,7 +341,8 @@ class PosApp(tk.Tk):
         for index, product in enumerate(matches):
             cost, _source = self.ledger.product_unit_cost(product)
             tree.insert("", "end", iid=str(index), values=(product.get("barcode") or "—", product.get("auxiliary_code") or product["product_id"],
-                product["name"], format_money(product["sale_price_cents"]), "Pendente" if cost is None else format_money(cost)))
+                product["name"], "Pendente" if product["sale_price_cents"] is None else format_money(product["sale_price_cents"]),
+                "Pendente" if cost is None else format_money(cost)))
         tree.selection_set("0")
         tree.focus("0")
 
@@ -364,8 +365,10 @@ class PosApp(tk.Tk):
 
     def select_product(self, product):
         self.product_var.set(product["name"])
-        self.price_var.set(_money_field(product["sale_price_cents"]))
-        self.selected_product_label.configure(text=f"{product['product_id']}  ·  {product['name']}  ·  {format_money(product['sale_price_cents'])}")
+        price = product["sale_price_cents"]
+        self.price_var.set(_money_field(price) if price is not None else "")
+        self.selected_product_label.configure(text=f"{product['product_id']}  ·  {product['name']}  ·  "
+            f"{format_money(price) if price is not None else 'Preço não definido — configure na Gestão ou informe agora'}")
         self.quantity_var.set("1")
         self.quantity_entry.focus_set()
         self.quantity_entry.selection_range(0, "end")

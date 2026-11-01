@@ -64,6 +64,7 @@ class LedgerApp(tk.Tk):
         self._build_tabs()
         self._ensure_recipe_products()
         self._ensure_default_products()
+        self.ledger.seed_bar_catalog()
         self.refresh()
 
     def _ensure_recipe_products(self,force=False):
@@ -589,7 +590,7 @@ class LedgerApp(tk.Tk):
         unit=tk.StringVar(value=product["unit"] if product else "un");active=tk.BooleanVar(value=bool(product["active"]) if product else True)
         barcode=tk.StringVar(value=product.get("barcode") or "" if product else "")
         auxiliary_code=tk.StringVar(value=product.get("auxiliary_code") or "" if product else "")
-        self._field(box,"Nome",ttk.Entry(box,textvariable=name));self._field(box,"Categoria",ttk.Combobox(box,textvariable=category,values=["Salgados","Bebidas","Doces","Molhos","Outros"]))
+        self._field(box,"Nome",ttk.Entry(box,textvariable=name));self._field(box,"Categoria",ttk.Combobox(box,textvariable=category,values=["Salgados","Bebidas","Doces","Molhos","Porções","Lanches","Pizzas","Outros"]))
         self._field(box,"Código de barras",ttk.Entry(box,textvariable=barcode));self._field(box,"Código auxiliar",ttk.Entry(box,textvariable=auxiliary_code))
         self._field(box,"Preço de venda (R$)",ttk.Entry(box,textvariable=price));self._field(box,"Unidade",ttk.Combobox(box,textvariable=unit,values=["un","lata","garrafa","porção","frasco"]))
         ttk.Checkbutton(box,text="Ativo para lançamento de vendas",variable=active).pack(anchor="w",pady=6)

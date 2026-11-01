@@ -7,6 +7,7 @@ from datetime import date, datetime
 from pathlib import Path
 import sqlite3
 import uuid
+import unicodedata
 from typing import Iterable
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -482,6 +483,134 @@ class Ledger:
     def delete_product(self, product_id: str) -> None:
         with self._connect() as db:
             db.execute("DELETE FROM products WHERE product_id=?",(product_id,))
+
+    @staticmethod
+    def _catalog_code(value: str) -> str:
+        normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+        return "-".join(part for part in "".join(c if c.isalnum() else " " for c in normalized).split() if part)
+
+    def seed_bar_catalog(self) -> int:
+        """Insert the bar menu once, preserving existing product IDs and custom prices."""
+        if self.parameters().get("_bar_catalog_seed_v1", {}).get("value") == "1":
+            return 0
+        menu = [
+            ("Porções", "Contrafilé acebolado", "porção", 8500, "Cardápio do bar"),
+            ("Porções", "Bolinhos de carne", "porção", 5500, "Cardápio do bar"),
+            ("Porções", "Costelinha de porco", "porção", 6000, "Cardápio do bar"),
+            ("Porções", "Tilápia em pedaços", "porção", 6000, "Cardápio do bar"),
+            ("Porções", "Coxinha da asa", "porção", 4500, "Cardápio do bar"),
+            ("Porções", "Calabresa acebolada", "porção", 4500, "Cardápio do bar"),
+            ("Porções", "Torresmo com mandioca", "porção", 6000, "Cardápio do bar"),
+            ("Porções", "Batata simples", "porção", 5000, "Cardápio do bar"),
+            ("Porções", "Batata especial", "porção", 14000, "Cardápio do bar"),
+            ("Porções", "Frango caipira (sob encomenda)", "porção", 28000, "Cardápio do bar; sob encomenda"),
+            ("Porções", "Batata frita individual", "porção", 1000, "Preço inicial sugerido no plano de delivery"),
+            ("Salgados", "Frango", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Presunto e queijo", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Calabresa", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Joelho presunto e queijo", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Joelho aberto frango e requeijão", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Hambúrguer assado", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Enroladinho de calabresa", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Esfiha fechada de carne", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Pão pizza de presunto e queijo", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Enroladinho de salsicha", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Salgados", "Pãozinho frango e milho", "un", 700, "Preço planejado; confirme no cadastro"),
+            ("Lanches", "X-Salada", "un", 1800, "Preço inicial sugerido no plano de delivery"),
+            ("Lanches", "X-Bacon", "un", 2300, "Preço inicial sugerido no plano de delivery"),
+            ("Lanches", "X-Tudo", "un", None, "Preço e composição ainda precisam ser definidos"),
+            ("Pizzas", "Pizza de muçarela", "un", None, "Confirme disponibilidade, tamanho e preço no cardápio do bar"),
+            ("Pizzas", "Pizza de calabresa", "un", None, "Confirme disponibilidade, tamanho e preço no cardápio do bar"),
+            ("Pizzas", "Pizza portuguesa", "un", None, "Confirme disponibilidade, tamanho e preço no cardápio do bar"),
+            ("Pizzas", "Pizza de frango com catupiry", "un", None, "Confirme disponibilidade, tamanho e preço no cardápio do bar"),
+            ("Doces", "Creme de morango com chocolate", "un", 900, "Preço experimental ainda não confirmado"),
+            ("Doces", "Creme de manga com chocolate", "un", 800, "Preço experimental ainda não confirmado"),
+            ("Doces", "Creme de maracujá com chocolate", "un", 900, "Preço experimental ainda não confirmado"),
+            ("Doces", "Brownie de chocolate intenso", "un", 700, "Preço experimental ainda não confirmado"),
+            ("Doces", "Bolinho de banana, aveia e cacau", "un", 600, "Preço experimental ainda não confirmado"),
+            ("Molhos", "Molho de pimenta artesanal 300 ml", "frasco", 1200, "Preço informado no plano do cardápio diurno"),
+            ("Molhos", "Molho de pimenta (porção individual)", "porção", None, "Defina o preço no cadastro de produtos"),
+            ("Molhos", "Maionese verde (porção)", "porção", None, "Defina o preço no cadastro de produtos"),
+            ("Bebidas", "Caipirinha", "copo", 1200, "Sabores: limão, morango, maracujá ou kiwi"),
+            ("Bebidas", "Vinho Pérgola 1 L", "garrafa", 3800, "Cardápio do bar"),
+            ("Bebidas", "Dose tradicional — cachaça", "dose", 400, "51, Velho Barreiro, Pinga Amarela, Paratini ou Paratudo"),
+            ("Bebidas", "Dose especial — conhaque", "dose", 500, "Cortezano ou Conhaque Presidente"),
+            ("Bebidas", "Cerveja litrinho 300 ml — Antarctica", "garrafa", 500, "Cardápio do bar"),
+            ("Bebidas", "Cerveja litrinho 300 ml — Brahma", "garrafa", 500, "Cardápio do bar"),
+            ("Bebidas", "Cerveja litrinho 300 ml — Original", "garrafa", 500, "Cardápio do bar"),
+            ("Bebidas", "Cerveja lata 350 ml — Antarctica", "lata", 600, "Cardápio do bar"),
+            ("Bebidas", "Cerveja lata 350 ml — Brahma", "lata", 600, "Cardápio do bar"),
+            ("Bebidas", "Cerveja lata 350 ml — Original", "lata", 600, "Cardápio do bar"),
+            ("Bebidas", "Refrigerante 2 L — Fanta", "garrafa", 1200, "Cardápio do bar"),
+            ("Bebidas", "Refrigerante 2 L — Guaraná Antarctica", "garrafa", 1200, "Cardápio do bar"),
+            ("Bebidas", "Refrigerante 2 L — Sprite", "garrafa", 1200, "Cardápio do bar"),
+            ("Bebidas", "Coca-Cola 2 L", "garrafa", 1500, "Cardápio do bar"),
+            ("Bebidas", "Suco Del Valle 1 L — Laranja", "garrafa", 1000, "Cardápio do bar"),
+            ("Bebidas", "Suco Del Valle 1 L — Uva", "garrafa", 1000, "Cardápio do bar"),
+            ("Bebidas", "Suco Del Valle 1 L — Manga", "garrafa", 1000, "Cardápio do bar"),
+            ("Bebidas", "Suco Del Valle 1 L — Outros sabores", "garrafa", 1000, "Cardápio do bar"),
+            ("Bebidas", "Suco natural de laranja 300 ml", "copo", 700, "Preço sugerido no plano de negócio"),
+            ("Bebidas", "Água mineral 500 ml", "un", 300, "Preço sugerido no plano de negócio"),
+            ("Bebidas", "Monster 473 ml — Original", "473 ml", 1200, "Preço informado pelo usuário"),
+            ("Bebidas", "Monster 473 ml — Mango Loco", "473 ml", 1200, "Preço informado pelo usuário"),
+            ("Bebidas", "Monster 473 ml — Ultra White", "473 ml", 1200, "Preço informado pelo usuário"),
+            ("Bebidas", "Monster 473 ml — Ultra Paradise", "473 ml", 1200, "Preço informado pelo usuário"),
+            ("Bebidas", "Monster 473 ml — Pipeline Punch", "473 ml", 1200, "Preço informado pelo usuário"),
+            ("Bebidas", "Refrigerante 350 ml — Coca-Cola", "350 ml", 600, "Preço informado pelo usuário"),
+            ("Bebidas", "Refrigerante 350 ml — Guaraná Antarctica", "350 ml", 600, "Preço informado pelo usuário"),
+            ("Bebidas", "Refrigerante 350 ml — Fanta Laranja", "350 ml", 600, "Preço informado pelo usuário"),
+            ("Bebidas", "Refrigerante 350 ml — Fanta Uva", "350 ml", 600, "Preço informado pelo usuário"),
+            ("Bebidas", "Refrigerante 350 ml — Sprite", "350 ml", 600, "Preço informado pelo usuário"),
+        ]
+        aliases = {
+            "Brownie de chocolate intenso": "Brownie intenso",
+            "Molho de pimenta artesanal 300 ml": "Molho de pimenta artesanal",
+            "Maionese verde (porção)": "Maionese verde",
+        }
+        existing = {p["name"].casefold(): p for p in self.list_products()}
+        added = 0
+        for category, name, unit, price, notes in menu:
+            current = existing.get(name.casefold()) or existing.get(aliases.get(name, "").casefold())
+            if current:
+                if current["name"] != name or (current["sale_price_cents"] is None and price is not None and current["notes"] and (
+                    "preço de venda antes" in current["notes"].casefold() or "sem preço" in current["notes"].casefold()
+                )):
+                    self.upsert_product(product_id=current["product_id"], name=name, category=category,
+                        unit=unit, sale_price_cents=price, unit_cost_cents=current["unit_cost_cents"],
+                        barcode=current["barcode"], auxiliary_code=current["auxiliary_code"], active=bool(current["active"]), notes=notes)
+                continue
+            code = self._catalog_code(name)
+            self.upsert_product(product_id=f"bar-{code}", name=name, category=category, unit=unit,
+                                sale_price_cents=price, active=True, notes=notes)
+            added += 1
+
+        # Every product that already has a savory recipe is available in the POS too.
+        by_name = {p["name"].casefold(): p for p in self.list_products()}
+        for recipe in self.list_recipes():
+            name = recipe["product_name"]
+            current = by_name.get(name.casefold())
+            if current:
+                if current["sale_price_cents"] is None and current["notes"] and "preço de venda antes" in current["notes"].casefold():
+                    self.upsert_product(product_id=current["product_id"], name=name, category="Salgados", unit=current["unit"],
+                        sale_price_cents=700, unit_cost_cents=current["unit_cost_cents"], barcode=current["barcode"],
+                        auxiliary_code=current["auxiliary_code"], active=bool(current["active"]),
+                        notes="R$ 7,00 conforme preço planejado para salgado; confirme no cadastro")
+            else:
+                code = self._catalog_code(name)
+                self.upsert_product(product_id=f"recipe-{code}", name=name, category="Salgados", unit="un",
+                                    sale_price_cents=700, notes="R$ 7,00 conforme preço planejado para salgado; confirme no cadastro")
+                added += 1
+
+        # Hide the old generic drink placeholders now that the catalog has named options.
+        for name in ("Energético lata", "Refrigerante lata 350 ml"):
+            placeholder = existing.get(name.casefold())
+            if placeholder and placeholder["sale_price_cents"] is None and placeholder["notes"] and "produto inicial sem preço" in placeholder["notes"].casefold():
+                self.upsert_product(product_id=placeholder["product_id"], name=placeholder["name"], category=placeholder["category"],
+                    unit=placeholder["unit"], sale_price_cents=None, unit_cost_cents=placeholder["unit_cost_cents"],
+                    barcode=placeholder["barcode"], auxiliary_code=placeholder["auxiliary_code"], active=False,
+                    notes="Placeholder genérico substituído pelo catálogo de sabores")
+        self.upsert_parameter("_bar_catalog_seed_v1", "1", "", "Confirmado")
+        return added
 
     def replace_recipe(self, *, recipe_id: str, product_name: str, version: str, yield_units: int,
                        source: str | None, instructions: str | None,

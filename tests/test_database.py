@@ -120,6 +120,33 @@ def test_product_codes_roundtrip_and_are_unique(tmp_path):
         other.upsert_product(product_id="internal-2", name="Outro", category="Bebidas", barcode="7890001")
 
 
+def test_bar_catalog_seeds_full_categories_and_preserves_user_changes(tmp_path):
+    ledger = Ledger(tmp_path / "bar-catalog.db")
+    ledger.upsert_product(product_id="default-brownie", name="Brownie intenso", category="Doces",
+                          notes="Produto inicial sem preço; edite preço")
+    added = ledger.seed_bar_catalog()
+    products = ledger.list_products(active_only=True)
+    categories = {product["category"] for product in products}
+    assert {"Salgados", "Doces", "Molhos", "Lanches", "Pizzas", "Porções", "Bebidas"} <= categories
+    by_name = {product["name"]: product for product in products}
+    assert by_name["Contrafilé acebolado"]["sale_price_cents"] == 8500
+    assert by_name["Cerveja lata 350 ml — Brahma"]["sale_price_cents"] == 600
+    assert by_name["X-Salada"]["sale_price_cents"] == 1800
+    assert by_name["Pizza de muçarela"]["sale_price_cents"] is None
+    assert by_name["Creme de morango com chocolate"]["sale_price_cents"] == 900
+    assert by_name["Monster 473 ml — Original"]["sale_price_cents"] == 1200
+    assert by_name["Refrigerante 350 ml — Coca-Cola"]["sale_price_cents"] == 600
+    assert by_name["Brownie de chocolate intenso"]["sale_price_cents"] == 700
+    assert len([p for p in products if "Brownie" in p["name"]]) == 1
+    assert added >= 40
+    ledger.upsert_product(product_id=by_name["X-Salada"]["product_id"], name="X-Salada", category="Lanches",
+                          sale_price_cents=2100, barcode="123456")
+    assert ledger.seed_bar_catalog() == 0
+    changed = next(product for product in ledger.list_products() if product["name"] == "X-Salada")
+    assert changed["sale_price_cents"] == 2100
+    assert changed["barcode"] == "123456"
+
+
 def test_pos_sale_split_fees_cost_and_period_report(tmp_path):
     ledger = Ledger(tmp_path / "pos.db")
     sale = ledger.record_pos_sale(

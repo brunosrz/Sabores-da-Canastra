@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 import sqlite3
+import uuid
 from typing import Iterable
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -24,6 +25,7 @@ class Entry:
     supplier_or_customer: str | None
     notes: str | None
     created_at: str
+    unit_cost_cents: int | None = None
 
 
 class Ledger:
@@ -63,6 +65,8 @@ class Ledger:
             """)
             db.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(entry_date)")
             db.execute("CREATE INDEX IF NOT EXISTS idx_entries_kind_date ON entries(kind, entry_date)")
+            columns={row[1] for row in db.execute("PRAGMA table_info(entries)")}
+            if "unit_cost_cents" not in columns:db.execute("ALTER TABLE entries ADD COLUMN unit_cost_cents INTEGER")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS ingredients (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE,
@@ -99,10 +103,17 @@ class Ledger:
                 CREATE TABLE IF NOT EXISTS products (
                     product_id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE,
                     category TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'un',
-                    sale_price_cents INTEGER, active INTEGER NOT NULL DEFAULT 1,
+                    sale_price_cents INTEGER, unit_cost_cents INTEGER, active INTEGER NOT NULL DEFAULT 1,
                     notes TEXT
                 )
             """)
+            product_columns={row[1] for row in db.execute("PRAGMA table_info(products)")}
+            if "unit_cost_cents" not in product_columns:db.execute("ALTER TABLE products ADD COLUMN unit_cost_cents INTEGER")
+            db.execute("""CREATE TABLE IF NOT EXISTS sale_groups (
+                group_id TEXT PRIMARY KEY,entry_date TEXT NOT NULL,total_cents INTEGER NOT NULL,created_at TEXT NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS sale_payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,group_id TEXT NOT NULL REFERENCES sale_groups(group_id) ON DELETE CASCADE,
+                method TEXT NOT NULL,amount_cents INTEGER NOT NULL,fee_rate TEXT NOT NULL DEFAULT '0')""")
             db.execute("""CREATE TABLE IF NOT EXISTS parameters (
                 name TEXT PRIMARY KEY,value TEXT NOT NULL,unit TEXT,status TEXT NOT NULL)""")
 
@@ -289,7 +300,8 @@ class Ledger:
     def add_entry(self, *, entry_date: str, kind: str, category: str, description: str,
                   amount_cents: int, quantity: str | None = None,
                   unit_price_cents: int | None = None, payment_method: str | None = None,
-                  supplier_or_customer: str | None = None, notes: str | None = None) -> Entry:
+                  supplier_or_customer: str | None = None, notes: str | None = None,
+                  unit_cost_cents: int | None = None) -> Entry:
         date.fromisoformat(entry_date)
         if kind not in self.KINDS:
             raise ValueError(f"Tipo inválido: {kind}")
@@ -300,14 +312,91 @@ class Ledger:
         with self._connect() as db:
             cursor = db.execute("""
                 INSERT INTO entries(entry_date,kind,category,description,quantity,unit_price_cents,
-                                    amount_cents,payment_method,supplier_or_customer,notes,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                                    amount_cents,payment_method,supplier_or_customer,notes,created_at,unit_cost_cents)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
             """, (entry_date, kind, category.strip(), description.strip(), quantity,
                   unit_price_cents, amount_cents, payment_method,
                   (supplier_or_customer or "").strip() or None, (notes or "").strip() or None,
-                  datetime.now().isoformat(timespec="seconds")))
+                  datetime.now().isoformat(timespec="seconds"),unit_cost_cents))
             row = db.execute("SELECT * FROM entries WHERE id=?", (cursor.lastrowid,)).fetchone()
             return self._row_to_entry(row)
+
+    def product_unit_cost(self, product: dict) -> tuple[int | None,str]:
+        if product.get("unit_cost_cents") is not None:return product["unit_cost_cents"],"Produto"
+        recipes=[r for r in self.list_recipes() if r["product_name"]==product["name"]]
+        if not recipes:return None,"Pendente"
+        mix=self.list_mix()
+        chosen=next((m for m in mix if m["product_name"]==product["name"] and m["quantity"]>0 and m["version"]==m["selected_version"]),None)
+        if chosen:
+            recipe=self.recipe(chosen["recipe_id"])
+            if recipe:
+                result=self.recipe_cost(recipe["recipe_id"])
+                return result["unit_cost_cents"],"Ficha técnica" if result["unit_cost_cents"] is not None else "Pendente"
+        for recipe in recipes:
+            result=self.recipe_cost(recipe["recipe_id"])
+            if result["unit_cost_cents"] is not None:return result["unit_cost_cents"],"Ficha técnica estimada"
+        return None,"Pendente"
+
+    def record_pos_sale(self, *, entry_date: str, items: list[dict], payments: list[dict],
+                        customer: str | None = None, notes: str | None = None) -> dict:
+        date.fromisoformat(entry_date)
+        if not items:raise ValueError("Venda precisa conter pelo menos um item")
+        total=sum(int(item["amount_cents"]) for item in items)
+        active_payments=[p for p in payments if int(p.get("amount_cents",0))>0]
+        if sum(int(p["amount_cents"]) for p in active_payments)!=total:
+            raise ValueError("A soma de dinheiro, débito, crédito e Pix precisa ser igual ao total da venda")
+        allowed={"Dinheiro","Débito","Crédito","Pix"}
+        if any(p["method"] not in allowed or Decimal(str(p.get("fee_rate",0)))<0 for p in active_payments):
+            raise ValueError("Forma de pagamento ou taxa inválida")
+        group_id=uuid.uuid4().hex
+        payment_method=active_payments[0]["method"] if len(active_payments)==1 else "Misto"
+        fee=sum((Decimal(p["amount_cents"])*Decimal(str(p.get("fee_rate",0))) for p in active_payments),Decimal("0"))
+        now=datetime.now().isoformat(timespec="seconds")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("INSERT INTO sale_groups(group_id,entry_date,total_cents,created_at) VALUES(?,?,?,?)",(group_id,entry_date,total,now))
+            for item in items:
+                db.execute("""INSERT INTO entries(entry_date,kind,category,description,quantity,unit_price_cents,amount_cents,
+                    payment_method,supplier_or_customer,notes,created_at,unit_cost_cents) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (entry_date,"Venda",item["category"],item["name"],str(item["quantity"]),int(item["unit_price_cents"]),
+                     int(item["amount_cents"]),payment_method,customer or None,f"{notes or ''} [sale_group:{group_id}]".strip(),now,item.get("unit_cost_cents")))
+            for payment in active_payments:
+                db.execute("INSERT INTO sale_payments(group_id,method,amount_cents,fee_rate) VALUES(?,?,?,?)",
+                           (group_id,payment["method"],int(payment["amount_cents"]),str(payment.get("fee_rate",0))))
+        return {"group_id":group_id,"gross_cents":total,"fee_cents":int(fee.quantize(Decimal("1"),rounding=ROUND_HALF_UP)),
+                "net_cents":total-int(fee.quantize(Decimal("1"),rounding=ROUND_HALF_UP))}
+
+    def pos_report(self, start_date: str, end_date: str) -> dict:
+        date.fromisoformat(start_date);date.fromisoformat(end_date)
+        if start_date>end_date:raise ValueError("Data inicial deve ser anterior à final")
+        with self._connect() as db:
+            rows=db.execute("SELECT * FROM entries WHERE kind='Venda' AND entry_date BETWEEN ? AND ?",(start_date,end_date)).fetchall()
+            payments=db.execute("""SELECT p.* FROM sale_payments p JOIN sale_groups g USING(group_id)
+                WHERE g.entry_date BETWEEN ? AND ?""",(start_date,end_date)).fetchall()
+            legacy=db.execute("""SELECT payment_method,amount_cents FROM entries WHERE kind='Venda'
+                AND entry_date BETWEEN ? AND ? AND (notes IS NULL OR notes NOT LIKE '%[sale_group:%')""",(start_date,end_date)).fetchall()
+            daily=db.execute("""SELECT entry_date,SUM(amount_cents) gross_cents FROM entries WHERE kind='Venda'
+                AND entry_date BETWEEN ? AND ? GROUP BY entry_date ORDER BY entry_date""",(start_date,end_date)).fetchall()
+            products=db.execute("""SELECT description,SUM(CAST(quantity AS REAL)) quantity,SUM(amount_cents) gross_cents,
+                SUM(CASE WHEN unit_cost_cents IS NULL THEN 1 ELSE 0 END) missing_cost_lines,
+                SUM(CASE WHEN unit_cost_cents IS NULL THEN 0 ELSE CAST(quantity AS REAL)*unit_cost_cents END) cost_cents
+                FROM entries WHERE kind='Venda' AND entry_date BETWEEN ? AND ? GROUP BY description ORDER BY gross_cents DESC""",(start_date,end_date)).fetchall()
+        gross=sum(int(row["amount_cents"]) for row in rows)
+        known_cost=sum((Decimal(str(row["quantity"] or 0))*Decimal(row["unit_cost_cents"] or 0) for row in rows if row["unit_cost_cents"] is not None),Decimal("0"))
+        missing=sum(1 for row in rows if row["unit_cost_cents"] is None)
+        fee=sum((Decimal(row["amount_cents"])*Decimal(row["fee_rate"]) for row in payments),Decimal("0"))
+        rates={"Dinheiro":Decimal("0"),"Pix":Decimal("0"),"Débito":Decimal(str(self.parameters().get("pos_debit_rate",{}).get("value","0.0139"))),
+               "Crédito":Decimal(str(self.parameters().get("pos_credit_rate",{}).get("value","0.0334")))}
+        for row in legacy:fee+=Decimal(row["amount_cents"])*rates.get(row["payment_method"],Decimal("0"))
+        fee_cents=int(fee.quantize(Decimal("1"),rounding=ROUND_HALF_UP));cost_cents=int(known_cost.quantize(Decimal("1"),rounding=ROUND_HALF_UP))
+        by_method={m:0 for m in ("Dinheiro","Débito","Crédito","Pix")}
+        for p in payments:by_method[p["method"]]=by_method.get(p["method"],0)+int(p["amount_cents"])
+        for row in legacy:
+            if row["payment_method"] in by_method:by_method[row["payment_method"]]+=int(row["amount_cents"])
+        return {"gross_cents":gross,"fees_cents":fee_cents,"net_cents":gross-fee_cents,
+                "known_cost_cents":cost_cents,"profit_cents":gross-fee_cents-cost_cents,"missing_cost_lines":missing,
+                "payments":by_method,"daily":[dict(row) for row in daily],"products":[dict(row) for row in products],
+                "entries_count":len(rows)}
 
     def list_entries(self, *, start_date: str | None = None, end_date: str | None = None,
                      kind: str | None = None, limit: int = 1000) -> list[Entry]:
@@ -334,7 +423,18 @@ class Ledger:
 
     def delete_entry(self, entry_id: int) -> bool:
         with self._connect() as db:
+            row = db.execute("SELECT notes FROM entries WHERE id=?", (entry_id,)).fetchone()
+            if not row:
+                return False
             cursor = db.execute("DELETE FROM entries WHERE id=?", (entry_id,))
+            if row["notes"]:
+                marker = "[sale_group:"
+                start = row["notes"].find(marker)
+                if start >= 0:
+                    group_id = row["notes"][start + len(marker):].split("]", 1)[0]
+                    remaining = db.execute("SELECT COUNT(*) FROM entries WHERE notes LIKE ?", (f"%{marker}{group_id}]%",)).fetchone()[0]
+                    if remaining == 0:
+                        db.execute("DELETE FROM sale_groups WHERE group_id=?", (group_id,))
             return cursor.rowcount > 0
 
     def delete_ingredient(self, name: str) -> None:
@@ -351,17 +451,19 @@ class Ledger:
             db.execute("DELETE FROM recipes WHERE recipe_id=?", (recipe_id,))
 
     def upsert_product(self, *, product_id: str, name: str, category: str, unit: str = "un",
-                       sale_price_cents: int | None = None, active: bool = True, notes: str | None = None) -> None:
+                       sale_price_cents: int | None = None, unit_cost_cents: int | None = None,
+                       active: bool = True, notes: str | None = None) -> None:
         if not product_id.strip() or not name.strip() or not category.strip():
             raise ValueError("ID, nome e categoria do produto são obrigatórios")
         if sale_price_cents is not None and sale_price_cents < 0:
             raise ValueError("Preço de venda não pode ser negativo")
+        if unit_cost_cents is not None and unit_cost_cents < 0:raise ValueError("Custo unitário não pode ser negativo")
         with self._connect() as db:
-            db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,active,notes)
-                VALUES(?,?,?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET name=excluded.name,
+            db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,unit_cost_cents,active,notes)
+                VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET name=excluded.name,
                 category=excluded.category,unit=excluded.unit,sale_price_cents=excluded.sale_price_cents,
-                active=excluded.active,notes=excluded.notes""",
-                (product_id.strip(),name.strip(),category.strip(),unit,sale_price_cents,int(active),notes))
+                unit_cost_cents=excluded.unit_cost_cents,active=excluded.active,notes=excluded.notes""",
+                (product_id.strip(),name.strip(),category.strip(),unit,sale_price_cents,unit_cost_cents,int(active),notes))
 
     def list_products(self, active_only: bool = False) -> list[dict]:
         query="SELECT * FROM products" + (" WHERE active=1" if active_only else "") + " ORDER BY category,name"
@@ -460,10 +562,11 @@ class Ledger:
                 db.executemany("INSERT INTO recipe_lines(recipe_id,ingredient_name,quantity,unit,stage) VALUES(?,?,?,?,?)",
                     [(recipe["recipe_id"],line["ingredient_name"],str(line["quantity"]),line["unit"],line.get("stage")) for line in recipe["lines"]])
             for product in products:
-                db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,active,notes) VALUES(?,?,?,?,?,?,?)
+                db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,unit_cost_cents,active,notes) VALUES(?,?,?,?,?,?,?,?)
                     ON CONFLICT(product_id) DO UPDATE SET name=excluded.name,category=excluded.category,unit=excluded.unit,
-                    sale_price_cents=excluded.sale_price_cents,active=excluded.active,notes=excluded.notes""",
-                    (product["product_id"],product["name"],product["category"],product.get("unit","un"),product.get("sale_price_cents"),int(product.get("active",True)),product.get("notes")))
+                    sale_price_cents=excluded.sale_price_cents,unit_cost_cents=excluded.unit_cost_cents,
+                    active=excluded.active,notes=excluded.notes""",
+                    (product["product_id"],product["name"],product["category"],product.get("unit","un"),product.get("sale_price_cents"),product.get("unit_cost_cents"),int(product.get("active",True)),product.get("notes")))
             for key,value in params.items():
                 db.execute("""INSERT INTO parameters(name,value,unit,status) VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET
                     value=excluded.value,unit=excluded.unit,status=excluded.status""",

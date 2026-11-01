@@ -102,3 +102,47 @@ def test_json_import_rejects_invalid_recipe_atomically_and_keeps_ledger(tmp_path
     with pytest.raises(ValueError):ledger.import_configuration(payload)
     assert [x["name"] for x in ledger.list_ingredients()]==["Leite"]
     assert len(ledger.list_entries())==1
+
+
+def test_pos_sale_split_fees_cost_and_period_report(tmp_path):
+    ledger = Ledger(tmp_path / "pos.db")
+    sale = ledger.record_pos_sale(
+        entry_date="2026-11-01",
+        items=[
+            {"name": "Salgado", "category": "Salgados", "quantity": "2", "unit_price_cents": 1000,
+             "amount_cents": 2000, "unit_cost_cents": 400},
+            {"name": "Monster", "category": "Bebidas", "quantity": "1", "unit_price_cents": 1200,
+             "amount_cents": 1200, "unit_cost_cents": 500},
+        ],
+        payments=[
+            {"method": "Dinheiro", "amount_cents": 500, "fee_rate": "0"},
+            {"method": "Débito", "amount_cents": 1000, "fee_rate": "0.02"},
+            {"method": "Crédito", "amount_cents": 1000, "fee_rate": "0.04"},
+            {"method": "Pix", "amount_cents": 700, "fee_rate": "0"},
+        ],
+    )
+    assert sale["gross_cents"] == 3200
+    assert sale["fee_cents"] == 60
+    assert sale["net_cents"] == 3140
+    report = ledger.pos_report("2026-11-01", "2026-11-01")
+    assert report["gross_cents"] == 3200
+    assert report["fees_cents"] == 60
+    assert report["known_cost_cents"] == 1300
+    assert report["profit_cents"] == 1840
+    assert report["payments"] == {"Dinheiro": 500, "Débito": 1000, "Crédito": 1000, "Pix": 700}
+    assert len(ledger.list_entries(kind="Venda")) == 2
+
+
+def test_pos_sale_requires_payment_split_and_removes_group_with_deleted_line(tmp_path):
+    ledger = Ledger(tmp_path / "pos-integrity.db")
+    item = {"name": "Doce", "category": "Doces", "quantity": "1", "unit_price_cents": 500, "amount_cents": 500}
+    with pytest.raises(ValueError, match="soma"):
+        ledger.record_pos_sale(entry_date="2026-11-01", items=[item],
+                               payments=[{"method": "Pix", "amount_cents": 400, "fee_rate": "0"}])
+    ledger.record_pos_sale(entry_date="2026-11-01", items=[item],
+                           payments=[{"method": "Pix", "amount_cents": 500, "fee_rate": "0"}])
+    entry = ledger.list_entries(kind="Venda")[0]
+    assert ledger.delete_entry(entry.id)
+    report = ledger.pos_report("2026-11-01", "2026-11-01")
+    assert report["fees_cents"] == 0
+    assert report["gross_cents"] == 0

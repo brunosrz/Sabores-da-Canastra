@@ -208,7 +208,7 @@ class LedgerApp(tk.Tk):
         left.bind("<Leave>",lambda _e:left_canvas.unbind_all("<MouseWheel>"))
         tk.Label(left, text="Novo lançamento", bg=PANEL, fg=INK,
                  font=("Segoe UI", 15, "bold")).pack(anchor="w", pady=(0, 14))
-        self.kind = tk.StringVar(value="Venda")
+        self.kind = tk.StringVar(value="Compra")
         self.entry_date = tk.StringVar(value=date.today().isoformat())
         self.category = tk.StringVar(value="Salgados")
         self.description = tk.StringVar()
@@ -223,7 +223,7 @@ class LedgerApp(tk.Tk):
         self.sale_qty=tk.StringVar(value="1")
         self.sale_price=tk.StringVar()
         self.sale_cart=[]
-        self._field(left, "Tipo", ttk.Combobox(left, textvariable=self.kind, values=["Venda", "Compra", "Gasto"], state="readonly"))
+        self._field(left, "Tipo", ttk.Combobox(left, textvariable=self.kind, values=["Compra", "Gasto"], state="readonly"))
         self._field(left, "Data (AAAA-MM-DD)", ttk.Entry(left, textvariable=self.entry_date))
         self.category_combo = ttk.Combobox(left, textvariable=self.category, values=self._suggestions("Venda"))
         self._field(left, "Categoria", self.category_combo)
@@ -245,7 +245,7 @@ class LedgerApp(tk.Tk):
         for col,label,width in [("name","Produto",140),("qty","Qtd",40),("price","Unit.",70),("total","Total",75)]:self.sale_cart_tree.heading(col,text=label);self.sale_cart_tree.column(col,width=width)
         self.sale_cart_tree.pack(fill="x")
         tk.Button(self.sale_items_frame,text="Remover item selecionado",command=self.remove_sale_item,bg="#F8E9E6",fg=RED,relief="flat",padx=7,pady=4).pack(anchor="e",pady=(3,0))
-        self.sale_items_frame.pack(fill="x",pady=(0,8))
+        # Sales are registered in the dedicated `sabores-pdv` application.
         numbers = tk.Frame(left, bg=PANEL)
         numbers.pack(fill="x", pady=(0, 9))
         self._mini_field(numbers, "Quantidade", self.quantity, 11)
@@ -257,6 +257,7 @@ class LedgerApp(tk.Tk):
         self._field(left, "Fornecedor / cliente", ttk.Entry(left, textvariable=self.counterparty))
         self._field(left, "Observação", ttk.Entry(left, textvariable=self.notes))
         self.kind.trace_add("write", self._kind_changed)
+        self._kind_changed()
         self.sale_category.trace_add("write",lambda *_:self.refresh_sale_products())
         self.amount.trace_add("write", self._calculate_total)
         self.quantity.trace_add("write", self._calculate_total)

@@ -21,6 +21,7 @@ package = true
 [project.scripts]
 sabores = "sabores.cli:main"
 sabores-desktop = "sabores.desktop:main"
+sabores-pdv = "sabores.pos:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

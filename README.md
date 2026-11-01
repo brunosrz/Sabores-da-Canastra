@@ -4,8 +4,10 @@ Aplicativo desktop local para registrar a operação diária e acompanhar custos
 
 ## Recursos
 
-- Caixa do dia com total de vendas, compras, gastos e saldo.
-- Venda em cesta com vários sabores de salgado, refrigerantes, energéticos, doces e molhos; quantidade e preço por item são registrados separadamente no ledger.
+- PDV em aplicativo desktop separado para registrar cestas de produtos e vendas, ligado ao mesmo banco SQLite do caixa.
+- Divisão de cada venda entre dinheiro, débito, crédito e Pix, com taxas editáveis de cartão e total bruto, taxas, recebido líquido e lucro estimado.
+- Relatórios de vendas por período com calendário, comparação com período anterior de mesma duração, gráficos diários e detalhamento por produto e pagamento.
+- Cardápio inicial com Monster 473 ml por R$ 12,00 e refrigerantes 350 ml por R$ 6,00, em sabores cadastrados no catálogo.
 - Registro de lançamentos datados, com categoria, descrição, quantidade, preço unitário, valor total, forma de pagamento e fornecedor/cliente.
 - Histórico filtrável por período e tipo, exclusão de lançamento selecionado.
 - Banco SQLite local em `%USERPROFILE%\.sabores-da-canastra\sabores.db`.
@@ -25,6 +27,14 @@ uv sync --group dev
 uv run sabores-desktop
 ```
 
+O comando acima abre o aplicativo de **compras, gastos, custos, receitas e histórico**. Para abrir o ponto de venda separado, use:
+
+```powershell
+uv run sabores-pdv
+```
+
+Os dois aplicativos usam `%USERPROFILE%\.sabores-da-canastra\sabores.db`; venda lançada no PDV aparece no mesmo histórico do caixa. Configure as taxas de débito e crédito na tela do PDV.
+
 Alternativas:
 
 ```powershell
@@ -39,11 +49,10 @@ O app cria o banco automaticamente na primeira execução. A primeira abertura i
 
 ## Uso diário
 
-1. Abra o app e registre cada venda, compra de mercadoria ou gasto quando ocorrer.
-2. Se houver quantidade e preço unitário, preencha ambos para calcular o total; também é possível lançar apenas o valor total.
-3. Selecione data, categoria, forma de pagamento e, quando útil, fornecedor ou cliente.
-4. O resumo do topo acompanha o dia atual; o histórico permite consultar outros períodos e filtrar o tipo.
-5. O saldo é vendas menos compras e gastos registrados. É uma visão de caixa dos lançamentos, não apuração contábil, lucro líquido ou posição de estoque.
+1. Use `uv run sabores-pdv` para lançar vendas e dividir recebimentos entre as quatro formas de pagamento.
+2. Use `uv run sabores-desktop` para registrar compras e gastos, editar ingredientes, produtos e receitas e consultar o histórico comum.
+3. Informe custo unitário ou complete a ficha técnica para que o PDV estime o lucro; enquanto faltar custo, o relatório sinaliza lucro parcial.
+4. Escolha datas específicas ou atalhos de hoje, semana e mês para comparar venda bruta, taxas e líquido com o período anterior.
 
 Valores são guardados em centavos inteiros no SQLite para evitar erros de ponto flutuante. Datas são armazenadas como `AAAA-MM-DD` e validadas. Lançamentos são registros reais informados pelo usuário; não são gerados a partir das metas de planejamento.
 
@@ -52,7 +61,8 @@ O contrato de importação/exportação e exemplos estão em [docs/json-contract
 ## Estrutura
 
 - `src/sabores/database.py`: persistência SQLite e consultas agregadas por dia/mês.
-- `src/sabores/desktop.py`: interface desktop Tkinter.
+- `src/sabores/desktop.py`: caixa de compras/gastos, custos, receitas e configuração.
+- `src/sabores/pos.py`: aplicativo desktop de ponto de venda e relatórios de vendas.
 - `src/sabores/finance.py`: cálculos reutilizáveis.
 - `src/sabores/workbook.py`: manutenção/validação da planilha legada e painel financeiro.
 - `src/sabores/cli.py`: comandos.

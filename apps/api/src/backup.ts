@@ -3,6 +3,7 @@ import {
   type WorkflowEvent,
   type WorkflowStep,
 } from "cloudflare:workers";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 type BackupEnv = {
   PRIVATE_FILES: R2Bucket;
@@ -15,7 +16,12 @@ type BackupEnv = {
 type ExportResult = {
   success?: boolean;
   errors?: Array<{ message?: string }>;
-  result?: { at_bookmark?: string; signed_url?: string; filename?: string };
+  result?: {
+    at_bookmark?: string;
+    status?: "complete" | "error";
+    error?: string;
+    result?: { signed_url?: string; filename?: string };
+  };
 };
 
 export interface BackupManifest {
@@ -30,9 +36,10 @@ export interface BackupManifest {
   restore: string;
 }
 
-export function backupPrefix(bookmark: string): string {
+export function backupPrefix(bookmark: string, runId = bookmark): string {
   const safeBookmark = bookmark.replace(/[^A-Za-z0-9_-]/g, "_");
-  return `backups/d1/${safeBookmark}`;
+  const safeRunId = runId.replace(/[^A-Za-z0-9_-]/g, "_");
+  return `backups/d1/${safeBookmark}-${safeRunId}`;
 }
 
 export function backupExpired(
@@ -47,8 +54,63 @@ export function backupExpired(
   );
 }
 
-export async function verifyBackupContent(
-  content: ArrayBuffer,
+type StreamDigest = { size: number; sha256: string };
+
+function digestHex(value: Uint8Array): string {
+  return [...value].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function hashStream(
+  stream: ReadableStream<Uint8Array>,
+): Promise<StreamDigest> {
+  const hasher = sha256.create();
+  const reader = stream.getReader();
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      hasher.update(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { size, sha256: digestHex(hasher.digest()) };
+}
+
+function hashWhileStreaming(stream: ReadableStream<Uint8Array>): {
+  stream: ReadableStream<Uint8Array>;
+  digest: Promise<StreamDigest>;
+} {
+  const hasher = sha256.create();
+  let size = 0;
+  let resolveDigest!: (digest: StreamDigest) => void;
+  let rejectDigest!: (error: unknown) => void;
+  const digest = new Promise<StreamDigest>((resolve, reject) => {
+    resolveDigest = resolve;
+    rejectDigest = reject;
+  });
+  const transformed = stream.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        size += chunk.byteLength;
+        hasher.update(chunk);
+        controller.enqueue(chunk);
+      },
+      flush() {
+        resolveDigest({ size, sha256: digestHex(hasher.digest()) });
+      },
+      cancel(reason) {
+        rejectDigest(reason);
+      },
+    }),
+  );
+  return { stream: transformed, digest };
+}
+
+export async function verifyBackupStream(
+  content: ReadableStream<Uint8Array>,
   manifestText: string,
   expectedKey: string,
 ): Promise<boolean> {
@@ -58,19 +120,72 @@ export async function verifyBackupContent(
   } catch {
     return false;
   }
+  if (!manifest || typeof manifest !== "object") return false;
   if (
     manifest.contract !== "sabores-da-canastra/d1-backup" ||
     manifest.contract_version !== 1 ||
     manifest.sql_key !== expectedKey ||
-    manifest.size_bytes !== content.byteLength
+    !Number.isSafeInteger(manifest.size_bytes) ||
+    manifest.size_bytes < 0 ||
+    !/^[a-f0-9]{64}$/.test(manifest.sha256)
   ) {
     return false;
   }
-  const digest = await crypto.subtle.digest("SHA-256", content);
-  const actual = [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-  return actual === manifest.sha256;
+  const actual = await hashStream(content);
+  return (
+    actual.size === manifest.size_bytes && actual.sha256 === manifest.sha256
+  );
+}
+
+export async function putImmutableBackupStream(
+  bucket: R2Bucket,
+  key: string,
+  body: ReadableStream<Uint8Array>,
+  contentType: string,
+  expectedDigest: StreamDigest,
+  extraMetadata: Record<string, string> = {},
+): Promise<void> {
+  const existing = await bucket.get(key);
+  if (existing) {
+    if (
+      existing.size === expectedDigest.size &&
+      existing.customMetadata?.sha256 === expectedDigest.sha256
+    ) {
+      await body.cancel();
+      return;
+    }
+    throw new Error(`Backup key already contains different content: ${key}`);
+  }
+  const hashed = hashWhileStreaming(body);
+  const fixedLength = new FixedLengthStream(expectedDigest.size);
+  const upload = bucket.put(key, fixedLength.readable, {
+    onlyIf: { etagDoesNotMatch: "*" },
+    httpMetadata: { contentType },
+    customMetadata: { ...extraMetadata, sha256: expectedDigest.sha256 },
+  });
+  await Promise.all([hashed.stream.pipeTo(fixedLength.writable), upload]);
+  const created = await upload;
+  const actual = await hashed.digest;
+  if (
+    actual.size !== expectedDigest.size ||
+    actual.sha256 !== expectedDigest.sha256
+  ) {
+    if (created) await bucket.delete(key);
+    throw new Error(
+      "O SQL exportado mudou entre as leituras de validação e gravação.",
+    );
+  }
+  if (created) return;
+  const raced = await bucket.get(key);
+  if (
+    !raced ||
+    raced.size !== expectedDigest.size ||
+    raced.customMetadata?.sha256 !== expectedDigest.sha256
+  ) {
+    throw new Error(
+      `Backup key was concurrently written with different content: ${key}`,
+    );
+  }
 }
 
 export async function putImmutableBackupObject(
@@ -135,7 +250,7 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
         body: JSON.stringify({ output_format: "polling" }),
       });
       const body = (await response.json()) as ExportResult;
-      if (!response.ok || !body.result?.at_bookmark) {
+      if (!response.ok || body.success === false || !body.result?.at_bookmark) {
         throw new Error(
           body.errors?.[0]?.message ?? "API D1 não iniciou a exportação.",
         );
@@ -151,14 +266,29 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
           const response = await fetch(endpoint, {
             method: "POST",
             headers,
-            body: JSON.stringify({ current_bookmark: bookmark }),
+            body: JSON.stringify({
+              output_format: "polling",
+              current_bookmark: bookmark,
+            }),
           });
           const body = (await response.json()) as ExportResult;
-          if (!response.ok)
+          if (!response.ok || body.success === false)
             throw new Error(
               body.errors?.[0]?.message ?? "Falha consultando exportação D1.",
             );
-          return body.result?.signed_url;
+          if (body.result?.status === "error") {
+            throw new Error(body.result.error ?? "A exportação D1 falhou.");
+          }
+          if (body.result?.status === "complete") {
+            const url = body.result.result?.signed_url;
+            if (!url) {
+              throw new Error(
+                "Exportação D1 concluída sem URL para baixar o SQL.",
+              );
+            }
+            return url;
+          }
+          return undefined;
         },
       );
       if (!signedUrl)
@@ -171,12 +301,12 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
       const dumpResponse = await fetch(signedUrl);
       if (!dumpResponse.ok)
         throw new Error("Falha ao baixar SQL exportado do D1.");
-      const dump = await dumpResponse.arrayBuffer();
-      const hash = await crypto.subtle.digest("SHA-256", dump);
-      const sha256 = [...new Uint8Array(hash)]
-        .map((byte) => byte.toString(16).padStart(2, "0"))
-        .join("");
-      const prefix = backupPrefix(bookmark);
+      if (!dumpResponse.body) throw new Error("Exportação D1 sem corpo SQL.");
+      const firstDigest = await hashStream(dumpResponse.body);
+      const uploadResponse = await fetch(signedUrl);
+      if (!uploadResponse.ok || !uploadResponse.body)
+        throw new Error("Falha ao reabrir SQL exportado para gravação no R2.");
+      const prefix = backupPrefix(bookmark, event.instanceId);
       const sqlKey = `${prefix}.sql`;
       const manifestKey = `${prefix}.json`;
       const manifest = {
@@ -186,16 +316,17 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
         bookmark,
         created_at: event.timestamp.toISOString(),
         sql_key: sqlKey,
-        size_bytes: dump.byteLength,
-        sha256,
+        size_bytes: firstDigest.size,
+        sha256: firstDigest.sha256,
         restore:
           "Verifique SHA-256 e importe o arquivo SQL em um D1 isolado antes de substituir qualquer banco.",
       };
-      await putImmutableBackupObject(
+      await putImmutableBackupStream(
         this.env.PRIVATE_FILES,
         sqlKey,
-        dump,
+        uploadResponse.body,
         "application/sql",
+        firstDigest,
         { bookmark },
       );
       await putImmutableBackupObject(
@@ -203,7 +334,7 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
         manifestKey,
         JSON.stringify(manifest, null, 2),
         "application/json",
-        { bookmark, sql_sha256: sha256 },
+        { bookmark, sql_sha256: firstDigest.sha256 },
       );
 
       const retentionDays = Number(this.env.BACKUP_RETENTION_DAYS || "90");

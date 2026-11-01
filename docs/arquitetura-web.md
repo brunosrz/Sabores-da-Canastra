@@ -128,6 +128,10 @@ lotes transacionais protegem contra reenvio. KV guarda apenas cache de catálogo
 com TTL e fallback para D1; nunca participa de cálculo financeiro. R2 guarda
 backups privados SQL e manifestos SHA-256, baixados por rota autenticada. O
 Durable Object serializa vendas por chave e D1 guarda o hash e o recibo de
-idempotência. Workflows exportam D1 e aplicam retenção em R2. D1 Time Travel
-permite recuperação pontual sem depender do backup agendado. Alertas externos
-dependem do provisionamento futuro da conta.
+idempotência. Workflows exportam D1 em streaming e aplicam retenção em R2. A
+exportação oficial pode bloquear consultas e gravações durante a operação; o
+horário configurado para a rotina diária é 06:00 UTC, e a rota manual deve ser
+usada na mesma janela operacional. Confirme que esse horário está fora do
+expediente antes de ativar produção. D1 Time Travel é a primeira opção para
+recuperações pontuais. Alertas externos dependem do provisionamento futuro da
+conta.

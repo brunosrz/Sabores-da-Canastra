@@ -36,6 +36,12 @@ const VALID_PAYMENT_METHODS = new Set([
   "Outro",
 ]);
 
+function isOptionalText(value: unknown, maxLength: number): boolean {
+  return (
+    value == null || (typeof value === "string" && value.length <= maxLength)
+  );
+}
+
 function isMoney(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
@@ -43,6 +49,8 @@ function isMoney(value: unknown): value is number {
 export function validateSale(input: unknown): input is SaleInput {
   if (!input || typeof input !== "object") return false;
   const sale = input as Partial<SaleInput>;
+  if (!isOptionalText(sale.customer, 200)) return false;
+  if (!isOptionalText(sale.notes, 2000)) return false;
   if (
     !sale.occurred_on ||
     !/^\d{4}-\d{2}-\d{2}$/.test(sale.occurred_on) ||
@@ -73,6 +81,8 @@ export function validateSale(input: unknown): input is SaleInput {
       return false;
     if (typeof item.category !== "string" || !item.category.trim())
       return false;
+    if (item.category.length > 100) return false;
+    if (!isOptionalText(item.product_id, 200)) return false;
     if (
       !Number.isFinite(item.quantity) ||
       item.quantity <= 0 ||
@@ -84,7 +94,9 @@ export function validateSale(input: unknown): input is SaleInput {
       return false;
   }
   for (const payment of sale.payments) {
+    if (!payment || typeof payment !== "object") return false;
     if (!VALID_PAYMENT_METHODS.has(payment.method)) return false;
+    if (!isOptionalText(payment.method_label, 100)) return false;
     if (!isMoney(payment.amount_cents) || !isMoney(payment.fee_cents))
       return false;
     if (

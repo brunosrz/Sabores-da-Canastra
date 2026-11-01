@@ -4,8 +4,11 @@ import app from "../src/index";
 import {
   backupExpired,
   backupPrefix,
+  hashStream,
+  putImmutableBackupStream,
   putImmutableBackupObject,
 } from "../src/backup";
+import { validateSale } from "../src/sales";
 
 const bindings = env as unknown as Cloudflare.Env;
 const payload = {
@@ -30,6 +33,49 @@ const payload = {
 };
 
 describe("bindings Cloudflare locais", () => {
+  it("recusa token inválido no catálogo antes de consultar D1", async () => {
+    const prepare = vi.fn();
+    const response = await app.request(
+      "https://api.example.test/api/catalog/products",
+      { headers: { authorization: "Bearer outro-token" } },
+      {
+        DB: { prepare },
+        CATALOG_CACHE: {},
+        CATALOG_READ_TOKEN: "catalog-secret-for-test",
+      } as unknown as Cloudflare.Env,
+    );
+    expect(response.status).toBe(401);
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it("permite leitura do catálogo com o token correto", async () => {
+    const response = await app.request(
+      "https://api.example.test/api/catalog/products",
+      { headers: { authorization: "Bearer catalog-secret-for-test" } },
+      { ...bindings, CATALOG_READ_TOKEN: "catalog-secret-for-test" },
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("valida campos opcionais e pagamentos malformados antes de somar", () => {
+    expect(validateSale({ ...payload, payments: [null] })).toBe(false);
+    expect(validateSale({ ...payload, customer: { nome: "cliente" } })).toBe(
+      false,
+    );
+    expect(
+      validateSale({
+        ...payload,
+        items: [{ ...payload.items[0], product_id: [] }],
+      }),
+    ).toBe(false);
+    expect(
+      validateSale({
+        ...payload,
+        payments: [{ ...payload.payments[0], method_label: 123 }],
+      }),
+    ).toBe(false);
+  });
+
   it("protege a leitura de preços e custos do catálogo", async () => {
     const prepare = vi.fn();
     const apiBindings = {
@@ -46,6 +92,7 @@ describe("bindings Cloudflare locais", () => {
   });
 
   it("usa KV versionado como cache descartável e invalida sem afetar D1", async () => {
+    await bindings.CATALOG_CACHE.delete("catalog:v1:products:active");
     const id = crypto.randomUUID();
     await bindings.DB.prepare(
       "INSERT INTO categories (category_id, name, created_at) VALUES (?, ?, ?)",
@@ -203,10 +250,25 @@ describe("bindings Cloudflare locais", () => {
     warning.mockRestore();
   });
 
+  it("ignora valores de cache que não sejam arrays", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { listProducts } = await import("../src/catalog-cache");
+    const all = vi.fn(async () => ({ results: [{ product_id: "p1" }] }));
+    const db = { prepare: vi.fn(() => ({ all })) } as unknown as D1Database;
+    const cache = {
+      get: vi.fn(async () => ({ invalid: true })),
+      put: vi.fn(async () => {}),
+    } as unknown as KVNamespace;
+    const response = await listProducts(db, cache);
+    expect(response).toEqual({ data: [{ product_id: "p1" }], source: "d1" });
+    expect(db.prepare).toHaveBeenCalledOnce();
+    warning.mockRestore();
+  });
+
   it("limita caminhos de backup e calcula retenção pela idade", () => {
     const now = new Date("2026-11-01T00:00:00.000Z");
-    expect(backupPrefix("bookmark:with/slashes")).toBe(
-      "backups/d1/bookmark_with_slashes",
+    expect(backupPrefix("bookmark:with/slashes", "workflow-123")).toBe(
+      "backups/d1/bookmark_with_slashes-workflow-123",
     );
     expect(backupExpired("2026-09-30T00:00:00.000Z", now, 30)).toBe(true);
     expect(backupExpired("2026-10-31T00:00:00.000Z", now, 30)).toBe(false);
@@ -234,5 +296,22 @@ describe("bindings Cloudflare locais", () => {
         "application/sql",
       ),
     ).rejects.toThrow("Backup key already contains different content");
+  });
+
+  it("valida e grava SQL grande em fluxo sem buffer completo", async () => {
+    const key = `backups/d1/stream-${crypto.randomUUID()}.sql`;
+    const makeStream = () =>
+      new Blob(["SELECT ", "1;"]).stream() as ReadableStream<Uint8Array>;
+    const expected = await hashStream(makeStream());
+    await putImmutableBackupStream(
+      bindings.PRIVATE_FILES,
+      key,
+      makeStream(),
+      "application/sql",
+      expected,
+    );
+    const object = await bindings.PRIVATE_FILES.get(key);
+    expect(await object?.text()).toBe("SELECT 1;");
+    expect(object?.customMetadata?.sha256).toBe(expected.sha256);
   });
 });

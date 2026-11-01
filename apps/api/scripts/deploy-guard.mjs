@@ -23,6 +23,9 @@ const values = [
   kv?.id,
   bucket?.bucket_name,
   target.workflows?.[0]?.name,
+  target.vars?.BACKUP_ACCOUNT_ID,
+  target.vars?.BACKUP_DATABASE_ID,
+  target.vars?.BACKUP_RETENTION_DAYS,
 ];
 const exampleIds = new Set([
   "00000000-0000-0000-0000-000000000001",

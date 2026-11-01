@@ -158,7 +158,7 @@ jobs:
           pnpm db:migrate:local
 
       - name: Validate local D1 restore from private backup contract
-        run: pnpm --filter @sabores/api db:restore:validate -- test/fixtures/backup-validation.sql test/fixtures/backup-validation.json
+        run: pnpm --filter @sabores/api db:restore:validate -- apps/api/test/fixtures/backup-validation.sql apps/api/test/fixtures/backup-validation.json
 
       - name: Build API Worker
         run: pnpm build:api

@@ -59,4 +59,82 @@ describe("rotas locais da API", () => {
     );
     expect(response.status).toBe(404);
   });
+
+  it("reaproveita instância do Workflow quando o mesmo ID é reenviado", async () => {
+    const create = vi.fn(async () => {
+      throw new Error("Instance ID already exists");
+    });
+    const get = vi.fn(async (id: string) => ({
+      id,
+      status: async () => ({ status: "complete" as const }),
+    }));
+    const response = await app.request(
+      "https://api.example.test/api/backups/run",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer backup-token",
+          "idempotency-key": "retry-1234",
+        },
+      },
+      {
+        DB: {} as D1Database,
+        PRIVATE_FILES: {} as R2Bucket,
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
+        D1_BACKUP: { create, get } as unknown as Workflow,
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      id: "manual-retry-1234",
+      status: "complete",
+    });
+    expect(get).toHaveBeenCalledWith("manual-retry-1234");
+  });
+
+  it("rejeita chave do Workflow que não respeita o formato permitido", async () => {
+    const create = vi.fn();
+    const response = await app.request(
+      "https://api.example.test/api/backups/run",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer backup-token",
+          "idempotency-key": "invalid:key",
+        },
+      },
+      {
+        DB: {} as D1Database,
+        PRIVATE_FILES: {} as R2Bucket,
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
+        D1_BACKUP: { create } as unknown as Workflow,
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("direciona exportação de D1 local ao utilitário local", async () => {
+    const create = vi.fn();
+    const response = await app.request(
+      "https://api.example.test/api/backups/run",
+      {
+        method: "POST",
+        headers: { authorization: "Bearer backup-token" },
+      },
+      {
+        DB: {} as D1Database,
+        PRIVATE_FILES: {} as R2Bucket,
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
+        BACKUP_ACCOUNT_ID: "local",
+        BACKUP_DATABASE_ID: "local",
+        D1_BACKUP: { create } as unknown as Workflow,
+      },
+    );
+    expect(response.status).toBe(409);
+    expect(create).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining("db:backup:local"),
+    });
+  });
 });

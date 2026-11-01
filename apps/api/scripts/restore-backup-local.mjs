@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -13,14 +14,22 @@ if (!sqlPath || !manifestPath) {
   );
 }
 
-const sql = await readFile(resolve(sqlPath));
-const manifest = JSON.parse(await readFile(resolve(manifestPath), "utf8"));
+const baseDir = process.env.INIT_CWD ?? process.cwd();
+const resolvedSqlPath = resolve(baseDir, sqlPath);
+const resolvedManifestPath = resolve(baseDir, manifestPath);
+const sql = await readFile(resolvedSqlPath);
+const manifest = JSON.parse(await readFile(resolvedManifestPath, "utf8"));
 const sha256 = createHash("sha256").update(sql).digest("hex");
 if (
+  !manifest ||
+  typeof manifest !== "object" ||
   manifest.contract !== "sabores-da-canastra/d1-backup" ||
   manifest.contract_version !== 1 ||
-  basename(manifest.sql_key) !== basename(sqlPath) ||
+  typeof manifest.sql_key !== "string" ||
+  !manifest.sql_key.startsWith("backups/d1/") ||
+  !Number.isSafeInteger(manifest.size_bytes) ||
   manifest.size_bytes !== sql.byteLength ||
+  typeof manifest.sha256 !== "string" ||
   manifest.sha256 !== sha256
 ) {
   throw new Error(
@@ -28,6 +37,9 @@ if (
   );
 }
 
+const persistPath = await mkdtemp(
+  resolve(tmpdir(), "sabores-canastra-restore-"),
+);
 const result = spawnSync(
   process.execPath,
   [
@@ -39,12 +51,16 @@ const result = spawnSync(
     "sabores-canastra-restore-validation",
     "--local",
     "--config",
-    "scripts/restore-validation.wrangler.jsonc",
+    fileURLToPath(
+      new URL("./restore-validation.wrangler.jsonc", import.meta.url),
+    ),
     "--file",
-    resolve(sqlPath),
+    resolvedSqlPath,
+    "--persist-to",
+    persistPath,
   ],
   { stdio: "inherit" },
 );
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
-console.log("Backup íntegro restaurado no D1 local isolado de validação.");
+console.log(`Backup íntegro restaurado no D1 temporário: ${persistPath}`);

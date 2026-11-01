@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { importBundle } from "./import";
 import { invalidateCatalogCache, listProducts } from "./catalog-cache";
-import { verifyBackupContent } from "./backup";
+import { verifyBackupStream } from "./backup";
 export { SaleCoordinator } from "./sale-coordinator";
 export { D1BackupWorkflow } from "./backup";
 
@@ -12,12 +12,35 @@ type Bindings = {
   SALE_COORDINATOR: DurableObjectNamespace;
   D1_BACKUP: Workflow;
   BACKUP_DOWNLOAD_TOKEN?: string;
+  BACKUP_ACCOUNT_ID?: string;
+  BACKUP_DATABASE_ID?: string;
   PDV_WRITE_TOKEN?: string;
   CATALOG_READ_TOKEN?: string;
   LOCAL_IMPORT_TOKEN?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+async function bearerMatches(
+  authorization: string | undefined,
+  expectedToken: string | undefined,
+): Promise<boolean> {
+  if (!authorization || !expectedToken) return false;
+  const actual = authorization.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : "";
+  const [actualDigest, expectedDigest] = await Promise.all([
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(actual)),
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(expectedToken)),
+  ]);
+  const left = new Uint8Array(actualDigest);
+  const right = new Uint8Array(expectedDigest);
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left[index]! ^ right[index]!;
+  }
+  return difference === 0 && authorization.startsWith("Bearer ");
+}
 
 app.get("/health", (context) =>
   context.json({ app: "sabores-api", status: "ok" }),
@@ -27,7 +50,7 @@ app.get("/api/catalog/products", async (context) => {
   const expectedToken = context.env.CATALOG_READ_TOKEN;
   if (
     !expectedToken ||
-    context.req.header("authorization") !== `Bearer ${expectedToken}`
+    !(await bearerMatches(context.req.header("authorization"), expectedToken))
   ) {
     return context.json({ error: "Unauthorized" }, expectedToken ? 401 : 503);
   }
@@ -47,7 +70,7 @@ app.post("/api/sales", async (context) => {
   const expectedToken = context.env.PDV_WRITE_TOKEN;
   if (
     !expectedToken ||
-    context.req.header("authorization") !== `Bearer ${expectedToken}`
+    !(await bearerMatches(context.req.header("authorization"), expectedToken))
   ) {
     return context.json({ error: "Unauthorized" }, expectedToken ? 401 : 503);
   }
@@ -80,19 +103,20 @@ app.post("/api/sales", async (context) => {
   return new Response(response.body, response);
 });
 
-function hasBackupAccess(context: {
+async function hasBackupAccess(context: {
   env: Bindings;
   req: { header(name: string): string | undefined };
-}): boolean {
+}): Promise<boolean> {
   const token = context.env.BACKUP_DOWNLOAD_TOKEN;
-  return Boolean(
-    token && context.req.header("authorization") === `Bearer ${token}`,
-  );
+  return bearerMatches(context.req.header("authorization"), token);
 }
 
 app.get("/api/backups", async (context) => {
-  if (!hasBackupAccess(context))
-    return context.json({ error: "Unauthorized" }, 401);
+  if (!(await hasBackupAccess(context)))
+    return context.json(
+      { error: "Unauthorized" },
+      context.env.BACKUP_DOWNLOAD_TOKEN ? 401 : 503,
+    );
   const page = await context.env.PRIVATE_FILES.list({
     prefix: "backups/d1/",
     limit: 1000,
@@ -109,22 +133,57 @@ app.get("/api/backups", async (context) => {
 });
 
 app.post("/api/backups/run", async (context) => {
-  if (!hasBackupAccess(context))
-    return context.json({ error: "Unauthorized" }, 401);
+  if (!(await hasBackupAccess(context)))
+    return context.json(
+      { error: "Unauthorized" },
+      context.env.BACKUP_DOWNLOAD_TOKEN ? 401 : 503,
+    );
+  if (
+    context.env.BACKUP_ACCOUNT_ID === "local" ||
+    context.env.BACKUP_DATABASE_ID === "local"
+  ) {
+    return context.json(
+      {
+        error:
+          "A exportação do D1 local é feita pelo comando pnpm --filter @sabores/api db:backup:local.",
+      },
+      409,
+    );
+  }
   const key = context.req.header("idempotency-key") ?? crypto.randomUUID();
-  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(key)) {
+  if (!/^[A-Za-z0-9_-]{8,90}$/.test(key)) {
     return context.json(
       { error: "Informe uma chave de idempotência válida." },
       400,
     );
   }
-  const instance = await context.env.D1_BACKUP.create({ id: `manual-${key}` });
-  return context.json({ id: instance.id, status: "queued" }, 202);
+  const id = `manual-${key}`;
+  let instance;
+  let created = true;
+  try {
+    instance = await context.env.D1_BACKUP.create({ id });
+  } catch (error) {
+    try {
+      created = false;
+      instance = await context.env.D1_BACKUP.get(id);
+    } catch {
+      console.error("Falha ao iniciar Workflow de backup.", error);
+      return context.json({ error: "Não foi possível iniciar o backup." }, 503);
+    }
+  }
+  const status = await instance.status();
+  return context.json(
+    { id: instance.id, status: status.status },
+    created ? 202 : 200,
+  );
 });
 
 app.get("/api/backups/file/*", async (context) => {
-  if (!hasBackupAccess(context))
-    return context.json({ error: "Unauthorized" }, 401);
+  if (!(await hasBackupAccess(context)))
+    return context.json(
+      { error: "Unauthorized" },
+      context.env.BACKUP_DOWNLOAD_TOKEN ? 401 : 503,
+    );
   const key = decodeURIComponent(
     context.req.path.slice("/api/backups/file/".length),
   );
@@ -135,24 +194,32 @@ app.get("/api/backups/file/*", async (context) => {
   ) {
     return context.json({ error: "Not found" }, 404);
   }
-  const object = await context.env.PRIVATE_FILES.get(key);
+  let object = await context.env.PRIVATE_FILES.get(key);
   if (!object) return context.json({ error: "Not found" }, 404);
-  const body = await object.arrayBuffer();
   if (key.endsWith(".sql")) {
     const manifest = await context.env.PRIVATE_FILES.get(
       key.replace(/\.sql$/, ".json"),
     );
     if (
       !manifest ||
-      !(await verifyBackupContent(body, await manifest.text(), key))
+      !object.body ||
+      !(await verifyBackupStream(object.body, await manifest.text(), key))
     ) {
       return context.json(
         { error: "Backup não passou na validação de integridade." },
         409,
       );
     }
+    const verifiedEtag = object.httpEtag;
+    object = await context.env.PRIVATE_FILES.get(key);
+    if (!object || object.httpEtag !== verifiedEtag) {
+      return context.json(
+        { error: "Backup foi alterado durante a validação." },
+        409,
+      );
+    }
   }
-  return new Response(body, {
+  return new Response(object.body, {
     headers: {
       "content-type":
         object.httpMetadata?.contentType ?? "application/octet-stream",
@@ -173,7 +240,9 @@ app.post("/__local/import", async (context) => {
   ) {
     return context.notFound();
   }
-  if (context.req.header("authorization") !== `Bearer ${expectedToken}`) {
+  if (
+    !(await bearerMatches(context.req.header("authorization"), expectedToken))
+  ) {
     return context.json({ error: "Unauthorized" }, 401);
   }
   const contentLength = Number(context.req.header("content-length") ?? "0");

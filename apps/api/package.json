@@ -14,9 +14,11 @@
     "cf-typegen": "wrangler types --include-runtime=false",
     "db:migrate:local": "wrangler d1 migrations apply sabores-canastra-local --local --config wrangler.jsonc",
     "db:restore:validate": "node scripts/restore-backup-local.mjs",
+    "db:backup:local": "node scripts/backup-local.mjs",
     "db:import:local": "node scripts/import-local.mjs"
   },
   "dependencies": {
+    "@noble/hashes": "^2.4.0",
     "hono": "^4.10.6"
   },
   "devDependencies": {

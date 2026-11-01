@@ -17,7 +17,8 @@ export async function invalidateCatalogCache(
 export async function listProducts(db: D1Database, cache: KVNamespace) {
   try {
     const cached = await cache.get(CATALOG_KEY, "json");
-    if (cached !== null) return { data: cached, source: "cache" as const };
+    if (Array.isArray(cached))
+      return { data: cached, source: "cache" as const };
   } catch (error) {
     console.warn("Cache KV indisponível; consultando D1.", error);
   }

@@ -35,7 +35,9 @@ locais de D1, KV, R2, Durable Objects e Workflows. O servidor responde em
   domínio público ou `r2.dev`. A lista e o download passam por rotas com
   `BACKUP_DOWNLOAD_TOKEN`; respostas são `private, no-store`. Escritas são
   condicionais e conteúdo diferente na mesma chave é recusado; download SQL
-  valida contrato, tamanho e SHA-256 do manifesto antes de entregar o arquivo.
+  valida contrato, tamanho e SHA-256 em streaming antes de entregar o arquivo;
+  o SQL é lido duas vezes no R2 para validar primeiro e então responder sem
+  carregá-lo inteiro na memória.
 - **Durable Object (`SALE_COORDINATOR`)**: serializa tentativas para a mesma
   chave e encaminha a gravação ao D1. A chave única e o hash do corpo no D1 são
   a garantia final; reenvio idêntico retorna o recibo existente e conteúdo
@@ -44,6 +46,10 @@ locais de D1, KV, R2, Durable Objects e Workflows. O servidor responde em
   retomáveis, verifica SHA-256, salva SQL e manifesto no R2 e remove objetos
   antigos conforme a retenção do ambiente. Produção agenda execução diária às
   06:00 UTC; `POST /api/backups/run` permite execução autenticada manual.
+  A API de exportação pode bloquear consultas e gravações no D1 durante a
+  operação. A janela configurada é 06:00 UTC e a rota manual deve ser usada
+  dentro dessa mesma janela operacional. Confirme que esse horário é fora do
+  expediente de vendas antes de ativar o Workflow de produção.
 
 ## Ambientes e publicação
 
@@ -114,7 +120,18 @@ O comando verifica o contrato/hash e aplica o SQL usando um binding D1 local
 dedicado (`sabores-canastra-restore-validation`), sem `--remote` e sem tocar o
 D1 operacional local. Depois compare schema, contagens e reconciliação antes
 de planejar troca de banco. Não restaure por cima do D1 produtivo sem validar a
-cópia. A CI executa o mesmo procedimento com um fixture sintético.
+cópia. Cada validação usa um diretório temporário novo; o caminho impresso no
+final identifica a cópia a comparar. O nome local do SQL pode ser alterado: a
+integridade depende do manifesto, tamanho e hash, não do basename. A CI executa
+o mesmo procedimento com um fixture sintético.
+
+Para exportar o D1 simulado local sem chamar a API remota, use o comando de
+linha de comando abaixo. Ele gera SQL e manifesto adjacente em `.local/backups`;
+o fluxo de Workflow de backup usa a API Cloudflare e não exporta o simulador.
+
+```powershell
+pnpm --filter @sabores/api db:backup:local
+```
 
 ## Validação
 

@@ -9,10 +9,12 @@
 	"env": {
 		"preview": {
 			"name": "sabores-canastra-pdv-preview",
+			"routes": [{ "pattern": "pdv-preview.brunosrz.com", "custom_domain": true }],
 			"services": [{ "binding": "API", "service": "sabores-canastra-api-preview" }],
 		},
 		"production": {
 			"name": "sabores-canastra-pdv",
+			"routes": [{ "pattern": "pdv.brunosrz.com", "custom_domain": true }],
 			"services": [{ "binding": "API", "service": "sabores-canastra-api" }],
 		},
 	},

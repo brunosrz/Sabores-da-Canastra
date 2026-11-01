@@ -4,6 +4,8 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+.sconsign.dblite
+.scons-logs/
 
 # Local secrets and Cloudflare development state
 .env

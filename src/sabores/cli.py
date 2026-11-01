@@ -13,10 +13,14 @@ from .workbook import enhance_workbook, inspect_workbook, validate_workbook, wor
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sabores", description="Custos e planejamento Sabores da Canastra")
-    parser.add_argument("command", choices=["inspecionar", "validar", "atualizar-excel", "simular", "calcular-receitas", "planejar-producao", "gerar-compras"])
+    parser.add_argument("command", choices=["app", "inspecionar", "validar", "atualizar-excel", "simular", "calcular-receitas", "planejar-producao", "gerar-compras"])
     parser.add_argument("--excel", default="sabores_da_canastra_custos_salgados.xlsx", help="Caminho do arquivo xlsx")
     parser.add_argument("--quantidade", type=int, default=25, help="Quantidade solicitada para planejar (comando de produção)")
     args = parser.parse_args(argv)
+    if args.command == "app":
+        from .desktop import main as desktop_main
+        desktop_main()
+        return 0
     path = Path(args.excel)
     if args.command == "inspecionar":
         print(json.dumps(inspect_workbook(path), ensure_ascii=False, indent=2))

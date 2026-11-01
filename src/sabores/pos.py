@@ -156,6 +156,7 @@ class PosApp(tk.Tk):
         self.sale_date = tk.StringVar(value=date.today().isoformat())
         self.category_var = tk.StringVar(value="Todas")
         self.product_var = tk.StringVar()
+        self.search_var = tk.StringVar()
         self.quantity_var = tk.StringVar(value="1")
         self.price_var = tk.StringVar()
         self.customer_var = tk.StringVar()
@@ -164,17 +165,28 @@ class PosApp(tk.Tk):
         self._field(left, "Categoria", ttk.Combobox(left, textvariable=self.category_var,
                     values=("Todas", "Salgados", "Bebidas", "Doces", "Molhos", "Outros"), state="readonly"))
         self.category_var.trace_add("write", lambda *_: self._refresh_products())
-        self.product_combo = ttk.Combobox(left, textvariable=self.product_var, state="readonly")
-        self.product_combo.bind("<<ComboboxSelected>>", self._product_selected)
-        self._field(left, "Produto", self.product_combo)
+        search_row = tk.Frame(left, bg=PANEL)
+        search_row.pack(fill="x", pady=(0, 3))
+        self.search_entry = ttk.Entry(search_row, textvariable=self.search_var)
+        self.search_entry.pack(side="left", fill="x", expand=True, ipady=4)
+        self.search_entry.bind("<Return>", self.open_search_results)
+        tk.Button(search_row, text="Buscar", command=self.open_search_results, bg=GREEN, fg="white",
+                  relief="flat", padx=9, pady=5).pack(side="left", padx=(6, 0))
+        tk.Label(left, text="Digite o código ou o nome e pressione Enter.", bg=PANEL, fg=MUTED,
+                 font=("Segoe UI", 8), wraplength=280, justify="left").pack(anchor="w", pady=(0, 9))
+        self.selected_product_label = tk.Label(left, text="Nenhum produto selecionado", bg="#E8EDE8", fg=INK,
+                 font=("Segoe UI", 9, "bold"), anchor="w", padx=9, pady=8, wraplength=280, justify="left")
+        self.selected_product_label.pack(fill="x", pady=(0, 9))
         row = tk.Frame(left, bg=PANEL)
         row.pack(fill="x", pady=(0, 10))
         tk.Label(row, text="Quantidade", bg=PANEL, fg=MUTED, font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
         tk.Label(row, text="Preço unitário", bg=PANEL, fg=MUTED, font=("Segoe UI", 9, "bold")).grid(row=0, column=1, sticky="w", padx=(10, 0))
-        ttk.Entry(row, textvariable=self.quantity_var, width=9).grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.quantity_entry = ttk.Entry(row, textvariable=self.quantity_var, width=9)
+        self.quantity_entry.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.quantity_entry.bind("<Return>", self.add_item)
         ttk.Entry(row, textvariable=self.price_var, width=13).grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(4, 0))
         row.columnconfigure(1, weight=1)
-        tk.Button(left, text="＋  Adicionar item", command=self.add_item, bg=GREEN, fg="white", relief="flat",
+        tk.Button(left, text="＋  Confirmar quantidade e adicionar", command=self.add_item, bg=GREEN, fg="white", relief="flat",
                   font=("Segoe UI", 10, "bold"), pady=8).pack(fill="x", pady=(0, 12))
         self._field(left, "Cliente (opcional)", ttk.Entry(left, textvariable=self.customer_var))
         self._field(left, "Observação (opcional)", ttk.Entry(left, textvariable=self.notes_var))
@@ -291,20 +303,74 @@ class PosApp(tk.Tk):
                     if p["sale_price_cents"] is not None and p["sale_price_cents"] > 0
                     and (self.category_var.get() == "Todas" or p["category"] == self.category_var.get())]
         self.products = products
-        self.product_combo.configure(values=[p["name"] for p in products])
         if self.product_var.get() not in {p["name"] for p in products}:
-            self.product_var.set(products[0]["name"] if products else "")
-        self._product_selected()
+            self.product_var.set("")
+            self.selected_product_label.configure(text="Nenhum produto selecionado")
 
-    def _product_selected(self, _event=None):
-        product = next((p for p in getattr(self, "products", []) if p["name"] == self.product_var.get()), None)
-        if product:
-            self.price_var.set(_money_field(product["sale_price_cents"]))
+    def open_search_results(self, _event=None):
+        query = self.search_var.get().strip().casefold()
+        if not query:
+            messagebox.showinfo("Buscar produto", "Digite o código ou parte do nome do produto.", parent=self)
+            self.search_entry.focus_set()
+            return "break"
+        matches = [p for p in self.products if query in p["product_id"].casefold() or query in p["name"].casefold()]
+        if not matches:
+            messagebox.showinfo("Produto não encontrado", f'Nenhum produto corresponde a "{self.search_var.get().strip()}".', parent=self)
+            self.search_entry.focus_set()
+            return "break"
+        if len(matches) == 1:
+            self.select_product(matches[0])
+            return "break"
+        dialog = tk.Toplevel(self)
+        dialog.title("Resultados da busca")
+        dialog.geometry("680x390")
+        dialog.minsize(540, 300)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.configure(bg=BG, padx=16, pady=14)
+        tk.Label(dialog, text=f'{len(matches)} produtos encontrados', bg=BG, fg=INK,
+                 font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 4))
+        tk.Label(dialog, text="Selecione com ↑/↓ ou mouse; Enter confirma.", bg=BG, fg=MUTED,
+                 font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 10))
+        tree = ttk.Treeview(dialog, columns=("code", "name", "price"), show="headings", selectmode="browse")
+        for column, title, width in (("code", "Código", 180), ("name", "Produto", 340), ("price", "Preço", 100)):
+            tree.heading(column, text=title)
+            tree.column(column, width=width, anchor="e" if column == "price" else "w")
+        tree.pack(fill="both", expand=True)
+        for index, product in enumerate(matches):
+            tree.insert("", "end", iid=str(index), values=(product["product_id"], product["name"], format_money(product["sale_price_cents"])))
+        tree.selection_set("0")
+        tree.focus("0")
+
+        def choose(_event=None):
+            selection = tree.selection()
+            if selection:
+                chosen = matches[int(selection[0])]
+                dialog.destroy()
+                self.select_product(chosen)
+            return "break"
+
+        tree.bind("<Double-1>", choose)
+        tree.bind("<Return>", choose)
+        buttons = tk.Frame(dialog, bg=BG)
+        buttons.pack(fill="x", pady=(10, 0))
+        tk.Button(buttons, text="Cancelar", command=dialog.destroy, bg="#E8EDE8", fg=INK, relief="flat", padx=12, pady=7).pack(side="right")
+        tk.Button(buttons, text="Confirmar produto", command=choose, bg=GREEN, fg="white", relief="flat", padx=12, pady=7).pack(side="right", padx=(0, 8))
+        tree.focus_set()
+        return "break"
+
+    def select_product(self, product):
+        self.product_var.set(product["name"])
+        self.price_var.set(_money_field(product["sale_price_cents"]))
+        self.selected_product_label.configure(text=f"{product['product_id']}  ·  {product['name']}  ·  {format_money(product['sale_price_cents'])}")
+        self.quantity_var.set("1")
+        self.quantity_entry.focus_set()
+        self.quantity_entry.selection_range(0, "end")
 
     def _cart_total(self):
         return sum(item["amount_cents"] for item in self.cart)
 
-    def add_item(self):
+    def add_item(self, _event=None):
         try:
             product = next(p for p in self.products if p["name"] == self.product_var.get())
             quantity = Decimal(self.quantity_var.get().replace(",", "."))

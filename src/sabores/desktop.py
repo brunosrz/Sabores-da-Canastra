@@ -259,33 +259,46 @@ class LedgerApp(tk.Tk):
         self.ingredient_supplier = tk.StringVar()
         self.ingredient_status = tk.StringVar(value="Pendente")
         self.ingredient_source = tk.StringVar()
+        self.ingredient_category = tk.StringVar(value="Ingrediente")
         for label, var in [("Ingrediente",self.ingredient_name),("Unidade base (g/ml/un)",self.ingredient_unit),
                            ("Quantidade no pacote",self.ingredient_pack_qty),("Preço pacote (R$)",self.ingredient_price),
                            ("Fornecedor",self.ingredient_supplier),("Fonte / URL",self.ingredient_source)]:
             self._field(form,label,ttk.Entry(form,textvariable=var))
+        self._field(form,"Categoria",ttk.Combobox(form,textvariable=self.ingredient_category,
+                    values=["Ingrediente","Laticínios","Carnes","Hortifruti","Mercearia","Temperos","Outros"]))
         self._field(form,"Status do preço",ttk.Combobox(form,textvariable=self.ingredient_status,
                     values=["Confirmado","Estimado","Pendente","Desatualizado"],state="readonly"))
         tk.Button(form,text="Salvar ingrediente",command=self.save_ingredient,bg=GREEN,fg="white",relief="flat",
                   font=("Segoe UI",10,"bold"),padx=12,pady=10).pack(fill="x",pady=(5,0))
-        tk.Label(form,text="Edite um preço: selecione ingrediente e informe preço, fornecedor e data abaixo.",bg=PANEL,fg=MUTED,wraplength=250,justify="left").pack(anchor="w",pady=(18,8))
-        self.price_name=tk.StringVar();self.price_value=tk.StringVar();self.price_date=tk.StringVar(value=date.today().isoformat())
-        self.price_supplier=tk.StringVar();self.price_source=tk.StringVar();self.price_status=tk.StringVar(value="Confirmado")
-        self.price_combo=ttk.Combobox(form,textvariable=self.price_name,state="readonly")
-        self._field(form,"Ingrediente existente",self.price_combo)
-        self._field(form,"Status da cotação",ttk.Combobox(form,textvariable=self.price_status,
-                    values=["Confirmado","Estimado","Pendente","Desatualizado"],state="readonly"))
-        self._field(form,"Novo preço do pacote (R$)",ttk.Entry(form,textvariable=self.price_value))
-        self._field(form,"Data da cotação",ttk.Entry(form,textvariable=self.price_date))
-        self._field(form,"Fornecedor",ttk.Entry(form,textvariable=self.price_supplier))
-        self._field(form,"Fonte / URL",ttk.Entry(form,textvariable=self.price_source))
-        tk.Button(form,text="Atualizar cotação",command=self.save_price,bg="#E8EDE8",fg=INK,relief="flat",padx=10,pady=8).pack(fill="x")
         listing = tk.Frame(body,bg=PANEL,padx=18,pady=18,highlightbackground="#E5EAE5",highlightthickness=1)
         listing.pack(side="left",fill="both",expand=True)
-        tk.Label(listing,text="Ingredientes",bg=PANEL,fg=INK,font=("Segoe UI",14,"bold")).pack(anchor="w",pady=(0,10))
+        list_header=tk.Frame(listing,bg=PANEL);list_header.pack(fill="x",pady=(0,10))
+        tk.Label(list_header,text="Ingredientes",bg=PANEL,fg=INK,font=("Segoe UI",14,"bold")).pack(side="left")
+        self.ingredient_count=tk.Label(list_header,text="",bg=PANEL,fg=MUTED,font=("Segoe UI",9));self.ingredient_count.pack(side="right")
+        filters=tk.Frame(listing,bg=PANEL);filters.pack(fill="x",pady=(0,10))
+        tk.Label(filters,text="Buscar",bg=PANEL,fg=MUTED,font=("Segoe UI",8,"bold")).pack(side="left",padx=(0,5))
+        self.ingredient_search=tk.StringVar();search=ttk.Entry(filters,textvariable=self.ingredient_search,width=25);search.pack(side="left",fill="x",expand=True)
+        tk.Label(filters,text="Status",bg=PANEL,fg=MUTED,font=("Segoe UI",8,"bold")).pack(side="left",padx=(10,5))
+        self.ingredient_status_filter=tk.StringVar(value="Todos")
+        ttk.Combobox(filters,textvariable=self.ingredient_status_filter,values=["Todos","Confirmado","Estimado","Pendente","Desatualizado"],state="readonly",width=14).pack(side="left")
+        tk.Label(filters,text="Categoria",bg=PANEL,fg=MUTED,font=("Segoe UI",8,"bold")).pack(side="left",padx=(10,5))
+        self.ingredient_category_filter=tk.StringVar(value="Todas")
+        ttk.Combobox(filters,textvariable=self.ingredient_category_filter,values=["Todas","Ingrediente","Laticínios","Carnes","Hortifruti","Mercearia","Temperos","Outros"],state="readonly",width=14).pack(side="left")
+        actions=tk.Frame(listing,bg=PANEL);actions.pack(fill="x",pady=(0,8))
+        tk.Button(actions,text="Editar selecionado",command=self.edit_selected_ingredient,bg=GREEN,fg="white",relief="flat",padx=11,pady=7).pack(side="left")
+        tk.Button(actions,text="Limpar filtros",command=self.clear_ingredient_filters,bg="#E8EDE8",fg=INK,relief="flat",padx=11,pady=7).pack(side="left",padx=8)
         self.ingredient_table = ttk.Treeview(listing,columns=("name","unit","pack","price","supplier","status"),show="headings")
         for col,label,width in [("name","Ingrediente",210),("unit","Unid.",65),("pack","Pacote",90),("price","Preço",105),("supplier","Fornecedor",150),("status","Status",110)]:
             self.ingredient_table.heading(col,text=label); self.ingredient_table.column(col,width=width)
-        self.ingredient_table.pack(fill="both",expand=True)
+        table_frame=tk.Frame(listing,bg=PANEL);table_frame.pack(fill="both",expand=True)
+        self.ingredient_table.pack(in_=table_frame,side="left",fill="both",expand=True)
+        ingredient_scroll=ttk.Scrollbar(table_frame,orient="vertical",command=self.ingredient_table.yview);ingredient_scroll.pack(side="right",fill="y")
+        self.ingredient_table.configure(yscrollcommand=ingredient_scroll.set)
+        self.ingredient_table.bind("<Double-1>",lambda _event:self.edit_selected_ingredient())
+        self.ingredient_table.bind("<Return>",lambda _event:self.edit_selected_ingredient())
+        self.ingredient_search.trace_add("write",lambda *_:self.refresh_catalogs())
+        self.ingredient_status_filter.trace_add("write",lambda *_:self.refresh_catalogs())
+        self.ingredient_category_filter.trace_add("write",lambda *_:self.refresh_catalogs())
         tk.Label(listing,text="Receitas e composições",bg=PANEL,fg=INK,font=("Segoe UI",13,"bold")).pack(anchor="w",pady=(18,8))
         self.recipe_table=ttk.Treeview(listing,columns=("recipe","version","yield","cost"),show="headings",height=8)
         for col,label,width in [("recipe","Salgado",250),("version","Versão",110),("yield","Rendimento",100),("cost","Custo unitário",125)]:
@@ -347,10 +360,69 @@ class LedgerApp(tk.Tk):
             pack_price=parse_money(self.ingredient_price.get()) if self.ingredient_price.get().strip() else None
             self.ledger.upsert_ingredient(name=self.ingredient_name.get(),base_unit=self.ingredient_unit.get(),
                 pack_quantity=self.ingredient_pack_qty.get(),pack_price_cents=pack_price,
-                supplier=self.ingredient_supplier.get(),price_status=self.ingredient_status.get(),source=self.ingredient_source.get())
+                supplier=self.ingredient_supplier.get(),price_status=self.ingredient_status.get(),source=self.ingredient_source.get(),
+                notes="categoria:"+self.ingredient_category.get())
         except ValueError as exc:
             messagebox.showerror("Ingrediente",str(exc),parent=self);return
+        self.ingredient_name.set("");self.ingredient_price.set("");self.ingredient_supplier.set("");self.ingredient_source.set("")
         self.refresh_catalogs()
+
+    def edit_selected_ingredient(self):
+        selection=self.ingredient_table.selection()
+        if not selection:
+            messagebox.showinfo("Ingredientes","Selecione um ingrediente na lista para editar.",parent=self);return
+        item=self.ingredient_table.item(selection[0],"values")
+        name=item[0]
+        ingredient=next((row for row in self.ledger.list_ingredients() if row["name"]==name),None)
+        if not ingredient:return
+        self._ingredient_editor(ingredient)
+
+    def clear_ingredient_filters(self):
+        self.ingredient_search.set("");self.ingredient_status_filter.set("Todos");self.ingredient_category_filter.set("Todas")
+
+    def _ingredient_editor(self,ingredient):
+        dialog=tk.Toplevel(self);dialog.title(f"Editar ingrediente · {ingredient['name']}");dialog.transient(self);dialog.grab_set();dialog.configure(bg=BG);dialog.resizable(False,False)
+        outer=tk.Frame(dialog,bg=PANEL,padx=22,pady=20);outer.pack(fill="both",expand=True)
+        tk.Label(outer,text="Editar ingrediente",bg=PANEL,fg=INK,font=("Segoe UI",16,"bold")).pack(anchor="w")
+        tk.Label(outer,text="Atualize embalagem e preço. Use fonte e data ao confirmar uma cotação.",bg=PANEL,fg=MUTED,wraplength=440,justify="left").pack(anchor="w",pady=(4,14))
+        fields={k:tk.StringVar(value=v or "") for k,v in {
+            "name":ingredient["name"],"base_unit":ingredient["base_unit"],"pack_quantity":ingredient["pack_quantity"],
+            "price":("" if ingredient["pack_price_cents"] is None else f"{Decimal(ingredient['pack_price_cents'])/100:.2f}"),
+            "supplier":ingredient["supplier"],"price_date":ingredient["price_date"],"status":ingredient["price_status"],
+            "source":ingredient["source"],"category":self._category_of(ingredient)}.items()}
+        specs=[("Ingrediente","name",False),("Unidade base (g/ml/un)","base_unit",False),("Quantidade na embalagem","pack_quantity",False),
+               ("Preço da embalagem (R$)","price",False),("Fornecedor","supplier",False),("Data da cotação (AAAA-MM-DD)","price_date",False),
+               ("Fonte / URL","source",False),("Categoria","category",True),("Status do preço","status",True)]
+        for label,key,choice in specs:
+            row=tk.Frame(outer,bg=PANEL);row.pack(fill="x",pady=4)
+            tk.Label(row,text=label,bg=PANEL,fg=MUTED,width=29,anchor="w",font=("Segoe UI",9,"bold")).pack(side="left")
+            if choice:
+                options=("Confirmado","Estimado","Pendente","Desatualizado") if key=="status" else ("Ingrediente","Laticínios","Carnes","Hortifruti","Mercearia","Temperos","Outros")
+                ttk.Combobox(row,textvariable=fields[key],values=options,state="readonly",width=30).pack(side="left")
+            else:ttk.Entry(row,textvariable=fields[key],width=34).pack(side="left")
+        buttons=tk.Frame(outer,bg=PANEL);buttons.pack(fill="x",pady=(16,0))
+        tk.Button(buttons,text="Cancelar",command=dialog.destroy,bg="#E8EDE8",fg=INK,relief="flat",padx=14,pady=9).pack(side="right")
+        def save():
+            try:
+                price=parse_money(fields["price"].get()) if fields["price"].get().strip() else None
+                if not fields["name"].get().strip() or Decimal(fields["pack_quantity"].get())<=0:raise ValueError("Nome e quantidade positiva são obrigatórios")
+                status=fields["status"].get()
+                if price is None and status=="Confirmado":raise ValueError("Uma cotação confirmada precisa ter preço")
+                category_note="categoria:"+fields["category"].get()
+                with self.ledger._connect() as db:
+                    db.execute("UPDATE ingredients SET name=?,base_unit=?,pack_quantity=?,pack_price_cents=?,supplier=?,price_date=?,price_status=?,source=?,notes=? WHERE name=?",
+                        (fields["name"].get().strip(),fields["base_unit"].get().strip(),fields["pack_quantity"].get(),price,
+                         fields["supplier"].get().strip() or None,fields["price_date"].get().strip() or None,status,
+                         fields["source"].get().strip() or None,category_note,ingredient["name"]))
+            except Exception as exc:
+                messagebox.showerror("Ingrediente",str(exc),parent=dialog);return
+            dialog.destroy();self.refresh_catalogs()
+        tk.Button(buttons,text="Salvar alterações",command=save,bg=GREEN,fg="white",relief="flat",padx=14,pady=9).pack(side="right",padx=(0,8))
+
+    @staticmethod
+    def _category_of(ingredient):
+        notes=ingredient.get("notes") or ""
+        return notes.split("categoria:",1)[1].split(";",1)[0] if "categoria:" in notes else "Ingrediente"
 
     def save_price(self):
         try:
@@ -416,12 +488,26 @@ class LedgerApp(tk.Tk):
         self.refresh_catalogs()
 
     def refresh_catalogs(self):
-        for tree in [self.ingredient_table,self.recipe_table,self.mix_table]:tree.delete(*tree.get_children())
-        for item in self.ledger.list_ingredients():
+        for tree in [self.recipe_table,self.mix_table]:tree.delete(*tree.get_children())
+        items=self.ledger.list_ingredients()
+        query=self.ingredient_search.get().strip().casefold() if hasattr(self,"ingredient_search") else ""
+        status_filter=self.ingredient_status_filter.get() if hasattr(self,"ingredient_status_filter") else "Todos"
+        category_filter=self.ingredient_category_filter.get() if hasattr(self,"ingredient_category_filter") else "Todas"
+        visible=[]
+        for item in items:
+            category=self._category_of(item)
+            haystack=" ".join(str(item.get(key) or "") for key in ("name","base_unit","supplier","source","notes")).casefold()
+            if query and query not in haystack:continue
+            if status_filter!="Todos" and item["price_status"]!=status_filter:continue
+            if category_filter!="Todas" and category!=category_filter:continue
+            visible.append(item)
+        current_selection=self.ingredient_table.selection()
+        for iid in self.ingredient_table.get_children():self.ingredient_table.delete(iid)
+        for item in visible:
             price="Pendente" if item["pack_price_cents"] is None else format_money(item["pack_price_cents"])
-            self.ingredient_table.insert("","end",values=(item["name"],item["base_unit"],item["pack_quantity"],price,item["supplier"] or "—",item["price_status"]))
-        self.price_combo.configure(values=[i["name"] for i in self.ledger.list_ingredients()])
-        if not self.price_name.get() and self.ledger.list_ingredients():self.price_name.set(self.ledger.list_ingredients()[0]["name"])
+            self.ingredient_table.insert("","end",iid=item["name"],values=(item["name"],item["base_unit"],item["pack_quantity"],price,item["supplier"] or "—",item["price_status"]))
+        self.ingredient_count.configure(text=f"{len(visible)} de {len(items)} ingredientes")
+        if current_selection and self.ingredient_table.exists(current_selection[0]):self.ingredient_table.selection_set(current_selection[0])
         recipes=self.ledger.list_recipes()
         for r in recipes:
             cost=self.ledger.recipe_cost(r["recipe_id"])

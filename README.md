@@ -35,6 +35,16 @@ uv run sabores-pdv
 
 Os dois aplicativos usam `%USERPROFILE%\.sabores-da-canastra\sabores.db`; venda lançada no PDV aparece no mesmo histórico do caixa. Configure as taxas de débito e crédito na tela do PDV.
 
+### Atalhos independentes no Windows
+
+Para criar atalhos próprios de **PDV** e **Gestão** na Área de Trabalho, execute uma vez na pasta do repositório:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Criar-Atalhos-Windows.ps1
+```
+
+Depois, fixe cada atalho separadamente na barra de tarefas ou no Menu Iniciar. Cada janela define um AppUserModelID próprio do Windows, e os arquivos `.bat` iniciam os comandos sem manter uma janela de terminal visível. Também é possível abrir diretamente `Abrir-PDV.bat` ou `Abrir-Gestao.bat`.
+
 Alternativas:
 
 ```powershell

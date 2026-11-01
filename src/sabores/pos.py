@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
+import sys
 
 from .database import Ledger
 from .desktop import BG, GOLD, GREEN, INK, MUTED, PANEL, RED, format_money, parse_money
@@ -73,6 +74,12 @@ class PosApp(tk.Tk):
 
     def __init__(self, db_path: str | Path | None = None):
         super().__init__()
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SaboresDaCanastra.PDV")
+            except (AttributeError, OSError):
+                pass
         self.title("Sabores da Canastra | PDV")
         self.geometry("1420x900")
         self.minsize(1100, 720)

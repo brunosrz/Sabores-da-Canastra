@@ -10,6 +10,7 @@ from tkinter import messagebox, ttk, simpledialog
 from tkinter import filedialog
 import json
 import uuid
+import sys
 
 from .database import Entry, Ledger
 
@@ -45,6 +46,12 @@ def format_money(cents: int) -> str:
 class LedgerApp(tk.Tk):
     def __init__(self, db_path: str | Path | None = None):
         super().__init__()
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SaboresDaCanastra.Gestao")
+            except (AttributeError, OSError):
+                pass
         self.title("Sabores da Canastra | Caixa diário")
         self.geometry("1280x820")
         self.minsize(1050, 700)

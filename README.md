@@ -153,11 +153,26 @@ porque causaria uma reformatação extensa; Ruff, testes e validação do workbo
 continuam cobertos. A CI não faz deploy. CodeRabbit pode revisar PRs quando a
 integração estiver habilitada no repositório.
 
-`.env.gha.example` lista as variáveis e secrets para um futuro deploy pelo
-GitHub Actions; `.env.gha` local é ignorado pelo Git. O environment `preview` já
-tem Account ID, Zone ID, e-mails do Access e os três tokens de aplicação da API.
-Antes de automatizar o deploy, ainda é necessário cadastrar `CLOUDFLARE_DEPLOY_API_TOKEN`
-com escopo mínimo e `PREVIEW_API_CLOUDFLARE_API_TOKEN` para exportação do D1.
+### Releases e ambientes do GitHub
+
+Release Please acompanha a linha estável `master` (milestone `0.1.x`) e a linha
+de desenvolvimento `release/0.2` (milestone `0.2`). Títulos de PR seguem
+Conventional Commits; changelog e versões são gerados a partir deles. Ao
+publicar uma nova versão minor, o workflow avança a branch e as milestones da
+linha de desenvolvimento. Os utilitários e os workflows de release têm testes
+próprios em `utils/`.
+
+Os environments GitHub `preview` e `production` possuem as variáveis de conta,
+zone e e-mails do Access. Os tokens PDV, catálogo e backup são segredos separados
+por ambiente. Em produção, os três segredos de aplicação foram gerados e
+cadastrados no environment. Isso não provisiona recursos Cloudflare: o D1, KV,
+R2, rotas Access e token de exportação D1 da produção ainda precisam ser
+configurados antes de qualquer deploy de produção.
+
+`.env.gha.example` documenta os nomes esperados por futuros workflows de deploy
+e release; `.env.gha` local é ignorado pelo Git. `RELEASE_PLEASE_TOKEN` é
+opcional: sem ele, Release Please usa `GITHUB_TOKEN`, cujas PRs geradas não
+iniciam outros workflows. O fluxo de release não publica os aplicativos.
 
 ## Documentação de referência
 

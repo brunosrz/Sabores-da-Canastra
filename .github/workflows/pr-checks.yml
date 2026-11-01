@@ -1,0 +1,110 @@
+name: Validação de pull request
+
+# Roda em todo PR: aplica labels automáticas por conventional
+# commit/path (.github/labeler.yml) e valida que o TÍTULO do PR segue
+# Conventional Commits — o título vira o commit de squash-merge, que
+# release-please.yml lê pra decidir o bump de versão e a seção do
+# CHANGELOG.md. Um título malformado quebra essa automação em silêncio, daí
+# o gate aqui, não só cosmético. Mesmo padrão de
+# lancedb/.github/workflows/dev.yml.
+
+on:
+  pull_request:
+    types:
+      [
+        opened,
+        edited,
+        synchronize,
+        reopened,
+        milestoned,
+        demilestoned,
+        labeled,
+        unlabeled,
+      ]
+    branches: ["**"]
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-utils:
+    name: Testes dos utilitários de release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-python-utils
+      - name: Executa testes das utilidades de release
+        run: python -m pytest -q utils
+
+  labeler:
+    name: Classificar pull request
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: srvaroa/labeler@9c29ad1ef33d169f9ef33c52722faf47a566bcf3 # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  commitlint:
+    name: Validar título convencional
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - run: npm install @commitlint/cli @commitlint/config-conventional
+      # body-max-line-length/footer-max-line-length/body-leading-blank
+      # desligadas: o GitHub sempre garante linha em branco entre título e
+      # corpo, e quebra o corpo em linhas curtas — essas regras dariam falso
+      # positivo em qualquer PR com descrição normal.
+      - run: >
+          echo 'module.exports = {
+            extends: ["@commitlint/config-conventional"],
+            rules: {
+              "body-max-line-length": [0, "always", Infinity],
+              "footer-max-line-length": [0, "always", Infinity],
+              "body-leading-blank": [0, "always"]
+            }
+          }' > .commitlintrc.js
+      # Sem `--edit`: essa flag espera um COMMIT_EDITMSG de verdade dentro
+      # de um repo git ("Could not find git root" sem checkout) — pra
+      # validar uma string solta (o título do PR, não um commit real),
+      # o jeito certo é ler de stdin sem flag nenhuma.
+      - run: npx commitlint --verbose <<< "$PR_TITLE"
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+      - if: failure()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const message = `**Título do PR fora do padrão**
+
+              Este repositório segue [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) — o título do PR vira o commit de squash-merge e alimenta o versionamento e o changelog automáticos (release-please).
+
+              Exemplos válidos: \`feat: adiciona X\`, \`fix(web): corrige Y\`, \`docs: atualiza Z\`.
+
+              Ajuste o título do PR pra corrigir.`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const already = comments.some((c) => c.body === message);
+            if (!already) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: message,
+              });
+            }
+            core.setFailed(message);

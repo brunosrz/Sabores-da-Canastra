@@ -211,7 +211,7 @@ def _secrets_for(environment: str) -> dict[str, str]:
     secrets = _dotenv(path)
     required = {"PDV_WRITE_TOKEN", "CATALOG_READ_TOKEN", "BACKUP_DOWNLOAD_TOKEN"}
     if environment == "production":
-        required.add("D1_BACKUP_TOKEN")
+        required.add("CLOUDFLARE_API_TOKEN")
     missing = required - secrets.keys()
     if missing:
         raise SystemExit(f"Secrets ausentes em {path.name}: {', '.join(sorted(missing))}.")
@@ -219,14 +219,14 @@ def _secrets_for(environment: str) -> dict[str, str]:
         value = secrets[key]
         if len(value) < 32 or value.lower().startswith(("gere-", "replace-", "changeme")):
             raise SystemExit(f"{key} precisa ser um segredo aleatório com ao menos 32 caracteres.")
-    allowed = required | {"D1_BACKUP_TOKEN"}
+    allowed = required | {"CLOUDFLARE_API_TOKEN"}
     unknown = secrets.keys() - allowed
     if unknown:
         raise SystemExit(f"Secrets não reconhecidos em {path.name}: {', '.join(sorted(unknown))}.")
     secrets = {key: value for key, value in secrets.items() if value}
-    if not secrets.get("D1_BACKUP_TOKEN"):
-        print(">> D1_BACKUP_TOKEN ausente: backup remoto ficará indisponível neste ambiente.")
-        secrets.pop("D1_BACKUP_TOKEN", None)
+    if not secrets.get("CLOUDFLARE_API_TOKEN"):
+        print(">> CLOUDFLARE_API_TOKEN ausente nos secrets da API: backup remoto ficará indisponível neste ambiente.")
+        secrets.pop("CLOUDFLARE_API_TOKEN", None)
     return secrets
 
 

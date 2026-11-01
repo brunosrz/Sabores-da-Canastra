@@ -1,0 +1,40 @@
+{
+	"name": "sabores-da-canastra-cloudflare",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@12.11.2",
+	"scripts": {
+		"dev": "vite --host 127.0.0.1",
+		"build": "vite build",
+		"preview": "vite preview --host 127.0.0.1",
+		"format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"test/**/*.ts\" \"*.{ts,mts,js,json,jsonc,html}\"",
+		"lint": "eslint .",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"cf-typegen": "wrangler types --include-runtime=false"
+	},
+	"dependencies": {
+		"hono": "4.13.16",
+		"react": "19.3.1",
+		"react-dom": "19.3.1"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "1.66.0",
+		"@cloudflare/vitest-plugin": "1.4.11",
+		"@eslint/js": "10.0.1",
+		"@types/node": "26.6.6",
+		"@types/react": "19.3.0",
+		"@types/react-dom": "19.3.0",
+		"@vitejs/plugin-react": "6.1.2",
+		"prettier": "3.9.10",
+		"eslint": "10.14.0",
+		"eslint-plugin-react-hooks": "7.1.1",
+		"globals": "17.14.0",
+		"typescript": "5.9.3",
+		"typescript-eslint": "8.72.1",
+		"vite": "8.3.5",
+		"vitest": "5.0.5",
+		"wrangler": "4.156.0"
+	}
+}

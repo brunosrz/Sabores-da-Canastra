@@ -7,6 +7,7 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-yaml
+        args: [--allow-multiple-documents]
       - id: check-json
       - id: check-toml
       - id: check-ast
@@ -16,12 +17,33 @@ repos:
 
   - repo: local
     hooks:
+      - id: cloudflare-format
+        name: cloudflare app formatting
+        entry: pnpm --dir apps/cloudflare format:check
+        language: system
+        types_or: [javascript, jsx, ts, tsx, css]
+        files: ^apps/cloudflare/.*\.(js|jsx|ts|tsx|css|mts)$
+        pass_filenames: false
+      - id: cloudflare-eslint
+        name: cloudflare app ESLint
+        entry: pnpm --dir apps/cloudflare lint
+        language: system
+        types_or: [javascript, jsx, ts, tsx]
+        files: ^apps/cloudflare/.*\.(js|jsx|ts|tsx)$
+        pass_filenames: false
+      - id: cloudflare-typecheck
+        name: cloudflare app TypeScript
+        entry: pnpm --dir apps/cloudflare typecheck
+        language: system
+        types_or: [javascript, jsx, ts, tsx]
+        files: ^apps/cloudflare/.*\.(js|jsx|ts|tsx)$
+        pass_filenames: false
       - id: markdownlint
         name: markdown lint
         entry: npx --yes markdownlint-cli2@0.23.3
         language: system
         types: [markdown]
-        files: ^(README\.md|docs/json-contract\.md)$
+        files: ^(README\.md|docs/json-contract\.md|apps/cloudflare/README\.md)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3

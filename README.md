@@ -68,6 +68,10 @@ Os hooks validam Python, JSON, YAML, TOML e Markdown, detectam conflitos/chaves 
 
 Arquivos locais de ambiente (`.env`, `.dev.vars`), estado do Wrangler, bancos SQLite e artefatos web gerados são ignorados pelo Git. Mantenha somente modelos sem segredos, como `.env.example`, versionados.
 
+### Aplicação web em Cloudflare
+
+O scaffold independente está em [`apps/cloudflare/README.md`](apps/cloudflare/README.md). Os comandos web (`dev`, `build`, `preview`, `format:check`, `lint`, `typecheck` e `test`) são executados nesse diretório; não alteram nem substituem os comandos `uv` do aplicativo Python.
+
 O app cria o banco automaticamente na primeira execução. A primeira abertura importa o catálogo e as fichas da planilha do repositório para o banco local, sem substituir cotações ou marcar estimativas como confirmadas. O cardápio base do bar é compartilhado pelos dois apps. No cadastro de produtos da Gestão, ajuste preços pendentes e mantenha o catálogo atualizado. Para usar outro arquivo SQLite em desenvolvimento, instancie `Ledger("caminho/arquivo.db")`; os dados são locais e não há sincronização em nuvem.
 
 ## Uso diário

@@ -70,9 +70,9 @@ Arquivos locais de ambiente (`.env`, `.dev.vars`), estado do Wrangler, bancos SQ
 
 ### Aplicação web em Cloudflare
 
-O scaffold independente está em [`apps/cloudflare/README.md`](apps/cloudflare/README.md). Os comandos web (`dev`, `build`, `preview`, `format:check`, `lint`, `typecheck` e `test`) são executados nesse diretório; não alteram nem substituem os comandos `uv` do aplicativo Python.
+O bootstrap web segue como iniciativa independente em relação aos aplicativos Python, que permanecem no repositório como referência funcional e fonte de engenharia reversa. Agora há dois apps web: [`apps/erp/README.md`](apps/erp/README.md) e [`apps/pdv/README.md`](apps/pdv/README.md). Os endereços planejados são `erp.brunosrz.com` e `pdv.brunosrz.com`; ainda não foram configurados nem publicados.
 
-O app cria o banco automaticamente na primeira execução. A primeira abertura importa o catálogo e as fichas da planilha do repositório para o banco local, sem substituir cotações ou marcar estimativas como confirmadas. O cardápio base do bar é compartilhado pelos dois apps. No cadastro de produtos da Gestão, ajuste preços pendentes e mantenha o catálogo atualizado. Para usar outro arquivo SQLite em desenvolvimento, instancie `Ledger("caminho/arquivo.db")`; os dados são locais e não há sincronização em nuvem.
+Para executar localmente, instale as dependências web na raiz com `pnpm install` e use `pnpm dev:erp` ou `pnpm dev:pdv`. Os dois apps usam TanStack Start/Query e Cloudflare Workers; por enquanto não foram ligados a recursos Cloudflare remotos. A seleção de bibliotecas está descrita em [`docs/arquitetura-web.md`](docs/arquitetura-web.md).
 
 ## Uso diário
 

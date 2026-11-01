@@ -1,23 +1,12 @@
 {
-	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "sabores-da-canastra",
-	"main": "./src/index.ts",
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "sabores-canastra-erp",
 	"compatibility_date": "2026-10-30",
-	"compatibility_flags": ["global_fetch_strictly_public"],
-	"assets": {
-		"not_found_handling": "single-page-application",
-		"binding": "ASSETS",
-		"run_worker_first": ["/api/*"],
-	},
-	"observability": {
-		"enabled": true,
-	},
+	"compatibility_flags": ["nodejs_compat"],
+	"main": "@tanstack/react-start/server-entry",
+	"observability": { "enabled": true },
 	"env": {
-		"preview": {
-			"name": "sabores-da-canastra-preview",
-		},
-		"production": {
-			"name": "sabores-da-canastra-production",
-		},
+		"preview": { "name": "sabores-canastra-erp-preview" },
+		"production": { "name": "sabores-canastra-erp" },
 	},
 }

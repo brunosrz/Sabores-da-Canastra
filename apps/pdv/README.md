@@ -1,37 +1,27 @@
-# Sabores da Canastra — Cloudflare
+# Sabores da Canastra PDV
 
-Aplicação web independente do app Python. Este scaffold prepara uma SPA em React/Vite e uma API Hono executada no Cloudflare Workers Runtime.
+Aplicação web independente para operação de ponto de venda. O bootstrap prepara
+a base; os fluxos de venda serão implementados nas próximas etapas.
 
-## Requisitos
+## Desenvolvimento local
 
-- Node.js 22.12 ou superior
-- pnpm 12.11.2 (ou compatível com o lockfile)
+Na raiz do repositório, instale as dependências uma vez e inicie o app:
 
-## Comandos
-
-Execute-os dentro de `apps/cloudflare`:
-
-```powershell
-pnpm install --frozen-lockfile
-pnpm dev
-pnpm build
-pnpm preview
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm cf-typegen
+```sh
+pnpm install
+pnpm dev:pdv
 ```
 
-O desenvolvimento e os testes usam bindings locais do Wrangler/Miniflare. Nenhuma credencial Cloudflare é necessária, e nenhum recurso remoto é conectado por padrão.
+O servidor local usa `http://127.0.0.1:3002`. O endpoint `/api/health` permite
+verificar o Worker local.
 
-## Rotas iniciais
+## Stack
 
-- `GET /api/health`: verificação de saúde da API Hono.
-- `/pdv` e `/gestao`: telas placeholder da SPA; os hosts `pdv.*` e `gestao.*` também selecionam cada aplicação.
-- Qualquer outra rota de navegação recebe o fallback `index.html` da SPA.
+- TanStack Start, com TanStack Router e rotas/handlers server-side.
+- TanStack Query com integração SSR por instância de router.
+- TanStack Form para os formulários do fluxo de venda.
+- Cloudflare Vite plugin e Wrangler para desenvolvimento local e futuros
+  ambientes preview/produção.
 
-## Ambientes e bindings
-
-`wrangler.jsonc` define os ambientes locais (padrão), `preview` e `production`. Binding `ASSETS` e nomes ambientais são locais e não exigem IDs de contas, tokens, D1, R2 ou outros recursos remotos. Adicione bindings remotos nas próximas issues somente junto com seus recursos e testes locais.
-
-Segredos de desenvolvimento devem ficar em `.dev.vars` ou `.env.local`, que são ignorados pelo Git. Use apenas valores fictícios em arquivos de exemplo.
+Não configure recursos Cloudflare remotos nem publique sem a etapa de
+infraestrutura correspondente.

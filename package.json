@@ -1,0 +1,14 @@
+{
+  "name": "sabores-da-canastra",
+  "private": true,
+  "packageManager": "pnpm@12.11.2",
+  "scripts": {
+    "dev:erp": "pnpm --filter @sabores/erp dev",
+    "dev:pdv": "pnpm --filter @sabores/pdv dev",
+    "build:web": "pnpm --filter @sabores/erp build && pnpm --filter @sabores/pdv build",
+    "lint:web": "pnpm --filter @sabores/erp lint && pnpm --filter @sabores/pdv lint",
+    "format:check:web": "pnpm --filter @sabores/erp format:check && pnpm --filter @sabores/pdv format:check",
+    "typecheck:web": "pnpm --filter @sabores/erp typecheck && pnpm --filter @sabores/pdv typecheck",
+    "test:web": "pnpm --filter @sabores/erp test && pnpm --filter @sabores/pdv test"
+  }
+}

@@ -17,33 +17,33 @@ repos:
 
   - repo: local
     hooks:
-      - id: cloudflare-format
-        name: cloudflare app formatting
-        entry: pnpm --dir apps/cloudflare format:check
+      - id: web-format
+        name: ERP and PDV formatting
+        entry: pnpm format:check:web
         language: system
         types_or: [javascript, jsx, ts, tsx, css]
-        files: ^apps/cloudflare/.*\.(js|jsx|ts|tsx|css|mts)$
+        files: ^apps/(erp|pdv)/.*\.(js|jsx|ts|tsx|css|mts)$
         pass_filenames: false
-      - id: cloudflare-eslint
-        name: cloudflare app ESLint
-        entry: pnpm --dir apps/cloudflare lint
+      - id: web-eslint
+        name: ERP and PDV ESLint
+        entry: pnpm lint:web
         language: system
         types_or: [javascript, jsx, ts, tsx]
-        files: ^apps/cloudflare/.*\.(js|jsx|ts|tsx)$
+        files: ^apps/(erp|pdv)/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false
-      - id: cloudflare-typecheck
-        name: cloudflare app TypeScript
-        entry: pnpm --dir apps/cloudflare typecheck
+      - id: web-typecheck
+        name: ERP and PDV TypeScript
+        entry: pnpm typecheck:web
         language: system
         types_or: [javascript, jsx, ts, tsx]
-        files: ^apps/cloudflare/.*\.(js|jsx|ts|tsx)$
+        files: ^apps/(erp|pdv)/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false
       - id: markdownlint
         name: markdown lint
         entry: npx --yes markdownlint-cli2@0.23.3
         language: system
         types: [markdown]
-        files: ^(README\.md|docs/json-contract\.md|apps/cloudflare/README\.md)$
+        files: ^(README\.md|docs/(json-contract|arquitetura-web)\.md|apps/(erp|pdv)/README\.md)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3

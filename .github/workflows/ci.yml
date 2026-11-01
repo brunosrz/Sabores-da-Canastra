@@ -37,13 +37,13 @@ jobs:
         run: uv sync --locked --group dev
 
       - name: Run repository hooks
-        run: SKIP=cloudflare-format,cloudflare-eslint,cloudflare-typecheck,markdownlint uvx --from pre-commit==4.7.0 pre-commit run --all-files
+        run: SKIP=web-format,web-eslint,web-typecheck,markdownlint uvx --from pre-commit==4.7.0 pre-commit run --all-files
 
       - name: Run Python tests
         run: uv run pytest
 
-  cloudflare-app:
-    name: Cloudflare app quality, tests and build
+  cloudflare-apps:
+    name: Cloudflare ERP and PDV quality, tests and build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -61,29 +61,22 @@ jobs:
           run_install: false
 
       - name: Install locked dependencies
-        working-directory: apps/cloudflare
         run: pnpm install --frozen-lockfile
 
       - name: Lint Markdown
-        working-directory: apps/cloudflare
-        run: pnpm dlx markdownlint-cli2@0.23.3 --config ../../.markdownlint-cli2.yaml ../../README.md ../../docs/json-contract.md README.md
+        run: pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml README.md docs/json-contract.md docs/arquitetura-web.md apps/erp/README.md apps/pdv/README.md
 
       - name: Lint
-        working-directory: apps/cloudflare
-        run: pnpm lint
+        run: pnpm lint:web
 
       - name: Check formatting
-        working-directory: apps/cloudflare
-        run: pnpm format:check
+        run: pnpm format:check:web
 
       - name: Typecheck
-        working-directory: apps/cloudflare
-        run: pnpm typecheck
+        run: pnpm typecheck:web
 
       - name: Test Worker runtime
-        working-directory: apps/cloudflare
-        run: pnpm test
+        run: pnpm test:web
 
       - name: Build Vite app and Worker
-        working-directory: apps/cloudflare
-        run: pnpm build
+        run: pnpm build:web

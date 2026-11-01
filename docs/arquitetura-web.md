@@ -20,8 +20,8 @@ Access e publicar os apps web. Produção permanece separada.
 ERP e PDV são interfaces independentes, implantáveis e versionadas
 separadamente. ERP e PDV executam localmente como Workers independentes e ainda
 têm rotas iniciais e verificação de saúde. A API executa em `127.0.0.1:3000`;
-D1, KV, R2, Durable Objects e Workflows usam simuladores locais. Recursos
-recursos remotos de preview foram provisionados. A API já está publicada e
+D1, KV, R2, Durable Objects e Workflows usam simuladores locais. Os recursos
+remotos de preview foram provisionados. A API já está publicada e
 depende apenas de Service Bindings; os apps web aguardam Access para expor seus
 domínios. Os arquivos Python continuam sendo a referência funcional durante a
 migração, não os backends dos novos apps.

@@ -4,6 +4,7 @@ import app from "../src/index";
 import {
   backupExpired,
   backupPrefix,
+  backupRetentionDays,
   hashStream,
   initialExportState,
   putImmutableBackupStream,
@@ -180,8 +181,13 @@ describe("bindings Cloudflare locais", () => {
     expect(replay.status).toBe(200);
     expect((await replay.json<{ replayed: boolean }>()).replayed).toBe(true);
     const count = await bindings.DB.prepare(
-      "SELECT COUNT(*) AS total FROM sales WHERE sale_id LIKE 'sale_%'",
-    ).first<{ total: number }>();
+      `SELECT COUNT(*) AS total
+       FROM sales
+       INNER JOIN ledger_entries USING (ledger_id)
+       WHERE ledger_entries.idempotency_key = ?`,
+    )
+      .bind(`pdv:${key}`)
+      .first<{ total: number }>();
     expect(count?.total).toBe(1);
   });
 
@@ -307,6 +313,14 @@ describe("bindings Cloudflare locais", () => {
     );
     expect(backupExpired("2026-09-30T00:00:00.000Z", now, 30)).toBe(true);
     expect(backupExpired("2026-10-31T00:00:00.000Z", now, 30)).toBe(false);
+    expect(backupRetentionDays(undefined)).toBe(90);
+    expect(backupRetentionDays("30")).toBe(30);
+    expect(() => backupRetentionDays("6")).toThrow(
+      "BACKUP_RETENTION_DAYS precisa estar entre 7 e 3650.",
+    );
+    expect(() => backupRetentionDays("3651")).toThrow(
+      "BACKUP_RETENTION_DAYS precisa estar entre 7 e 3650.",
+    );
   });
 
   it("aceita exportação D1 já concluída sem bookmark", () => {

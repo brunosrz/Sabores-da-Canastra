@@ -71,7 +71,7 @@ def _run(
         stdin=subprocess.DEVNULL if input_text is None else None,
         check=False,
     )
-    if input_text is not None:
+    if input_text is not None or (capture and result.returncode != 0):
         if result.stdout:
             _write_console(result.stdout, sys.stdout)
         if result.stderr:
@@ -217,7 +217,9 @@ def _secrets_for(environment: str) -> dict[str, str]:
         raise SystemExit(f"Secrets ausentes em {path.name}: {', '.join(sorted(missing))}.")
     for key in required:
         value = secrets[key]
-        if len(value) < 32 or value.lower().startswith(("gere-", "replace-", "changeme")):
+        if len(value) < 32 or value.lower().startswith(
+            ("gere-", "replace-", "changeme", "token-cloudflare-")
+        ):
             raise SystemExit(f"{key} precisa ser um segredo aleatório com ao menos 32 caracteres.")
     allowed = required | {"CLOUDFLARE_API_TOKEN"}
     unknown = secrets.keys() - allowed

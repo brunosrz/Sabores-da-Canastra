@@ -84,6 +84,18 @@ export function backupExpired(
   );
 }
 
+export function backupRetentionDays(value: string | undefined): number {
+  const retentionDays = Number(value || "90");
+  if (
+    !Number.isInteger(retentionDays) ||
+    retentionDays < 7 ||
+    retentionDays > 3650
+  ) {
+    throw new Error("BACKUP_RETENTION_DAYS precisa estar entre 7 e 3650.");
+  }
+  return retentionDays;
+}
+
 type StreamDigest = { size: number; sha256: string };
 
 function digestHex(value: Uint8Array): string {
@@ -175,7 +187,7 @@ export async function putImmutableBackupStream(
   expectedDigest: StreamDigest,
   extraMetadata: Record<string, string> = {},
 ): Promise<void> {
-  const existing = await bucket.get(key);
+  const existing = await bucket.head(key);
   if (existing) {
     if (
       existing.size === expectedDigest.size &&
@@ -206,7 +218,7 @@ export async function putImmutableBackupStream(
     );
   }
   if (created) return;
-  const raced = await bucket.get(key);
+  const raced = await bucket.head(key);
   if (
     !raced ||
     raced.size !== expectedDigest.size ||
@@ -231,7 +243,7 @@ export async function putImmutableBackupObject(
   const sha256 = [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-  const existing = await bucket.get(key);
+  const existing = await bucket.head(key);
   if (existing) {
     if (
       existing.size === bytes.byteLength &&
@@ -248,7 +260,7 @@ export async function putImmutableBackupObject(
     customMetadata: { ...extraMetadata, sha256 },
   });
   if (created) return;
-  const raced = await bucket.get(key);
+  const raced = await bucket.head(key);
   if (
     !raced ||
     raced.size !== bytes.byteLength ||
@@ -268,6 +280,7 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
         "Backup Cloudflare não configurado: faltam token, conta ou banco D1.",
       );
     }
+    const retentionDays = backupRetentionDays(this.env.BACKUP_RETENTION_DAYS);
     const endpoint = `https://api.cloudflare.com/client/v4/accounts/${this.env.BACKUP_ACCOUNT_ID}/d1/database/${this.env.BACKUP_DATABASE_ID}/export`;
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -374,14 +387,6 @@ export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
         { ...(bookmark ? { bookmark } : {}), sql_sha256: firstDigest.sha256 },
       );
 
-      const retentionDays = Number(this.env.BACKUP_RETENTION_DAYS || "90");
-      if (
-        !Number.isInteger(retentionDays) ||
-        retentionDays < 7 ||
-        retentionDays > 3650
-      ) {
-        throw new Error("BACKUP_RETENTION_DAYS precisa estar entre 7 e 3650.");
-      }
       let cursor: string | undefined;
       do {
         const page = await this.env.PRIVATE_FILES.list({

@@ -19,6 +19,7 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+.local/
 node_modules/
 dist/
 coverage/

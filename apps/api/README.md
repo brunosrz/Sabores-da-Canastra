@@ -75,7 +75,7 @@ uv run scons api-preview
 uv run scons preview
 ```
 
-`CLOUDFLARE_API_TOKEN` (no arquivo de secrets da API) deve ter somente a permissão necessária para exportar o D1
+`D1_BACKUP_TOKEN` deve ter somente a permissão necessária para exportar o D1
 correspondente. `BACKUP_DATABASE_ID` precisa ser o mesmo ID de
 `d1_databases[0].database_id`; o guard interrompe o deploy se divergirem. Antes
 de `scons preview`, habilite Cloudflare Access e proteja os hostnames de preview

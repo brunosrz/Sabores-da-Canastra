@@ -10,7 +10,7 @@ type BackupEnv = {
   BACKUP_ACCOUNT_ID: string;
   BACKUP_DATABASE_ID: string;
   BACKUP_RETENTION_DAYS: string;
-  CLOUDFLARE_API_TOKEN?: string;
+  D1_BACKUP_TOKEN?: string;
 };
 
 type ExportResult = {
@@ -262,7 +262,7 @@ export async function putImmutableBackupObject(
 
 export class D1BackupWorkflow extends WorkflowEntrypoint<BackupEnv> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep): Promise<void> {
-    const token = this.env.CLOUDFLARE_API_TOKEN;
+    const token = this.env.D1_BACKUP_TOKEN;
     if (!token || !this.env.BACKUP_ACCOUNT_ID || !this.env.BACKUP_DATABASE_ID) {
       throw new Error(
         "Backup Cloudflare não configurado: faltam token, conta ou banco D1.",

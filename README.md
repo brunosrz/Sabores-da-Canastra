@@ -82,8 +82,7 @@ uv run scons preview
 ```
 
 Preencha `.env` com o token Cloudflare, Account ID e Zone ID. Gere os três
-tokens de aplicação em `apps/api/.env.preview`; `CLOUDFLARE_API_TOKEN` (nesse
-arquivo, diferente do token local de deploy no `.env` raiz) pode ficar
+tokens de aplicação em `apps/api/.env.preview`; `D1_BACKUP_TOKEN` pode ficar
 vazio no primeiro deploy, mas backups remotos só funcionarão depois de
 configurá-lo com um token Cloudflare de escopo mínimo. Arquivos preenchidos são
 ignorados pelo Git. `scons api-preview` publica somente a API sem rota pública;

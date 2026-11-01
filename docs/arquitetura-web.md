@@ -129,7 +129,7 @@ com regra `bypass`.
 
 `.env.example` contém somente nomes e campos de configuração local. Secrets
 remotos ficam em `apps/api/.env.preview` e `apps/api/.env.production`; o SCons
-os envia com Wrangler `secret bulk`, sem imprimir os valores. `CLOUDFLARE_API_TOKEN`
+os envia com Wrangler `secret bulk`, sem imprimir os valores. `D1_BACKUP_TOKEN`
 precisa ser um token Cloudflare de escopo mínimo para a API de exportação; sem
 ele, o Worker publica, mas backups remotos ficam indisponíveis. Nunca coloque
 senhas ou tokens em `vars` versionadas.

@@ -95,6 +95,16 @@ class Ledger:
                     version TEXT NOT NULL DEFAULT 'E'
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS products (
+                    product_id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+                    category TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'un',
+                    sale_price_cents INTEGER, active INTEGER NOT NULL DEFAULT 1,
+                    notes TEXT
+                )
+            """)
+            db.execute("""CREATE TABLE IF NOT EXISTS parameters (
+                name TEXT PRIMARY KEY,value TEXT NOT NULL,unit TEXT,status TEXT NOT NULL)""")
 
     def upsert_ingredient(self, *, name: str, base_unit: str, pack_quantity: str,
                           pack_price_cents: int | None = None, supplier: str | None = None,
@@ -238,7 +248,6 @@ class Ledger:
 
     def upsert_parameter(self, name: str, value: str, unit: str = "", status: str = "Estimado") -> None:
         with self._connect() as db:
-            db.execute("CREATE TABLE IF NOT EXISTS parameters (name TEXT PRIMARY KEY,value TEXT NOT NULL,unit TEXT,status TEXT NOT NULL)")
             db.execute("INSERT INTO parameters(name,value,unit,status) VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value,unit=excluded.unit,status=excluded.status",
                        (name,value,unit,status))
 
@@ -327,6 +336,142 @@ class Ledger:
         with self._connect() as db:
             cursor = db.execute("DELETE FROM entries WHERE id=?", (entry_id,))
             return cursor.rowcount > 0
+
+    def delete_ingredient(self, name: str) -> None:
+        with self._connect() as db:
+            used = db.execute("SELECT COUNT(*) FROM recipe_lines WHERE ingredient_name=?", (name,)).fetchone()[0]
+            if used:
+                raise ValueError(f"Ingrediente usado em {used} linha(s) de receita; remova ou substitua antes.")
+            db.execute("DELETE FROM ingredients WHERE name=?", (name,))
+
+    def delete_recipe(self, recipe_id: str) -> None:
+        with self._connect() as db:
+            db.execute("DELETE FROM recipe_lines WHERE recipe_id=?", (recipe_id,))
+            db.execute("DELETE FROM daily_mix WHERE recipe_id=?", (recipe_id,))
+            db.execute("DELETE FROM recipes WHERE recipe_id=?", (recipe_id,))
+
+    def upsert_product(self, *, product_id: str, name: str, category: str, unit: str = "un",
+                       sale_price_cents: int | None = None, active: bool = True, notes: str | None = None) -> None:
+        if not product_id.strip() or not name.strip() or not category.strip():
+            raise ValueError("ID, nome e categoria do produto são obrigatórios")
+        if sale_price_cents is not None and sale_price_cents < 0:
+            raise ValueError("Preço de venda não pode ser negativo")
+        with self._connect() as db:
+            db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,active,notes)
+                VALUES(?,?,?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET name=excluded.name,
+                category=excluded.category,unit=excluded.unit,sale_price_cents=excluded.sale_price_cents,
+                active=excluded.active,notes=excluded.notes""",
+                (product_id.strip(),name.strip(),category.strip(),unit,sale_price_cents,int(active),notes))
+
+    def list_products(self, active_only: bool = False) -> list[dict]:
+        query="SELECT * FROM products" + (" WHERE active=1" if active_only else "") + " ORDER BY category,name"
+        with self._connect() as db:
+            return [dict(row) for row in db.execute(query)]
+
+    def delete_product(self, product_id: str) -> None:
+        with self._connect() as db:
+            db.execute("DELETE FROM products WHERE product_id=?",(product_id,))
+
+    def replace_recipe(self, *, recipe_id: str, product_name: str, version: str, yield_units: int,
+                       source: str | None, instructions: str | None,
+                       lines: Iterable[tuple[str,str,str,str | None]]) -> None:
+        if yield_units<=0 or not recipe_id.strip() or not product_name.strip():
+            raise ValueError("ID, nome e rendimento positivo são obrigatórios")
+        rows=list(lines)
+        if not rows: raise ValueError("Adicione pelo menos um ingrediente à receita")
+        with self._connect() as db:
+            db.execute("""INSERT INTO recipes(recipe_id,product_name,version,yield_units,source,instructions)
+                VALUES(?,?,?,?,?,?) ON CONFLICT(recipe_id) DO UPDATE SET product_name=excluded.product_name,
+                version=excluded.version,yield_units=excluded.yield_units,source=excluded.source,instructions=excluded.instructions""",
+                (recipe_id,product_name,version,yield_units,source,instructions))
+            db.execute("DELETE FROM recipe_lines WHERE recipe_id=?",(recipe_id,))
+            db.executemany("INSERT INTO recipe_lines(recipe_id,ingredient_name,quantity,unit,stage) VALUES(?,?,?,?,?)",
+                           [(recipe_id,n,str(q),u,st) for n,q,u,st in rows])
+
+    def replace_mix(self, rows: Iterable[tuple[str,int,str]]) -> None:
+        with self._connect() as db:
+            db.execute("DELETE FROM daily_mix")
+            db.executemany("INSERT INTO daily_mix(recipe_id,quantity,version) VALUES(?,?,?)",list(rows))
+
+    def export_configuration(self) -> dict:
+        """Export editable catalog/config only. The financial ledger is never part of this contract."""
+        return {
+            "schema": "sabores-da-canastra/config",
+            "schema_version": 1,
+            "exported_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "preserve_ledger": True,
+            "ingredients": self.list_ingredients(),
+            "recipes": self.list_recipes(),
+            "products": self.list_products(),
+            "daily_mix": self.list_mix(),
+            "parameters": self.parameters(),
+        }
+
+    def import_configuration(self, payload: dict) -> dict:
+        """Validate whole document, then atomically upsert config without touching entries."""
+        if payload.get("schema")!="sabores-da-canastra/config" or payload.get("schema_version")!=1:
+            raise ValueError("Formato/schema incompatível; esperado sabores-da-canastra/config versão 1")
+        if payload.get("preserve_ledger") is not True:
+            raise ValueError("Contrato exige preserve_ledger=true; importação nunca altera o ledger")
+        ingredients=payload.get("ingredients",[]);recipes=payload.get("recipes",[])
+        products=payload.get("products",[]);mix=payload.get("daily_mix",[]);params=payload.get("parameters",{})
+        if not all(isinstance(x,list) for x in (ingredients,recipes,products,mix)) or not isinstance(params,dict):
+            raise ValueError("ingredients, recipes, products, daily_mix precisam ser listas e parameters um objeto")
+        ingredient_names={}
+        for item in ingredients:
+            if not isinstance(item,dict) or not item.get("name") or not item.get("base_unit") or Decimal(str(item.get("pack_quantity",0)))<=0:
+                raise ValueError("Ingrediente inválido: name, base_unit e pack_quantity positivo são obrigatórios")
+            ingredient_names[item["name"]]=item["base_unit"]
+        recipe_ids=set()
+        for recipe in recipes:
+            if not isinstance(recipe,dict) or not recipe.get("recipe_id") or not recipe.get("product_name") or int(recipe.get("yield_units",0))<=0:
+                raise ValueError("Receita inválida: recipe_id, product_name e yield_units positivo são obrigatórios")
+            recipe_ids.add(recipe["recipe_id"])
+            if not isinstance(recipe.get("lines"),list) or not recipe["lines"]:
+                raise ValueError(f"Receita {recipe['recipe_id']} precisa de pelo menos uma linha")
+            for line in recipe["lines"]:
+                if line.get("ingredient_name") not in ingredient_names:
+                    raise ValueError(f"Ingrediente {line.get('ingredient_name')} não está no catálogo")
+                if line.get("unit")!=ingredient_names[line["ingredient_name"]]:
+                    raise ValueError(f"Unidade incompatível para {line['ingredient_name']}: use {ingredient_names[line['ingredient_name']]}")
+                if Decimal(str(line.get("quantity",-1)))<0 or not line.get("unit"):
+                    raise ValueError(f"Linha inválida em {recipe['recipe_id']}")
+        for product in products:
+            if not isinstance(product,dict) or not product.get("product_id") or not product.get("name") or not product.get("category"):
+                raise ValueError("Produto precisa de product_id, name e category")
+        for item in mix:
+            if item.get("recipe_id") not in recipe_ids or int(item.get("quantity",-1))<0 or item.get("selected_version","E") not in {"E","R"}:
+                raise ValueError("Linha de mix inválida")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            for item in ingredients:
+                db.execute("""INSERT INTO ingredients(name,base_unit,pack_quantity,pack_price_cents,supplier,price_date,price_status,source,notes)
+                    VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET base_unit=excluded.base_unit,
+                    pack_quantity=excluded.pack_quantity,pack_price_cents=excluded.pack_price_cents,supplier=excluded.supplier,
+                    price_date=excluded.price_date,price_status=excluded.price_status,source=excluded.source,notes=excluded.notes""",
+                    (item["name"],item["base_unit"],str(item["pack_quantity"]),item.get("pack_price_cents"),item.get("supplier"),
+                     item.get("price_date"),item.get("price_status","Pendente"),item.get("source"),item.get("notes")))
+            for recipe in recipes:
+                db.execute("""INSERT INTO recipes(recipe_id,product_name,version,yield_units,source,instructions) VALUES(?,?,?,?,?,?)
+                    ON CONFLICT(recipe_id) DO UPDATE SET product_name=excluded.product_name,version=excluded.version,
+                    yield_units=excluded.yield_units,source=excluded.source,instructions=excluded.instructions""",
+                    (recipe["recipe_id"],recipe["product_name"],recipe.get("version","E"),int(recipe["yield_units"]),recipe.get("source"),recipe.get("instructions")))
+                db.execute("DELETE FROM recipe_lines WHERE recipe_id=?",(recipe["recipe_id"],))
+                db.executemany("INSERT INTO recipe_lines(recipe_id,ingredient_name,quantity,unit,stage) VALUES(?,?,?,?,?)",
+                    [(recipe["recipe_id"],line["ingredient_name"],str(line["quantity"]),line["unit"],line.get("stage")) for line in recipe["lines"]])
+            for product in products:
+                db.execute("""INSERT INTO products(product_id,name,category,unit,sale_price_cents,active,notes) VALUES(?,?,?,?,?,?,?)
+                    ON CONFLICT(product_id) DO UPDATE SET name=excluded.name,category=excluded.category,unit=excluded.unit,
+                    sale_price_cents=excluded.sale_price_cents,active=excluded.active,notes=excluded.notes""",
+                    (product["product_id"],product["name"],product["category"],product.get("unit","un"),product.get("sale_price_cents"),int(product.get("active",True)),product.get("notes")))
+            for key,value in params.items():
+                db.execute("""INSERT INTO parameters(name,value,unit,status) VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET
+                    value=excluded.value,unit=excluded.unit,status=excluded.status""",
+                    (key,str(value.get("value","")),value.get("unit",""),value.get("status","Estimado")))
+            db.executemany("""INSERT INTO daily_mix(recipe_id,quantity,version) VALUES(?,?,?)
+                ON CONFLICT(recipe_id) DO UPDATE SET quantity=excluded.quantity,version=excluded.version""",
+                [(item["recipe_id"],int(item["quantity"]),item.get("selected_version","E")) for item in mix])
+        return {"ingredients":len(ingredients),"recipes":len(recipes),"products":len(products),"ledger_preserved":True}
 
     def daily_summary(self, entry_date: str) -> dict[str, int]:
         date.fromisoformat(entry_date)

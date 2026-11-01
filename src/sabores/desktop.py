@@ -7,6 +7,9 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk, simpledialog
+from tkinter import filedialog
+import json
+import uuid
 
 from .database import Entry, Ledger
 
@@ -52,7 +55,41 @@ class LedgerApp(tk.Tk):
         self._configure_style()
         self._build()
         self._build_tabs()
+        self._ensure_recipe_products()
+        self._ensure_default_products()
         self.refresh()
+
+    def _ensure_recipe_products(self,force=False):
+        if not force and self.ledger.parameters().get("_recipe_products_seed_v1",{}).get("value")=="1":return
+        existing_names={product["name"] for product in self.ledger.list_products()}
+        for name in {recipe["product_name"] for recipe in self.ledger.list_recipes()}-existing_names:
+            safe="".join(ch.lower() if ch.isalnum() else "-" for ch in name).strip("-")
+            self.ledger.upsert_product(product_id="recipe-"+safe,name=name,category="Salgados",
+                notes="Defina o preço de venda antes de registrar vendas")
+        self.ledger.upsert_parameter("_recipe_products_seed_v1","1","","Confirmado")
+
+    def _ensure_default_products(self):
+        params=self.ledger.parameters()
+        if params.get("_catalog_seed_v1",{}).get("value")=="1":return
+        defaults=[
+            ("Bebidas","Refrigerante lata 350 ml","lata"),
+            ("Bebidas","Energético lata","lata"),
+            ("Bebidas","Água mineral 500 ml","un"),
+            ("Doces","Brownie intenso","un"),
+            ("Doces","Bolinho de banana, aveia e cacau","un"),
+            ("Doces","Creme de morango com chocolate","un"),
+            ("Doces","Creme de manga com chocolate","un"),
+            ("Doces","Creme de maracujá com chocolate","un"),
+            ("Molhos","Molho de pimenta artesanal","frasco"),
+            ("Molhos","Maionese verde","porção"),
+        ]
+        names={p["name"] for p in self.ledger.list_products()}
+        for category,name,unit in defaults:
+            if name not in names:
+                safe="".join(ch.lower() if ch.isalnum() else "-" for ch in name).strip("-")
+                self.ledger.upsert_product(product_id="default-"+safe,name=name,category=category,unit=unit,
+                    notes="Produto inicial sem preço; edite preço e disponibilidade antes da venda")
+        self.ledger.upsert_parameter("_catalog_seed_v1","1","","Confirmado")
 
     def _import_legacy_catalog(self):
         """One-time import of existing workbook catalog into SQLite, without confirming estimates."""
@@ -125,6 +162,7 @@ class LedgerApp(tk.Tk):
     def _build(self):
         shell = tk.Frame(self, bg=BG, padx=30, pady=24)
         shell.pack(fill="both", expand=True)
+        self.shell=shell
         header = tk.Frame(shell, bg=BG)
         header.pack(fill="x", pady=(0, 20))
         tk.Label(header, text="SABORES DA CANASTRA", bg=BG, fg=GREEN,
@@ -135,6 +173,7 @@ class LedgerApp(tk.Tk):
                  font=("Segoe UI", 25, "bold")).pack(side="left")
         tk.Label(titleline, text="REGISTRO DE VENDAS · COMPRAS · GASTOS", bg=BG, fg=MUTED,
                  font=("Segoe UI", 9, "bold")).pack(side="right", pady=12)
+        self.exchange_toolbar=tk.Frame(shell,bg=BG);self.exchange_toolbar.pack(fill="x",pady=(0,7))
 
         self.main_notebook = ttk.Notebook(shell)
         self.main_notebook.pack(fill="both", expand=True)
@@ -156,11 +195,17 @@ class LedgerApp(tk.Tk):
 
         content = tk.Frame(ledger_tab, bg=BG)
         content.pack(fill="both", expand=True)
-        left = tk.Frame(content, bg=PANEL, padx=20, pady=18,
+        left_shell=tk.Frame(content,bg=BG,width=355);left_shell.pack(side="left",fill="y",padx=(0,14));left_shell.pack_propagate(False)
+        left_canvas=tk.Canvas(left_shell,bg=BG,width=350,highlightthickness=0)
+        left_scroll=ttk.Scrollbar(left_shell,orient="vertical",command=left_canvas.yview);left_scroll.pack(side="right",fill="y")
+        left_canvas.pack(side="left",fill="both",expand=True);left_canvas.configure(yscrollcommand=left_scroll.set)
+        left = tk.Frame(left_canvas, bg=PANEL, padx=16, pady=16,
                         highlightbackground="#E5EAE5", highlightthickness=1)
-        left.pack(side="left", fill="y", padx=(0, 18))
-        left.configure(width=340)
-        left.pack_propagate(False)
+        left_window=left_canvas.create_window((0,0),window=left,anchor="nw",width=330)
+        left.bind("<Configure>",lambda _e:left_canvas.configure(scrollregion=left_canvas.bbox("all")))
+        left_canvas.bind("<Configure>",lambda e:left_canvas.itemconfigure(left_window,width=e.width))
+        left.bind("<Enter>",lambda _e:left_canvas.bind_all("<MouseWheel>",lambda ev:left_canvas.yview_scroll(int(-1*(ev.delta/120)),"units")))
+        left.bind("<Leave>",lambda _e:left_canvas.unbind_all("<MouseWheel>"))
         tk.Label(left, text="Novo lançamento", bg=PANEL, fg=INK,
                  font=("Segoe UI", 15, "bold")).pack(anchor="w", pady=(0, 14))
         self.kind = tk.StringVar(value="Venda")
@@ -173,21 +218,46 @@ class LedgerApp(tk.Tk):
         self.payment = tk.StringVar(value="Pix")
         self.counterparty = tk.StringVar()
         self.notes = tk.StringVar()
+        self.sale_category=tk.StringVar(value="Todos")
+        self.sale_product=tk.StringVar()
+        self.sale_qty=tk.StringVar(value="1")
+        self.sale_price=tk.StringVar()
+        self.sale_cart=[]
         self._field(left, "Tipo", ttk.Combobox(left, textvariable=self.kind, values=["Venda", "Compra", "Gasto"], state="readonly"))
         self._field(left, "Data (AAAA-MM-DD)", ttk.Entry(left, textvariable=self.entry_date))
         self.category_combo = ttk.Combobox(left, textvariable=self.category, values=self._suggestions("Venda"))
         self._field(left, "Categoria", self.category_combo)
-        self._field(left, "Descrição", ttk.Entry(left, textvariable=self.description))
+        self.description_label=tk.Label(left,text="Descrição",bg=PANEL,fg=MUTED,font=("Segoe UI",9,"bold"));self.description_label.pack(anchor="w",pady=(0,4))
+        self.description_entry=ttk.Entry(left,textvariable=self.description);self.description_entry.pack(fill="x",pady=(0,10),ipady=4)
+        self.sale_items_frame=tk.Frame(left,bg=PANEL)
+        tk.Label(self.sale_items_frame,text="Itens da venda",bg=PANEL,fg=INK,font=("Segoe UI",10,"bold")).pack(anchor="w")
+        sell_select=tk.Frame(self.sale_items_frame,bg=PANEL);sell_select.pack(fill="x",pady=(5,4))
+        self.sale_category_combo=ttk.Combobox(sell_select,textvariable=self.sale_category,values=["Todos","Salgados","Bebidas","Doces","Molhos","Outros"],state="readonly",width=12)
+        self.sale_category_combo.pack(side="left",padx=(0,5));self.sale_category_combo.bind("<<ComboboxSelected>>",lambda _e:self.refresh_sale_products())
+        self.sale_product_combo=ttk.Combobox(sell_select,textvariable=self.sale_product,state="readonly",width=22);self.sale_product_combo.pack(side="left",fill="x",expand=True)
+        self.sale_product_combo.bind("<<ComboboxSelected>>",self.sale_product_selected)
+        row=tk.Frame(self.sale_items_frame,bg=PANEL);row.pack(fill="x")
+        ttk.Entry(row,textvariable=self.sale_qty,width=6).pack(side="left",padx=(0,5))
+        ttk.Entry(row,textvariable=self.sale_price,width=10).pack(side="left",fill="x",expand=True)
+        tk.Button(row,text="Adicionar",command=self.add_sale_item,bg=GREEN,fg="white",relief="flat",padx=8,pady=5).pack(side="left",padx=(5,0))
+        tk.Button(self.sale_items_frame,text="+ Novo produto vendável",command=self.new_product_dialog,bg="#E8EDE8",fg=INK,relief="flat",padx=8,pady=5).pack(anchor="w",pady=(4,3))
+        self.sale_cart_tree=ttk.Treeview(self.sale_items_frame,columns=("name","qty","price","total"),show="headings",height=4)
+        for col,label,width in [("name","Produto",140),("qty","Qtd",40),("price","Unit.",70),("total","Total",75)]:self.sale_cart_tree.heading(col,text=label);self.sale_cart_tree.column(col,width=width)
+        self.sale_cart_tree.pack(fill="x")
+        tk.Button(self.sale_items_frame,text="Remover item selecionado",command=self.remove_sale_item,bg="#F8E9E6",fg=RED,relief="flat",padx=7,pady=4).pack(anchor="e",pady=(3,0))
+        self.sale_items_frame.pack(fill="x",pady=(0,8))
         numbers = tk.Frame(left, bg=PANEL)
         numbers.pack(fill="x", pady=(0, 9))
         self._mini_field(numbers, "Quantidade", self.quantity, 11)
         self._mini_field(numbers, "Valor unitário", self.unit_price, 14)
-        self._field(left, "Valor total (R$)", ttk.Entry(left, textvariable=self.amount))
+        self.amount_entry=ttk.Entry(left,textvariable=self.amount)
+        self._field(left, "Valor total (R$)", self.amount_entry)
         self._field(left, "Pagamento", ttk.Combobox(left, textvariable=self.payment,
                     values=["Pix", "Dinheiro", "Débito", "Crédito", "Transferência", "Outro"], state="readonly"))
         self._field(left, "Fornecedor / cliente", ttk.Entry(left, textvariable=self.counterparty))
         self._field(left, "Observação", ttk.Entry(left, textvariable=self.notes))
         self.kind.trace_add("write", self._kind_changed)
+        self.sale_category.trace_add("write",lambda *_:self.refresh_sale_products())
         self.amount.trace_add("write", self._calculate_total)
         self.quantity.trace_add("write", self._calculate_total)
         self.unit_price.trace_add("write", self._calculate_total)
@@ -237,13 +307,42 @@ class LedgerApp(tk.Tk):
         self.main_notebook.add(self.production_tab, text="  Produção & compras  ")
         self.reports_tab = tk.Frame(self.main_notebook, bg=BG, padx=28, pady=22)
         self.main_notebook.add(self.reports_tab, text="  Relatórios  ")
+        self.recipes_tab=tk.Frame(self.main_notebook,bg=BG,padx=28,pady=22)
+        self.main_notebook.add(self.recipes_tab,text="  Receitas  ")
         self._build_costs_tab()
         self._build_production_tab()
         self._build_reports_tab()
+        self._build_recipes_tab()
+        self._build_data_exchange_controls()
 
     def _section_title(self, parent, title, subtitle):
         tk.Label(parent, text=title, bg=BG, fg=INK, font=("Segoe UI", 20, "bold")).pack(anchor="w")
         tk.Label(parent, text=subtitle, bg=BG, fg=MUTED, font=("Segoe UI", 10)).pack(anchor="w", pady=(3, 18))
+
+    def _build_data_exchange_controls(self):
+        bar=self.exchange_toolbar
+        tk.Label(bar,text="Dados em JSON",bg=BG,fg=MUTED,font=("Segoe UI",9)).pack(side="left")
+        tk.Button(bar,text="Exportar JSON",command=self.export_json,bg="#E8EDE8",fg=INK,relief="flat",padx=9,pady=5).pack(side="left",padx=3)
+        tk.Button(bar,text="Importar JSON",command=self.import_json,bg="#E8EDE8",fg=INK,relief="flat",padx=9,pady=5).pack(side="left",padx=3)
+
+    def export_json(self):
+        path=filedialog.asksaveasfilename(parent=self,title="Exportar catálogo e configurações",defaultextension=".json",filetypes=[("JSON","*.json")],initialfile="sabores-config-v1.json")
+        if not path:return
+        try:
+            with open(path,"w",encoding="utf-8") as f:json.dump(self.ledger.export_configuration(),f,ensure_ascii=False,indent=2)
+            messagebox.showinfo("Exportação concluída","Catálogo, receitas, mix e premissas exportados. Lançamentos financeiros não são incluídos.",parent=self)
+        except Exception as exc:messagebox.showerror("Exportação",str(exc),parent=self)
+
+    def import_json(self):
+        path=filedialog.askopenfilename(parent=self,title="Importar catálogo e configurações",filetypes=[("JSON","*.json")])
+        if not path:return
+        if not messagebox.askyesno("Importar JSON","O arquivo vai inserir/atualizar ingredientes, receitas, produtos, mix e premissas. O ledger de vendas/compras/gastos será preservado. Continuar?",parent=self):return
+        try:
+            with open(path,encoding="utf-8") as f:payload=json.load(f)
+            result=self.ledger.import_configuration(payload)
+            self._ensure_recipe_products(force=True);self.refresh();self.refresh_catalogs();self.refresh_sale_products()
+            messagebox.showinfo("Importação concluída",f"{result['ingredients']} ingredientes · {result['recipes']} receitas · {result['products']} produtos. Ledger preservado.",parent=self)
+        except Exception as exc:messagebox.showerror("Importação cancelada",str(exc),parent=self)
 
     def _build_costs_tab(self):
         self._section_title(self.costs_tab, "Custos & receitas", "Cadastre preços de pacote e acompanhe as fichas técnicas migradas para o banco local.")
@@ -286,6 +385,7 @@ class LedgerApp(tk.Tk):
         ttk.Combobox(filters,textvariable=self.ingredient_category_filter,values=["Todas","Ingrediente","Laticínios","Carnes","Hortifruti","Mercearia","Temperos","Outros"],state="readonly",width=14).pack(side="left")
         actions=tk.Frame(listing,bg=PANEL);actions.pack(fill="x",pady=(0,8))
         tk.Button(actions,text="Editar selecionado",command=self.edit_selected_ingredient,bg=GREEN,fg="white",relief="flat",padx=11,pady=7).pack(side="left")
+        tk.Button(actions,text="Remover selecionado",command=self.remove_selected_ingredient,bg="#F8E9E6",fg=RED,relief="flat",padx=11,pady=7).pack(side="left",padx=8)
         tk.Button(actions,text="Limpar filtros",command=self.clear_ingredient_filters,bg="#E8EDE8",fg=INK,relief="flat",padx=11,pady=7).pack(side="left",padx=8)
         self.ingredient_table = ttk.Treeview(listing,columns=("name","unit","pack","price","supplier","status"),show="headings")
         for col,label,width in [("name","Ingrediente",210),("unit","Unid.",65),("pack","Pacote",90),("price","Preço",105),("supplier","Fornecedor",150),("status","Status",110)]:
@@ -355,6 +455,148 @@ class LedgerApp(tk.Tk):
         tk.Button(settings,text="Salvar premissas e recalcular",command=self.save_parameters,bg=GREEN,fg="white",relief="flat",padx=12,pady=8).pack(anchor="w",padx=5,pady=(10,0))
         self.refresh_reports()
 
+    def _build_recipes_tab(self):
+        self._section_title(self.recipes_tab,"Receitas e produtos","Cadastre os produtos que você vende e configure os ingredientes e quantidades de cada receita.")
+        bar=tk.Frame(self.recipes_tab,bg=PANEL,padx=12,pady=9);bar.pack(fill="x",pady=(0,12))
+        tk.Label(bar,text="Produto vendável (salgados, bebidas, doces, molhos e outros)",bg=PANEL,fg=INK,font=("Segoe UI",10,"bold")).pack(side="left")
+        tk.Button(bar,text="+ Novo produto",command=self.new_product_dialog,bg=GREEN,fg="white",relief="flat",padx=12,pady=7).pack(side="right")
+        body=tk.Frame(self.recipes_tab,bg=BG);body.pack(fill="both",expand=True)
+        editor=tk.Frame(body,bg=PANEL,padx=16,pady=15,highlightbackground="#E5EAE5",highlightthickness=1);editor.pack(side="left",fill="y",padx=(0,14))
+        tk.Label(editor,text="Ficha técnica",bg=PANEL,fg=INK,font=("Segoe UI",14,"bold")).pack(anchor="w",pady=(0,10))
+        self.recipe_id_var=tk.StringVar();self.recipe_name_var=tk.StringVar();self.recipe_version_var=tk.StringVar(value="E")
+        self.recipe_yield_var=tk.StringVar(value="1");self.recipe_source_var=tk.StringVar();self.recipe_instruction_var=tk.StringVar()
+        for label,var in [("ID da receita",self.recipe_id_var),("Produto",self.recipe_name_var),("Rendimento do lote",self.recipe_yield_var),("Fonte",self.recipe_source_var),("Preparo / notas",self.recipe_instruction_var)]:
+            self._field(editor,label,ttk.Entry(editor,textvariable=var))
+        self._field(editor,"Versão",ttk.Combobox(editor,textvariable=self.recipe_version_var,values=["E","R","Única"],state="readonly"))
+        linebox=tk.LabelFrame(editor,text="Ingrediente para adicionar",bg=PANEL,fg=INK,padx=8,pady=7)
+        linebox.pack(fill="x",pady=(3,8))
+        self.recipe_ingredient_var=tk.StringVar();self.recipe_line_qty_var=tk.StringVar(value="0");self.recipe_line_unit_var=tk.StringVar(value="g");self.recipe_stage_var=tk.StringVar(value="Recheio")
+        self.recipe_ingredient_combo=ttk.Combobox(linebox,textvariable=self.recipe_ingredient_var,state="readonly",width=30);self.recipe_ingredient_combo.pack(fill="x",pady=3)
+        line_row=tk.Frame(linebox,bg=PANEL);line_row.pack(fill="x",pady=3)
+        ttk.Entry(line_row,textvariable=self.recipe_line_qty_var,width=9).pack(side="left")
+        ttk.Combobox(line_row,textvariable=self.recipe_line_unit_var,values=["g","ml","un"],state="readonly",width=6).pack(side="left",padx=4)
+        ttk.Combobox(line_row,textvariable=self.recipe_stage_var,values=["Massa","Recheio","Cobertura","Montagem","Outro"],width=13).pack(side="left",padx=4)
+        tk.Button(linebox,text="Adicionar ingrediente",command=self.add_recipe_line,bg="#E8EDE8",fg=INK,relief="flat",padx=8,pady=5).pack(anchor="e")
+        tk.Button(editor,text="Nova ficha",command=self.clear_recipe_editor,bg="#E8EDE8",fg=INK,relief="flat",padx=11,pady=7).pack(fill="x",pady=(4,5))
+        tk.Button(editor,text="Salvar ficha técnica",command=self.save_recipe_editor,bg=GREEN,fg="white",relief="flat",padx=11,pady=9).pack(fill="x")
+        right=tk.Frame(body,bg=PANEL,padx=16,pady=15,highlightbackground="#E5EAE5",highlightthickness=1);right.pack(side="left",fill="both",expand=True)
+        tk.Label(right,text="Produtos cadastrados",bg=PANEL,fg=INK,font=("Segoe UI",14,"bold")).pack(anchor="w")
+        self.product_table=ttk.Treeview(right,columns=("name","category","price","active"),show="headings",height=8)
+        for col,label,width in [("name","Produto",260),("category","Categoria",120),("price","Preço venda",110),("active","Ativo",60)]:self.product_table.heading(col,text=label);self.product_table.column(col,width=width)
+        self.product_table.pack(fill="x",pady=(8,12));self.product_table.bind("<Double-1>",self.edit_product_dialog)
+        product_actions=tk.Frame(right,bg=PANEL);product_actions.pack(fill="x",pady=(0,10))
+        tk.Button(product_actions,text="Editar produto selecionado",command=self.edit_product_dialog,bg="#E8EDE8",fg=INK,relief="flat",padx=9,pady=6).pack(side="left")
+        tk.Button(product_actions,text="Novo produto",command=self.new_product_dialog,bg=GREEN,fg="white",relief="flat",padx=9,pady=6).pack(side="left",padx=7)
+        tk.Label(right,text="Receitas",bg=PANEL,fg=INK,font=("Segoe UI",14,"bold")).pack(anchor="w")
+        self.recipe_list_table=ttk.Treeview(right,columns=("id","product","version","yield","cost"),show="headings")
+        for col,label,width in [("id","ID",145),("product","Produto",230),("version","Versão",80),("yield","Rendimento",100),("cost","Custo/lote",110)]:self.recipe_list_table.heading(col,text=label);self.recipe_list_table.column(col,width=width)
+        self.recipe_list_table.pack(fill="both",expand=True,pady=(8,4));self.recipe_list_table.bind("<<TreeviewSelect>>",self.load_recipe_editor)
+        tk.Button(right,text="Remover receita selecionada",command=self.remove_selected_recipe,bg="#F8E9E6",fg=RED,relief="flat",padx=9,pady=6).pack(anchor="e")
+        self.recipe_lines=[]
+        self.recipe_line_table=ttk.Treeview(editor,columns=("ingredient","qty","unit","stage"),show="headings",height=8)
+        for col,label,width in [("ingredient","Ingrediente",150),("qty","Qtd",55),("unit","Unid.",45),("stage","Etapa",90)]:self.recipe_line_table.heading(col,text=label);self.recipe_line_table.column(col,width=width)
+        self.recipe_line_table.pack(fill="x",pady=(0,5))
+        tk.Button(editor,text="Remover linha selecionada",command=self.remove_recipe_line,bg="#F8E9E6",fg=RED,relief="flat",padx=7,pady=4).pack(anchor="e",pady=(0,6))
+        self.refresh_recipe_products()
+
+    def refresh_recipe_products(self):
+        if not hasattr(self,"recipe_list_table"):return
+        self._ensure_recipe_products()
+        for item in self.product_table.get_children():self.product_table.delete(item)
+        for product in self.ledger.list_products():
+            price="—" if product["sale_price_cents"] is None else format_money(product["sale_price_cents"])
+            self.product_table.insert("","end",iid="product:"+product["product_id"],values=(product["name"],product["category"],price,"Sim" if product["active"] else "Não"))
+        for item in self.recipe_list_table.get_children():self.recipe_list_table.delete(item)
+        for recipe in self.ledger.list_recipes():
+            cost=self.ledger.recipe_cost(recipe["recipe_id"])["batch_cost_cents"]
+            self.recipe_list_table.insert("","end",iid=recipe["recipe_id"],values=(recipe["recipe_id"],recipe["product_name"],recipe["version"],recipe["yield_units"],"Pendente" if cost is None else format_money(cost)))
+        self.recipe_ingredient_combo.configure(values=[i["name"] for i in self.ledger.list_ingredients()])
+        if self.ledger.list_ingredients() and not self.recipe_ingredient_var.get():self.recipe_ingredient_var.set(self.ledger.list_ingredients()[0]["name"])
+        self.refresh_sale_products()
+
+    def add_recipe_line(self):
+        name=self.recipe_ingredient_var.get()
+        try:qty=Decimal(self.recipe_line_qty_var.get().replace(",","."))
+        except InvalidOperation:messagebox.showerror("Receita","Quantidade inválida",parent=self);return
+        if not name or qty<=0:messagebox.showerror("Receita","Escolha ingrediente e uma quantidade maior que zero",parent=self);return
+        unit=self.recipe_line_unit_var.get()
+        ingredient=next((x for x in self.ledger.list_ingredients() if x["name"]==name),None)
+        if ingredient and ingredient["base_unit"]!=unit:
+            messagebox.showerror("Unidade incompatível",f"{name} é cadastrado em {ingredient['base_unit']}; use a mesma unidade.",parent=self);return
+        self.recipe_lines.append({"ingredient_name":name,"quantity":str(qty),"unit":unit,"stage":self.recipe_stage_var.get()})
+        self.render_recipe_lines()
+
+    def render_recipe_lines(self):
+        if not hasattr(self,"recipe_line_table"):return
+        for item in self.recipe_line_table.get_children():self.recipe_line_table.delete(item)
+        for index,line in enumerate(self.recipe_lines):self.recipe_line_table.insert("","end",iid=str(index),values=(line["ingredient_name"],line["quantity"],line["unit"],line["stage"]))
+
+    def remove_recipe_line(self):
+        selected=self.recipe_line_table.selection()
+        if selected:self.recipe_lines.pop(int(selected[0]));self.render_recipe_lines()
+
+    def clear_recipe_editor(self):
+        self.recipe_id_var.set("");self.recipe_name_var.set("");self.recipe_version_var.set("E");self.recipe_yield_var.set("1");self.recipe_source_var.set("");self.recipe_instruction_var.set("");self.recipe_lines=[];self.render_recipe_lines()
+
+    def load_recipe_editor(self,_event=None):
+        selected=self.recipe_list_table.selection()
+        if not selected:return
+        recipe=self.ledger.recipe(selected[0])
+        if not recipe:return
+        self.recipe_id_var.set(recipe["recipe_id"]);self.recipe_name_var.set(recipe["product_name"]);self.recipe_version_var.set(recipe["version"])
+        self.recipe_yield_var.set(str(recipe["yield_units"]));self.recipe_source_var.set(recipe["source"] or "");self.recipe_instruction_var.set(recipe["instructions"] or "")
+        self.recipe_lines=list(recipe["lines"]);self.render_recipe_lines()
+
+    def save_recipe_editor(self):
+        try:
+            name=self.recipe_name_var.get().strip();version=self.recipe_version_var.get();rid=self.recipe_id_var.get().strip()
+            if not rid:rid="".join(ch.upper() if ch.isalnum() else "_" for ch in name).strip("_")+"_"+version
+            self.ledger.replace_recipe(recipe_id=rid,product_name=name,version=version,yield_units=int(self.recipe_yield_var.get()),
+                source=self.recipe_source_var.get().strip() or None,instructions=self.recipe_instruction_var.get().strip() or None,
+                lines=[(x["ingredient_name"],x["quantity"],x["unit"],x["stage"]) for x in self.recipe_lines])
+        except Exception as exc:messagebox.showerror("Ficha técnica",str(exc),parent=self);return
+        self.clear_recipe_editor();self.refresh_recipe_products();self.refresh_catalogs()
+
+    def remove_selected_recipe(self):
+        selected=self.recipe_list_table.selection()
+        if selected and messagebox.askyesno("Remover receita","Remover a ficha técnica selecionada? O produto vendável será mantido.",parent=self):
+            self.ledger.delete_recipe(selected[0]);self.clear_recipe_editor();self.refresh_recipe_products();self.refresh_catalogs()
+
+    def new_product_dialog(self):
+        self._product_dialog()
+
+    def edit_product_dialog(self,event=None):
+        row=self.product_table.identify_row(event.y) if event else (self.product_table.selection()[0] if self.product_table.selection() else None)
+        if not row:return
+        product_id=row.removeprefix("product:")
+        product=next((p for p in self.ledger.list_products() if p["product_id"]==product_id),None)
+        if product:self._product_dialog(product)
+
+    def _product_dialog(self,product=None):
+        dialog=tk.Toplevel(self);dialog.title("Produto vendável" if not product else "Editar produto");dialog.transient(self);dialog.grab_set();dialog.configure(bg=BG)
+        box=tk.Frame(dialog,bg=PANEL,padx=22,pady=20);box.pack(fill="both",expand=True)
+        tk.Label(box,text="Produto vendável",bg=PANEL,fg=INK,font=("Segoe UI",16,"bold")).pack(anchor="w",pady=(0,12))
+        name=tk.StringVar(value=product["name"] if product else "");category=tk.StringVar(value=product["category"] if product else "Salgados")
+        price=tk.StringVar(value="" if not product or product["sale_price_cents"] is None else str(Decimal(product["sale_price_cents"])/100))
+        unit=tk.StringVar(value=product["unit"] if product else "un");active=tk.BooleanVar(value=bool(product["active"]) if product else True)
+        self._field(box,"Nome",ttk.Entry(box,textvariable=name));self._field(box,"Categoria",ttk.Combobox(box,textvariable=category,values=["Salgados","Bebidas","Doces","Molhos","Outros"]))
+        self._field(box,"Preço de venda (R$)",ttk.Entry(box,textvariable=price));self._field(box,"Unidade",ttk.Combobox(box,textvariable=unit,values=["un","lata","garrafa","porção","frasco"]))
+        ttk.Checkbutton(box,text="Ativo para lançamento de vendas",variable=active).pack(anchor="w",pady=6)
+        def save():
+            try:
+                cents=parse_money(price.get()) if price.get().strip() else None
+                pid=product["product_id"] if product else "product-"+uuid.uuid4().hex[:12]
+                self.ledger.upsert_product(product_id=pid,name=name.get(),category=category.get(),unit=unit.get(),sale_price_cents=cents,active=active.get())
+            except Exception as exc:messagebox.showerror("Produto",str(exc),parent=dialog);return
+            dialog.destroy();self.refresh_recipe_products()
+        buttons=tk.Frame(box,bg=PANEL);buttons.pack(fill="x",pady=(14,0))
+        if product:tk.Button(buttons,text="Remover",command=lambda:self.delete_product_confirm(product,dialog),bg="#F8E9E6",fg=RED,relief="flat",padx=10,pady=7).pack(side="left")
+        tk.Button(buttons,text="Salvar",command=save,bg=GREEN,fg="white",relief="flat",padx=14,pady=8).pack(side="right")
+
+    def delete_product_confirm(self,product,dialog):
+        if messagebox.askyesno("Remover produto",f"Remover {product['name']} do catálogo?",parent=dialog):
+            self.ledger.delete_product(product["product_id"]);dialog.destroy();self.refresh_recipe_products()
+
     def save_ingredient(self):
         try:
             pack_price=parse_money(self.ingredient_price.get()) if self.ingredient_price.get().strip() else None
@@ -379,6 +621,16 @@ class LedgerApp(tk.Tk):
 
     def clear_ingredient_filters(self):
         self.ingredient_search.set("");self.ingredient_status_filter.set("Todos");self.ingredient_category_filter.set("Todas")
+
+    def remove_selected_ingredient(self):
+        selection=self.ingredient_table.selection()
+        if not selection:
+            messagebox.showinfo("Ingredientes","Selecione um ingrediente primeiro.",parent=self);return
+        name=self.ingredient_table.item(selection[0],"values")[0]
+        if not messagebox.askyesno("Remover ingrediente",f"Remover {name} do catálogo?",parent=self):return
+        try:self.ledger.delete_ingredient(name)
+        except ValueError as exc:messagebox.showerror("Ingrediente em uso",str(exc),parent=self);return
+        self.refresh_catalogs()
 
     def _ingredient_editor(self,ingredient):
         dialog=tk.Toplevel(self);dialog.title(f"Editar ingrediente · {ingredient['name']}");dialog.transient(self);dialog.grab_set();dialog.configure(bg=BG);dialog.resizable(False,False)
@@ -603,6 +855,44 @@ class LedgerApp(tk.Tk):
         self.category_combo.configure(values=self._suggestions(kind))
         self.category.set(self._suggestions(kind)[0])
         self.payment.set("Pix" if kind == "Venda" else "Dinheiro")
+        if kind=="Venda":
+            if not self.sale_items_frame.winfo_manager():self.sale_items_frame.pack(fill="x",pady=(0,8),before=self.amount_entry if hasattr(self,"amount_entry") else None)
+        else:self.sale_items_frame.pack_forget()
+        self.refresh_sale_products()
+
+    def refresh_sale_products(self):
+        if not hasattr(self,"sale_product_combo"):return
+        products=self.ledger.list_products(active_only=True)
+        category=self.sale_category.get()
+        filtered=[p for p in products if category=="Todos" or p["category"]==category]
+        self.sale_product_combo.configure(values=[p["name"] for p in filtered])
+        if self.sale_product.get() not in {p["name"] for p in filtered}:
+            self.sale_product.set(filtered[0]["name"] if filtered else "")
+        self.sale_product_selected()
+
+    def sale_product_selected(self,_event=None):
+        if not hasattr(self,"sale_price"):return
+        product=next((p for p in self.ledger.list_products(active_only=True) if p["name"]==self.sale_product.get()),None)
+        self.sale_price.set("" if not product or product["sale_price_cents"] is None else f"{Decimal(product['sale_price_cents'])/100:.2f}".replace(".",","))
+
+    def add_sale_item(self):
+        product=next((p for p in self.ledger.list_products(active_only=True) if p["name"]==self.sale_product.get()),None)
+        if not product:messagebox.showerror("Venda","Cadastre ou selecione um produto vendável.",parent=self);return
+        try:
+            quantity=Decimal(self.sale_qty.get().replace(",","."));unit_cents=parse_money(self.sale_price.get())
+            if quantity<=0:raise ValueError("Quantidade deve ser maior que zero")
+        except (ValueError,InvalidOperation) as exc:messagebox.showerror("Venda",str(exc),parent=self);return
+        total=int((quantity*unit_cents).quantize(Decimal("1"),rounding=ROUND_HALF_UP))
+        self.sale_cart.append({"product":product,"quantity":quantity,"unit_price_cents":unit_cents,"amount_cents":total})
+        self.render_sale_cart();self.sale_qty.set("1")
+
+    def render_sale_cart(self):
+        for row in self.sale_cart_tree.get_children():self.sale_cart_tree.delete(row)
+        for index,line in enumerate(self.sale_cart):self.sale_cart_tree.insert("","end",iid=str(index),values=(line["product"]["name"],str(line["quantity"]),format_money(line["unit_price_cents"]),format_money(line["amount_cents"])))
+
+    def remove_sale_item(self):
+        selection=self.sale_cart_tree.selection()
+        if selection:self.sale_cart.pop(int(selection[0]));self.render_sale_cart()
 
     def _calculate_total(self, *_):
         try:
@@ -615,6 +905,18 @@ class LedgerApp(tk.Tk):
 
     def save_entry(self):
         try:
+            if self.kind.get()=="Venda":
+                if not self.sale_cart:raise ValueError("Adicione ao menos um salgado, refrigerante, doce ou molho à venda")
+                date.fromisoformat(self.entry_date.get().strip())
+                group_id=uuid.uuid4().hex
+                for line in self.sale_cart:
+                    product=line["product"]
+                    self.ledger.add_entry(entry_date=self.entry_date.get().strip(),kind="Venda",category=product["category"],
+                        description=product["name"],quantity=str(line["quantity"]),unit_price_cents=line["unit_price_cents"],
+                        amount_cents=line["amount_cents"],payment_method=self.payment.get(),
+                        supplier_or_customer=self.counterparty.get(),notes=(self.notes.get().strip()+f" [sale_group:{group_id}]").strip())
+                self.sale_cart.clear();self.render_sale_cart();self.description.set("");self.quantity.set("");self.unit_price.set("");self.amount.set("");self.counterparty.set("");self.notes.set("")
+                self.refresh();return
             amount_cents = parse_money(self.amount.get())
             quantity = self.quantity.get().strip() or None
             unit_cents = parse_money(self.unit_price.get()) if self.unit_price.get().strip() else None

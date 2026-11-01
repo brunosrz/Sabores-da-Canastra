@@ -63,3 +63,42 @@ def test_recipe_cost_uses_decimal_precision(tmp_path):
                          lines=[("Ovos", "2", "un", "Massa")])
     result = ledger.recipe_cost("OVO_E")
     assert result["batch_cost_cents"] == 193
+
+
+def test_json_configuration_roundtrip_preserves_ledger(tmp_path):
+    ledger=Ledger(tmp_path/"source.db")
+    ledger.upsert_ingredient(name="Farinha",base_unit="g",pack_quantity="1000",pack_price_cents=750,price_status="Estimado")
+    ledger.replace_recipe(recipe_id="PAO_E",product_name="Pão",version="E",yield_units=10,source=None,instructions="",lines=[("Farinha","500","g","Massa")])
+    ledger.upsert_product(product_id="pao",name="Pão",category="Salgados",sale_price_cents=700)
+    ledger.set_mix("PAO_E",5,"E")
+    ledger.upsert_parameter("dias","20","dias","Estimado")
+    ledger.add_entry(entry_date="2026-11-01",kind="Venda",category="Salgados",description="Venda já feita",amount_cents=700)
+    payload=ledger.export_configuration()
+    assert payload["schema"]=="sabores-da-canastra/config"
+    assert "entries" not in payload and "Venda já feita" not in str(payload)
+    target=Ledger(tmp_path/"target.db")
+    target.upsert_ingredient(name="Other",base_unit="un",pack_quantity="1",pack_price_cents=10)
+    result=target.import_configuration(payload)
+    assert result["ledger_preserved"] is True
+    assert target.recipe("PAO_E")["lines"][0]["quantity"]=="500"
+    assert target.list_products()[0]["sale_price_cents"]==700
+    # Omitting catalog entries from an edited JSON does not remove them.
+    assert {i["name"] for i in target.list_ingredients()}=={"Farinha","Other"}
+    # Existing ledger rows survive a configuration update and are never imported/overwritten.
+    target.add_entry(entry_date="2026-11-01",kind="Gasto",category="Gás",description="Botijão",amount_cents=14000)
+    target.import_configuration(payload)
+    assert len(target.list_entries())==1
+    assert target.daily_summary("2026-11-01")["Gasto"]==14000
+
+
+def test_json_import_rejects_invalid_recipe_atomically_and_keeps_ledger(tmp_path):
+    ledger=Ledger(tmp_path/"invalid.db")
+    ledger.upsert_ingredient(name="Leite",base_unit="ml",pack_quantity="1000",pack_price_cents=500)
+    ledger.add_entry(entry_date="2026-11-01",kind="Compra",category="Insumos",description="Leite",amount_cents=500)
+    payload=ledger.export_configuration()
+    payload["ingredients"].append({"name":"Farinha","base_unit":"g","pack_quantity":"1000"})
+    payload["recipes"]=[{"recipe_id":"R1","product_name":"Teste","version":"E","yield_units":1,
+        "lines":[{"ingredient_name":"Leite","quantity":"10","unit":"g"}]}]
+    with pytest.raises(ValueError):ledger.import_configuration(payload)
+    assert [x["name"] for x in ledger.list_ingredients()]==["Leite"]
+    assert len(ledger.list_entries())==1

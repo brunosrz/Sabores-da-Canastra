@@ -5,12 +5,15 @@ Aplicativo desktop local para registrar a operação diária e acompanhar custos
 ## Recursos
 
 - Caixa do dia com total de vendas, compras, gastos e saldo.
+- Venda em cesta com vários sabores de salgado, refrigerantes, energéticos, doces e molhos; quantidade e preço por item são registrados separadamente no ledger.
 - Registro de lançamentos datados, com categoria, descrição, quantidade, preço unitário, valor total, forma de pagamento e fornecedor/cliente.
 - Histórico filtrável por período e tipo, exclusão de lançamento selecionado.
 - Banco SQLite local em `%USERPROFILE%\.sabores-da-canastra\sabores.db`.
 - Motor financeiro com `Decimal`, normalização de unidades, custos de lote/unidade, planejamento de lotes, combustível, taxas e cálculos de referência.
 - Importação inicial da planilha com oito receitas em versões econômica/reforçada, ingredientes, composição e mix para dentro do SQLite; os preços importados ficam como estimativas.
 - Telas para catálogo e cotações com fonte/data/status, edição de composição e rendimentos, mix diário, planejamento por lotes, lista consolidada de compras e relatório financeiro configurável.
+- Aba Receitas para criar/editar fichas técnicas com quantidades e unidades por ingrediente; catálogo de produtos vendidos com categorias e preço.
+- Exportação e importação JSON versão 1 para edição em massa do catálogo, receitas, produtos, mix e premissas. Importar preserva integralmente os lançamentos no SQLite.
 - Validação do workbook e comandos de inspeção, simulação e atualização da planilha.
 
 ## Requisitos e execução com uv
@@ -32,7 +35,7 @@ uv run sabores simular
 uv run sabores inspecionar
 ```
 
-O app cria o banco automaticamente na primeira execução. A primeira abertura importa o catálogo e as fichas da planilha do repositório para o banco local, sem substituir cotações ou marcar estimativas como confirmadas. Para usar outro arquivo SQLite em desenvolvimento, instancie `Ledger("caminho/arquivo.db")`; os dados são locais e não há sincronização em nuvem.
+O app cria o banco automaticamente na primeira execução. A primeira abertura importa o catálogo e as fichas da planilha do repositório para o banco local, sem substituir cotações ou marcar estimativas como confirmadas. Na aba **Receitas**, cadastre também bebidas, doces e molhos como produtos vendáveis e informe o preço; depois eles aparecem na cesta do caixa por categoria. Para usar outro arquivo SQLite em desenvolvimento, instancie `Ledger("caminho/arquivo.db")`; os dados são locais e não há sincronização em nuvem.
 
 ## Uso diário
 
@@ -43,6 +46,8 @@ O app cria o banco automaticamente na primeira execução. A primeira abertura i
 5. O saldo é vendas menos compras e gastos registrados. É uma visão de caixa dos lançamentos, não apuração contábil, lucro líquido ou posição de estoque.
 
 Valores são guardados em centavos inteiros no SQLite para evitar erros de ponto flutuante. Datas são armazenadas como `AAAA-MM-DD` e validadas. Lançamentos são registros reais informados pelo usuário; não são gerados a partir das metas de planejamento.
+
+O contrato de importação/exportação e exemplos estão em [docs/json-contract.md](docs/json-contract.md). JSON inclui configurações editáveis e deliberadamente exclui vendas, compras e gastos históricos.
 
 ## Estrutura
 

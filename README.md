@@ -55,6 +55,19 @@ uv run sabores simular
 uv run sabores inspecionar
 ```
 
+### Qualidade e CI
+
+Instale os hooks de commit uma vez por clone e rode-os manualmente quando necessário:
+
+```powershell
+uvx --from pre-commit==4.7.0 pre-commit install
+uvx --from pre-commit==4.7.0 pre-commit run --all-files
+```
+
+Os hooks validam Python, JSON, YAML, TOML e Markdown, detectam conflitos/chaves privadas e executam verificações Ruff sem reformatar em massa o código Python legado. A CI executa os hooks e `uv run pytest` em pull requests e pushes para `master`; ela não publica nem faz deploy. O CodeRabbit está configurado para revisar automaticamente pull requests; a revisão depende de o app CodeRabbit estar habilitado no repositório.
+
+Arquivos locais de ambiente (`.env`, `.dev.vars`), estado do Wrangler, bancos SQLite e artefatos web gerados são ignorados pelo Git. Mantenha somente modelos sem segredos, como `.env.example`, versionados.
+
 O app cria o banco automaticamente na primeira execução. A primeira abertura importa o catálogo e as fichas da planilha do repositório para o banco local, sem substituir cotações ou marcar estimativas como confirmadas. O cardápio base do bar é compartilhado pelos dois apps. No cadastro de produtos da Gestão, ajuste preços pendentes e mantenha o catálogo atualizado. Para usar outro arquivo SQLite em desenvolvimento, instancie `Ledger("caminho/arquivo.db")`; os dados são locais e não há sincronização em nuvem.
 
 ## Uso diário

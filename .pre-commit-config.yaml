@@ -1,0 +1,30 @@
+minimum_pre_commit_version: "4.7.0"
+default_language_version:
+  python: python3.12
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-ast
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: markdownlint
+        name: markdown lint
+        entry: npx --yes markdownlint-cli2@0.23.3
+        language: system
+        types: [markdown]
+        files: ^(README\.md|docs/json-contract\.md)$
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      - id: ruff-check
+        args: [--select=E4,E7,E9]

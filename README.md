@@ -18,9 +18,10 @@ remotos ainda não estão publicados.
   backend compartilhado.
 
 ERP e PDV usam TanStack Start, Router, Query e Form. A API compartilhada usa
-Hono e possui migration D1 local e importador validado. Fluxos de negócio,
-autenticação e conexão dos frontends com a API ainda serão implementados. Cada
-app possui checks independentes.
+Hono; seus bindings D1, KV, R2, Durable Objects e Workflows têm simuladores
+locais. A API já oferece cache de catálogo com fallback D1, registro de venda
+idempotente e backup privado. A conexão dos frontends e a autenticação de
+usuários são etapas posteriores. Cada app possui checks independentes.
 
 ### Desenvolvimento web
 
@@ -60,14 +61,19 @@ pnpm build:api
 
 Também existem aliases `*:web`, que executam a verificação correspondente nos
 dois frontends, e `pnpm lint:docs` para Markdown. `pnpm db:migrate:local`
-aplica o schema no D1 local via Wrangler; os comandos não usam banco remoto.
+aplica o schema no D1 local via Wrangler; os comandos de desenvolvimento não
+usam banco remoto. Deploy em preview/produção só é permitido após provisionar
+recursos Cloudflare separados e substituir IDs de exemplo. Os scripts
+`deploy:preview` e `deploy:production` fazem essa validação.
 
 ## Backend e banco de dados
 
-ERP e PDV usarão **um único backend de negócio compartilhado** e um único D1.
-O Worker Hono em `apps/api` já contém o schema e a migração local. Autenticação,
-endpoints de negócio e bindings dos frontends ainda serão implementados. Os
-domínios planejados não estão publicados. O SQLite do Python permanece
+ERP e PDV usam **um único backend de negócio compartilhado** e um D1 por
+ambiente. O Worker Hono em `apps/api` contém schema e bindings. KV mantém
+apenas cache descartável; R2 guarda backups privados; Durable Objects coordenam
+retries; Workflows exportam D1 diariamente em produção. A autenticação de
+usuários e os bindings entre os frontends e o backend ainda serão implementados.
+Os domínios planejados não estão publicados. O SQLite do Python permanece
 independente, sem sincronização automática com D1; a migração é uma cópia
 inicial validada.
 

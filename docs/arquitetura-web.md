@@ -13,14 +13,15 @@ não publicados.
   estoque, custos, compras, despesas e relatórios.
 - `apps/pdv`: ponto de venda em `pdv.brunosrz.com`, para registrar pedidos e
   pagamentos.
-- `apps/api`: Worker Hono interno, dono do schema D1 e da futura lógica de
-  negócio compartilhada. Hoje expõe saúde local e importação local protegida.
+- `apps/api`: Worker Hono interno, dono do schema D1 e da lógica de negócio
+  compartilhada. Expõe saúde, catálogo com cache, registro idempotente de venda
+  e acesso autenticado a backups privados.
 
 ERP e PDV são interfaces independentes, implantáveis e versionadas
 separadamente. ERP e PDV executam localmente como Workers independentes e ainda
-têm apenas rotas iniciais e verificação de saúde. A API executa em
-`127.0.0.1:3000` e seu D1 também é local. Recursos remotos, domínios e
-credenciais ainda não estão ligados. Os arquivos Python continuam sendo a
+têm rotas iniciais e verificação de saúde. A API executa em `127.0.0.1:3000`;
+D1, KV, R2, Durable Objects e Workflows usam simuladores locais. Recursos
+remotos, domínios e credenciais ainda não estão ligados. Os arquivos Python continuam sendo a
 referência funcional durante a migração, não os backends dos novos apps.
 
 ## Backend e banco compartilhados
@@ -28,8 +29,9 @@ referência funcional durante a migração, não os backends dos novos apps.
 O backend de negócio é um único serviço interno em `apps/api`. Esse Worker é o
 único com binding direto ao D1 e será responsável por autenticação, regras de
 negócio, validação, catálogo/receitas, estoque, vendas, compras, despesas e
-ledger. O schema e o fluxo local de migração estão implementados; os endpoints
-de negócio e autenticação ainda não.
+ledger. O schema, bindings e rotas iniciais de catálogo, venda e backup estão
+implementados; autenticação de usuários e integração com os frontends ainda
+não.
 
 ERP e PDV continuarão sendo dois apps. Suas rotas e server functions do TanStack
 Start atuarão como camada de interface/BFF: recebem a sessão da requisição,
@@ -46,8 +48,9 @@ preview separados dos recursos de produção.
 
 O SQLite do legado Python é um banco local independente. A migração inicial
 exporta uma cópia validada e não cria sincronização contínua entre SQLite e D1.
-O endpoint `/health` da API só informa saúde; não é endpoint de negócio. A
-importação `/__local/import` exige hostname local e segredo em `.dev.vars`.
+O endpoint `/health` informa saúde. A importação `/__local/import` exige
+hostname local e segredo em `.dev.vars`. Vendas exigem segredo transitório do
+PDV; a sessão de usuário substituirá esse mecanismo na issue #6.
 
 ## Bibliotecas TanStack
 
@@ -82,9 +85,8 @@ importação `/__local/import` exige hostname local e segredo em `.dev.vars`.
   dois aplicativos.
 
 O catálogo completo do TanStack está registrado aqui para orientar decisões de
-produto. A API compartilhada será uma aplicação/Worker próprio, não mais uma
-biblioteca TanStack; o CI ganhará um job independente para ela quando for
-introduzida.
+produto. A API compartilhada é um Worker Hono próprio, sem duplicar backend nos
+dois apps, e tem job independente no CI.
 
 ## Comandos na raiz
 
@@ -108,8 +110,9 @@ hooks próprios. Os comandos publicados no PR são os mesmos definidos no
 `package.json` da raiz.
 
 Nenhum comando desta etapa publica Workers ou acessa D1 remoto. O `wrangler.jsonc`
-da API contém somente um ID local fictício para o simulador; não há IDs ou
-credenciais Cloudflare de preview/produção.
+declara recursos com IDs distintos de exemplo para preview e produção; os
+scripts de deploy recusam esses valores até que os recursos reais sejam
+provisionados. Nenhum recurso remoto foi criado ou alterado nesta etapa.
 
 ### Idempotência Cloudflare
 
@@ -121,9 +124,10 @@ inspecionar `PRAGMA table_info` antes de adicionar uma coluna. Nunca editar uma
 migration já aplicada; criar uma nova versão preserva histórico e repetibilidade.
 
 D1 é a fonte de verdade para dados financeiros: chaves únicas/idempotentes e
-lotes transacionais protegem contra reenvio. KV será cache ou configuração
-descartável, nunca trava de unicidade. R2 deve usar chaves determinísticas e
-escrita condicional para objetos imutáveis. Durable Objects devem usar
-transações e identificadores persistidos para eventos repetíveis. KV, R2 e
-Durable Objects ainda não têm bindings neste bootstrap; seus recursos devem ser
-declarados uma vez e reutilizados, sem provisionamento por execução do app.
+lotes transacionais protegem contra reenvio. KV guarda apenas cache de catálogo
+com TTL e fallback para D1; nunca participa de cálculo financeiro. R2 guarda
+backups privados SQL e manifestos SHA-256, baixados por rota autenticada. O
+Durable Object serializa vendas por chave e D1 guarda o hash e o recibo de
+idempotência. Workflows exportam D1 e aplicam retenção em R2. D1 Time Travel
+permite recuperação pontual sem depender do backup agendado. Alertas externos
+dependem do provisionamento futuro da conta.

@@ -1,101 +1,133 @@
-# API compartilhada e D1
+# API compartilhada e bindings Cloudflare
 
-Worker privado planejado como backend único do ERP e do PDV. Esta etapa cria o
-schema inicial, o endpoint de saúde local e a importação inicial do SQLite e
-da planilha. Ainda não contém autenticação nem regras de negócio completas,
-não está ligado aos frontends e não tem ambiente remoto configurado.
+Worker Hono interno compartilhado por ERP e PDV. O D1 é a fonte de verdade
+para catálogo, vendas e ledger; KV é somente cache descartável; R2 guarda
+artefatos privados; Durable Objects coordenam retries de venda; Workflows
+produzem e retêm backups D1.
 
-## Banco local
+## Execução local
 
-Na raiz, instale dependências e aplique as migrations somente ao D1 local:
+Na raiz, instale dependências, copie o arquivo de segredos de exemplo e aplique
+as migrations ao D1 local:
 
 ```powershell
 pnpm install --frozen-lockfile
+Copy-Item apps/api/.dev.vars.example apps/api/.dev.vars
 pnpm db:migrate:local
 pnpm dev:api
 ```
 
-A API responde em `http://127.0.0.1:3000/health`. Nenhuma instrução deste guia
-usa `--remote`.
+Defina valores aleatórios locais para `LOCAL_IMPORT_TOKEN`, `PDV_WRITE_TOKEN`,
+`CATALOG_READ_TOKEN` e `BACKUP_DOWNLOAD_TOKEN` em `apps/api/.dev.vars`. O Wrangler executa simuladores
+locais de D1, KV, R2, Durable Objects e Workflows. O servidor responde em
+`http://127.0.0.1:3000`; nenhum comando de desenvolvimento usa `--remote`.
 
-## Prévia e pacote de migração
+## Responsabilidade de cada binding
 
-O exportador lê SQLite em modo somente leitura, valida o workbook, combina a
-configuração do Excel com a configuração atual do SQLite (SQLite prevalece para
-registros coincidentes) e reconcilia contagens e totais. Datas operacionais
-permanecem no calendário de `America/Sao_Paulo`; instantes sem fuso no legado
-são interpretados nesse fuso e armazenados em UTC. Valores financeiros são
-inteiros em centavos.
+- **D1 (`DB`)**: catálogo financeiro e ledger. Uma venda grava ledger, snapshot,
+  itens, pagamentos e recibo de idempotência em um único `batch`.
+- **KV (`CATALOG_CACHE`)**: somente `catalog:v1:products:active`, TTL de 60 s.
+  Guarda apenas identificadores, nomes, categorias, unidades e preço de venda;
+  não armazena custos unitários nem dados do ledger. Leitura/escrita/invalidação
+  KV são tolerantes a falha; lista cai para D1. Cálculos e leituras financeiras
+  consultam sempre D1.
+- **R2 (`PRIVATE_FILES`)**: SQL de backup e manifesto JSON. Bucket privado, sem
+  domínio público ou `r2.dev`. A lista e o download passam por rotas com
+  `BACKUP_DOWNLOAD_TOKEN`; respostas são `private, no-store`. Escritas são
+  condicionais e conteúdo diferente na mesma chave é recusado; download SQL
+  valida contrato, tamanho e SHA-256 do manifesto antes de entregar o arquivo.
+- **Durable Object (`SALE_COORDINATOR`)**: serializa tentativas para a mesma
+  chave e encaminha a gravação ao D1. A chave única e o hash do corpo no D1 são
+  a garantia final; reenvio idêntico retorna o recibo existente e conteúdo
+  diferente com a mesma chave retorna HTTP 409.
+- **Workflow (`D1_BACKUP`)**: exporta D1 pela API oficial, aguarda com etapas
+  retomáveis, verifica SHA-256, salva SQL e manifesto no R2 e remove objetos
+  antigos conforme a retenção do ambiente. Produção agenda execução diária às
+  06:00 UTC; `POST /api/backups/run` permite execução autenticada manual.
+
+## Ambientes e publicação
+
+O arquivo `wrangler.jsonc` declara bindings próprios para local, preview e
+produção. D1, namespace KV, bucket R2 e Workflow têm identificadores/nome
+separados em preview e produção. IDs fictícios impedem o deploy até os recursos
+reais serem provisionados e registrados. Deploy não cria recursos por
+execução; provisionamento e configuração de secrets são uma etapa operacional.
+
+Secrets precisam ser cadastrados em cada ambiente separadamente; nunca versionar
+valores:
 
 ```powershell
-uv run sabores prever-migracao-d1
-uv run sabores exportar-migracao-d1 --saida .local/d1-import.json
+pnpm --filter @sabores/api exec wrangler secret put PDV_WRITE_TOKEN --env preview
+pnpm --filter @sabores/api exec wrangler secret put CATALOG_READ_TOKEN --env preview
+pnpm --filter @sabores/api exec wrangler secret put BACKUP_DOWNLOAD_TOKEN --env preview
+pnpm --filter @sabores/api exec wrangler secret put D1_BACKUP_TOKEN --env preview
 ```
 
-O preview não grava nem altera nenhum banco. O pacote contém dados financeiros
-e deve ficar local; `.local/` é ignorado pelo Git. Diferenças ou registros
-inválidos interrompem o exportador e são mostrados no relatório.
-
-## Aplicação local e idempotência
-
-Copie `.dev.vars.example` para `.dev.vars` e defina um token aleatório local de
-32 caracteres ou mais. Inicie o Worker local, confira o JSON exportado e então
-rode:
+Repita para `production` com secrets diferentes. `D1_BACKUP_TOKEN` deve ter
+somente a permissão necessária para exportar o D1 correspondente. Conta e ID do
+banco de backup são variáveis próprias de cada ambiente.
 
 ```powershell
-pnpm db:import:local -- .local/d1-import.json
+pnpm --filter @sabores/api deploy:preview
+pnpm --filter @sabores/api deploy:production
 ```
 
-O endpoint de importação exige hostname local e token não versionado. Ele não
-fica habilitado quando o token não está configurado. Os dados são validados
-antes da escrita e aplicados em um único `D1Database.batch`; uma falha reverte
-todo o lote. `import_id` e chaves idempotentes tornam repetição do mesmo pacote
-um no-op. Se o D1 já contiver dados sem esse `import_id`, a importação é
-recusada para evitar mescla ou sobrescrita ambígua.
+Os scripts recusam os identificadores de exemplo e verificam que preview e
+produção não compartilham D1, KV ou R2. O dry-run de configuração pode ser
+conferido sem credenciais com `pnpm build:api` e `wrangler deploy --env preview
+--dry-run`.
 
-## Modelo financeiro
+## Rotas da API
 
-- Catálogo: categorias, produtos, códigos e preços/custos em centavos.
-- Insumos: ingredientes, cotações datadas e fichas técnicas com unidades-base.
-- Operação: vendas, itens e formas de pagamento com taxa e custo unitário
-  congelados no momento da venda; compras e despesas.
-- `ledger_entries` é append-only. Ajustes devem ser novos registros vinculados
-  ao original, com justificativa. Vendas, itens e pagamentos são snapshots
-  imutáveis e não devem ser atualizados para corrigir períodos passados.
-- `data_imports` guarda contrato, hash, contagens e reconciliação do pacote.
+- `GET /health`: disponibilidade do Worker.
+- `GET /api/catalog/products`: requer `Bearer CATALOG_READ_TOKEN`; KV é
+  acelerador descartável.
+- `POST /api/sales`: requer `Bearer PDV_WRITE_TOKEN` e `Idempotency-Key`.
+  Entrada inclui data, itens congelados e pagamentos; valores são centavos
+  inteiros e a soma dos itens precisa reconciliar com a soma dos pagamentos.
+- `GET /api/backups`: lista manifestos, exige `Bearer BACKUP_DOWNLOAD_TOKEN`.
+- `GET /api/backups/file/{chave R2}`: baixa artefato autenticado.
+- `POST /api/backups/run`: inicia backup manual autenticado e idempotente.
+- `POST /__local/import`: importação local protegida por token e hostname.
 
-`apps/api/migrations` contém migrations SQL versionadas. A migration inicial
-usa `IF NOT EXISTS` em tabelas, índices e triggers para não duplicar objetos se
-o schema já estiver presente. Wrangler registra cada migration aplicada em
-`d1_migrations`; executar `pnpm db:migrate:local` novamente é um no-op. Mudanças
-de schema devem entrar em um novo arquivo versionado e nunca reescrever uma
-migration já aplicada. SQLite não implementa `ALTER TABLE ... ADD COLUMN IF NOT
-EXISTS`: migrations de coluna devem consultar `PRAGMA table_info(...)` e só
-adicionar o campo se ainda não existir. O CI aplica as migrations duas vezes
-para conferir a repetição segura.
+Os tokens de catálogo e PDV são proteções transitórias para esta API. A
+autenticação de usuários/sessões será feita na etapa #6 e substituirá esses
+segredos compartilhados.
 
-## Idempotência na infraestrutura Cloudflare
+## Backup, retenção e restauração
 
-O D1 é a fonte de verdade para operações de negócio. Escritas repetíveis usam
-chaves estáveis e restrições `UNIQUE`; eventos financeiros também mantêm a
-imutabilidade do ledger. O lote do importador é transacional e um mesmo
-`import_id` confirmado retorna sem inserir novamente.
+D1 Time Travel é a primeira opção de recuperação pontual. O Workflow mantém
+backups externos diários por 90 dias em produção e 30 dias em preview. Erros
+geram falha observável no Workflow/Workers Logs; verifique execução diária,
+último manifesto e idade do backup. Alertas de conta ficam pendentes até a
+configuração do ambiente Cloudflare.
 
-Workers KV e R2 ainda não estão ligados a este Worker. Quando forem necessários:
+Para recuperar dados: baixe SQL e manifesto pela API autenticada. A rota de
+download valida contrato, tamanho e SHA-256 antes de entregar SQL. Guarde os
+dois arquivos localmente e valide também o procedimento de restore isolado:
 
-- KV será usado para cache/configuração descartável. As chaves terão namespace,
-  versão e identidade estável; `put` substitui o valor, então não será usado
-  como trava ou garantia de execução única. Para estado forte, consultar D1.
-- R2 usará chaves determinísticas e `onlyIf` com `If-None-Match: *` para criação
-  única; uma repetição deve verificar o objeto/hash existente e responder como
-  já concluída, sem sobrescrevê-lo.
-- Durable Objects usarão transações de armazenamento para operações atômicas;
-  alarmes e consumidores terão identificadores de evento persistidos para
-  tolerar execução pelo menos uma vez.
-- Recursos Cloudflare serão declarados uma vez no Wrangler/IaC e reutilizados
-  por binding. O deploy atualiza o Worker; não se criam namespaces, buckets ou
-  bancos por execução.
+```powershell
+pnpm --filter @sabores/api db:restore:validate -- .local/backup.sql .local/backup.json
+```
 
-Essas regras descrevem a integração futura sem declarar bindings ou recursos
-remotos que ainda não foram provisionados. Para comandos de validação, veja os
-scripts `*:api` e `db:migrate:local` na raiz.
+O comando verifica o contrato/hash e aplica o SQL usando um binding D1 local
+dedicado (`sabores-canastra-restore-validation`), sem `--remote` e sem tocar o
+D1 operacional local. Depois compare schema, contagens e reconciliação antes
+de planejar troca de banco. Não restaure por cima do D1 produtivo sem validar a
+cópia. A CI executa o mesmo procedimento com um fixture sintético.
+
+## Validação
+
+```powershell
+pnpm format:check:api
+pnpm lint:api
+pnpm typecheck:api
+pnpm test:api
+pnpm db:migrate:local
+pnpm build:api
+```
+
+`test:api` executa unitários e testes de bindings Cloudflare em Miniflare. O CI
+aplica migrations locais duas vezes para confirmar que a repetição não duplica
+schema. Mudanças futuras de schema entram em uma migration versionada nova;
+nunca reescreva uma migration aplicada.

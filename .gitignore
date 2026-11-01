@@ -22,6 +22,7 @@ __pycache__/
 .local/
 node_modules/
 dist/
+dist-*/
 coverage/
 
 # TanStack Start and Cloudflare generated state

@@ -6,6 +6,8 @@
     "dev:erp": "pnpm --filter @sabores/erp dev",
     "dev:pdv": "pnpm --filter @sabores/pdv dev",
     "dev:api": "pnpm --filter @sabores/api dev",
+    "deploy:api:preview": "pnpm --filter @sabores/api deploy:preview",
+    "deploy:api:production": "pnpm --filter @sabores/api deploy:production",
     "build:erp": "pnpm --filter @sabores/erp build",
     "lint:erp": "pnpm --filter @sabores/erp lint",
     "format:check:erp": "pnpm --filter @sabores/erp format:check",

@@ -1,0 +1,11 @@
+{
+  "contract": "sabores-da-canastra/d1-backup",
+  "contract_version": 1,
+  "database_id": "fixture",
+  "bookmark": "fixture",
+  "created_at": "2026-11-01T00:00:00.000Z",
+  "sql_key": "backups/d1/backup-validation.sql",
+  "size_bytes": 193,
+  "sha256": "4e19798ac8be7d2239086d7fa4b5f9a2ab5749aece0190d5ee5f3ca98316b3bb",
+  "restore": "Fixture para validação do procedimento local de restauração."
+}

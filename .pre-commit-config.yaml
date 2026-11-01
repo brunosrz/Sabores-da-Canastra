@@ -64,7 +64,7 @@ repos:
         entry: pnpm lint:docs
         language: system
         types: [markdown]
-        files: ^(README\.md|docs/(json-contract|arquitetura-web)\.md|apps/(erp|pdv|api)/README\.md)$
+        files: ^(AGENTS\.md|README\.md|docs/(json-contract|arquitetura-web)\.md|apps/(erp|pdv|api)/README\.md)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3

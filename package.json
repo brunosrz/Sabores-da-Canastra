@@ -28,6 +28,6 @@
     "format:check:web": "pnpm format:check:erp && pnpm format:check:pdv",
     "typecheck:web": "pnpm typecheck:erp && pnpm typecheck:pdv",
     "test:web": "pnpm test:erp && pnpm test:pdv",
-    "lint:docs": "pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml README.md docs/json-contract.md docs/arquitetura-web.md apps/erp/README.md apps/pdv/README.md apps/api/README.md"
+    "lint:docs": "pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml AGENTS.md README.md docs/json-contract.md docs/arquitetura-web.md apps/erp/README.md apps/pdv/README.md apps/api/README.md"
   }
 }

@@ -1,4 +1,10 @@
-# Metodologia financeira e de dados
+# Metodologia financeira do sistema Python legado
+
+> Este documento descreve fórmulas, entradas e dados do aplicativo Python e da
+> planilha Excel preservados no repositório. Não descreve o backend dos novos
+> apps web: o SQLite é local e independente do D1 planejado para a plataforma.
+> Consulte [a arquitetura web](arquitetura-web.md) para a fonte de dados e o
+> backend previstos para ERP e PDV.
 
 ## Fonte autoritativa e atualização
 

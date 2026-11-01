@@ -1,0 +1,12 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "sabores-canastra-pdv",
+	"compatibility_date": "2026-10-30",
+	"compatibility_flags": ["nodejs_compat"],
+	"main": "@tanstack/react-start/server-entry",
+	"observability": { "enabled": true },
+	"env": {
+		"preview": { "name": "sabores-canastra-pdv-preview" },
+		"production": { "name": "sabores-canastra-pdv" },
+	},
+}

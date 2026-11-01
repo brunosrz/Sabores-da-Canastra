@@ -22,3 +22,9 @@ __pycache__/
 node_modules/
 dist/
 coverage/
+
+# TanStack Start and Cloudflare generated state
+.tanstack/
+.wrangler/
+*.cta.json
+apps/erp-start-scaffold/

@@ -7,6 +7,7 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-yaml
+        args: [--allow-multiple-documents]
       - id: check-json
       - id: check-toml
       - id: check-ast
@@ -16,15 +17,44 @@ repos:
 
   - repo: local
     hooks:
+      - id: erp-format
+        name: ERP formatting
+        entry: pnpm format:check:erp
+        language: system
+        types_or: [javascript, jsx, ts, tsx, css]
+        files: ^apps/erp/.*\.(js|jsx|ts|tsx|css|mts)$
+        pass_filenames: false
+      - id: erp-lint
+        name: ERP ESLint
+        entry: pnpm lint:erp
+        language: system
+        types_or: [javascript, jsx, ts, tsx]
+        files: ^apps/erp/.*\.(js|jsx|ts|tsx)$
+        pass_filenames: false
+      - id: pdv-format
+        name: PDV formatting
+        entry: pnpm format:check:pdv
+        language: system
+        types_or: [javascript, jsx, ts, tsx, css]
+        files: ^apps/pdv/.*\.(js|jsx|ts|tsx|css|mts)$
+        pass_filenames: false
+      - id: pdv-lint
+        name: PDV ESLint
+        entry: pnpm lint:pdv
+        language: system
+        types_or: [javascript, jsx, ts, tsx]
+        files: ^apps/pdv/.*\.(js|jsx|ts|tsx)$
+        pass_filenames: false
       - id: markdownlint
         name: markdown lint
-        entry: npx --yes markdownlint-cli2@0.23.3
+        entry: pnpm lint:docs
         language: system
         types: [markdown]
-        files: ^(README\.md|docs/json-contract\.md)$
+        files: ^(README\.md|docs/(json-contract|arquitetura-web)\.md|apps/(erp|pdv)/README\.md)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3
     hooks:
       - id: ruff-check
         args: [--select=E4,E7,E9]
+        files: ^(src/sabores|tests)/.*\.py$

@@ -153,6 +153,12 @@ porque causaria uma reformatação extensa; Ruff, testes e validação do workbo
 continuam cobertos. A CI não faz deploy. CodeRabbit pode revisar PRs quando a
 integração estiver habilitada no repositório.
 
+`.env.gha.example` lista as variáveis e secrets para um futuro deploy pelo
+GitHub Actions; `.env.gha` local é ignorado pelo Git. O environment `preview` já
+tem Account ID, Zone ID, e-mails do Access e os três tokens de aplicação da API.
+Antes de automatizar o deploy, ainda é necessário cadastrar `CLOUDFLARE_DEPLOY_API_TOKEN`
+com escopo mínimo e `PREVIEW_API_CLOUDFLARE_API_TOKEN` para exportação do D1.
+
 ## Documentação de referência
 
 - [Arquitetura dos apps web](docs/arquitetura-web.md)

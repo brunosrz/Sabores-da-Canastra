@@ -195,21 +195,57 @@ export function ProductsPrototype() {
 }
 
 export function InventoryPrototype() {
+	const [ingredients, setIngredients] = useState<
+		Array<{
+			ingredient_id: string;
+			name: string;
+			base_unit: string;
+			pack_quantity: string;
+			supplier: string | null;
+			pack_price_cents: number | null;
+			status: string | null;
+		}>
+	>([]);
+	const [search, setSearch] = useState('');
+	const [status, setStatus] = useState('Carregando ingredientes…');
+	useEffect(() => {
+		const controller = new AbortController();
+		void fetch('/api/erp/ingredients', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+			.then(async (response) => {
+				if (!response.ok) throw new Error('Não foi possível carregar os ingredientes.');
+				return response.json() as Promise<{ data: typeof ingredients }>;
+			})
+			.then((body) => {
+				setIngredients(body.data);
+				setStatus(`${body.data.length} ingredientes cadastrados.`);
+			})
+			.catch(() => {
+				if (!controller.signal.aborted) setStatus('Ingredientes indisponíveis. Conecte-se e tente novamente.');
+			});
+		return () => controller.abort();
+	}, []);
+	const filtered = ingredients.filter((ingredient) =>
+		ingredient.name.toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR')),
+	);
 	return (
-		<PrototypeFrame title="Estoque" description="Acompanhe insumos e produtos para planejar compras e produção.">
+		<PrototypeFrame title="Ingredientes" description="Consulte os insumos e suas cotações atuais.">
+			<label>
+				Buscar ingrediente <input className="demo-input" value={search} onChange={(event) => setSearch(event.target.value)} />
+			</label>
+			<p role="status">{status}</p>
 			<div className="erp-area-grid">
-				{[
-					['Abaixo do mínimo', 'Queijo mussarela', '2,4 kg disponíveis'],
-					['Em dia', 'Refrigerante 350 ml', '18 unidades disponíveis'],
-					['A conferir', 'Massa de pastel', 'Última contagem há 3 dias'],
-				].map(([status, name, detail]) => (
-					<Card key={name}>
-						<Badge>{status}</Badge>
-						<h2>{name}</h2>
-						<p className="demo-muted">{detail}</p>
+				{filtered.map((ingredient) => (
+					<Card key={ingredient.ingredient_id}>
+						<Badge>{ingredient.status ?? 'Pendente'}</Badge>
+						<h2>{ingredient.name}</h2>
+						<p className="demo-muted">
+							Pacote: {ingredient.pack_quantity} {ingredient.base_unit} · {ingredient.supplier ?? 'Fornecedor não informado'}
+						</p>
+						<p>{ingredient.pack_price_cents == null ? 'Preço pendente' : <Price cents={ingredient.pack_price_cents} />}</p>
 					</Card>
 				))}
 			</div>
+			<p className="demo-muted">A quantidade do pacote não indica a quantidade disponível em estoque.</p>
 		</PrototypeFrame>
 	);
 }

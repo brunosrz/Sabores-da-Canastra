@@ -333,6 +333,35 @@ describe("bindings Cloudflare locais", () => {
     expect(actor?.actor_user_id).toBe(testActorId);
   });
 
+  it("restringe ingredientes e retorna cotação atual ao proprietário", async () => {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await bindings.DB.prepare(
+      "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, created_at, updated_at) VALUES (?, ?, 'g', '1000', ?, ?)",
+    )
+      .bind(id, `Ingrediente ${id}`, now, now)
+      .run();
+    await bindings.DB.prepare(
+      "INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, status, is_current, created_at) VALUES (?, ?, 1234, '1000', 'g', 'Confirmado', 1, ?)",
+    )
+      .bind(crypto.randomUUID(), id, now)
+      .run();
+    const url = "https://api.example.test/api/erp/ingredients";
+    expect((await app.request(url, {}, bindings)).status).toBe(401);
+    const response = await app.request(
+      url,
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{
+      data: Array<{ ingredient_id: string; pack_price_cents: number }>;
+    }>();
+    expect(body.data.find((item) => item.ingredient_id === id)).toMatchObject({
+      pack_price_cents: 1234,
+    });
+  });
+
   it("retorna pagamentos corrigidos e taxas atuais no histórico", async () => {
     const sale = await makeOfflineOperation();
     if (sale.operationType !== "sale.create") throw new Error("tipo inválido");

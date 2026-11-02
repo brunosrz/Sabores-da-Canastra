@@ -197,6 +197,26 @@ app.get("/api/erp/finance", async (context) => {
   }
 });
 
+app.get("/api/erp/ingredients", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT i.ingredient_id, i.name, i.base_unit, i.pack_quantity, i.supplier,
+              q.pack_price_cents, q.status, q.quoted_on
+       FROM ingredients i LEFT JOIN ingredient_quotes q
+         ON q.ingredient_id = i.ingredient_id AND q.is_current = 1
+       ORDER BY i.name COLLATE NOCASE`,
+    ).all();
+    return context.json({ data: results }, 200, {
+      "cache-control": "private, no-store",
+    });
+  } catch (error) {
+    console.error("Falha ao consultar ingredientes.", error);
+    return context.json({ error: "Ingredientes indisponíveis." }, 503);
+  }
+});
+
 app.get("/api/erp/catalog/products", async (context) => {
   if (context.get("authUser").role !== "owner")
     return context.json({ error: "Permissão insuficiente." }, 403);

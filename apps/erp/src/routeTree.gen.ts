@@ -19,6 +19,7 @@ import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthSessionRouteImport } from './routes/api.auth.session'
 import { Route as ApiErpFinanceRouteImport } from './routes/api.erp.finance'
+import { Route as ApiErpIngredientsRouteImport } from './routes/api.erp.ingredients'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -70,6 +71,11 @@ const ApiErpFinanceRoute = ApiErpFinanceRouteImport.update({
   path: '/api/erp/finance',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiErpIngredientsRoute = ApiErpIngredientsRouteImport.update({
+  id: '/api/erp/ingredients',
+  path: '/api/erp/ingredients',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
   '/api/erp/finance': typeof ApiErpFinanceRoute
+  '/api/erp/ingredients': typeof ApiErpIngredientsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
   '/api/erp/finance': typeof ApiErpFinanceRoute
+  '/api/erp/ingredients': typeof ApiErpIngredientsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
   '/api/erp/finance': typeof ApiErpFinanceRoute
+  '/api/erp/ingredients': typeof ApiErpIngredientsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/api/auth/logout'
     | '/api/auth/session'
     | '/api/erp/finance'
+    | '/api/erp/ingredients'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -133,6 +143,7 @@ export interface FileRouteTypes {
     | '/api/auth/logout'
     | '/api/auth/session'
     | '/api/erp/finance'
+    | '/api/erp/ingredients'
   id:
     | '__root__'
     | '/'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/api/auth/logout'
     | '/api/auth/session'
     | '/api/erp/finance'
+    | '/api/erp/ingredients'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -158,6 +170,7 @@ export interface RootRouteChildren {
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSessionRoute: typeof ApiAuthSessionRoute
   ApiErpFinanceRoute: typeof ApiErpFinanceRoute
+  ApiErpIngredientsRoute: typeof ApiErpIngredientsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -232,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiErpFinanceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/erp/ingredients': {
+      id: '/api/erp/ingredients'
+      path: '/api/erp/ingredients'
+      fullPath: '/api/erp/ingredients'
+      preLoaderRoute: typeof ApiErpIngredientsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -246,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSessionRoute: ApiAuthSessionRoute,
   ApiErpFinanceRoute: ApiErpFinanceRoute,
+  ApiErpIngredientsRoute: ApiErpIngredientsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

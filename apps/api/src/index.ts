@@ -23,7 +23,6 @@ type Bindings = {
   BACKUP_ACCOUNT_ID?: string;
   BACKUP_DATABASE_ID?: string;
   LOCAL_IMPORT_TOKEN?: string;
-  AUTH_USERS?: string;
   AUTH_COOKIE_DOMAIN?: string;
   AUTH_COOKIE_NAME?: string;
   AUTH_ALLOWED_ORIGINS?: string;

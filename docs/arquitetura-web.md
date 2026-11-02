@@ -44,9 +44,10 @@ configurados por ambiente.
 As sessões usam cookies opacos `Secure`, `HttpOnly` e `SameSite=Strict`, com
 nomes distintos entre preview e produção e domínio compartilhado entre os
 subdomínios. O D1 mantém somente o hash do token, validade, revogação e impressão
-digital das credenciais configuradas; alterar as credenciais invalida as sessões
-existentes. Não existe cadastro aberto: as contas são provisionadas pelo
-secret `AUTH_USERS`, com hashes PBKDF2. Login e vendas verificam a origem, e as
+digital das credenciais armazenadas na tabela privada `users`; alterar as
+credenciais invalida as sessões existentes. Não existe cadastro aberto: um
+utilitário local provisiona usuários diretamente no D1, sem incluir nomes em
+variáveis ou secrets do Worker. Login e vendas verificam a origem, e as
 tentativas de login são limitadas. Cada venda grava `actor_user_id` no ledger.
 Os Workers de preview usam recursos e dados de preview separados dos recursos
 de produção.

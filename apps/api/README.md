@@ -17,20 +17,19 @@ pnpm db:migrate:local
 pnpm dev:api
 ```
 
-Gere os hashes em arquivos ignorados, com a senha digitada sem eco no terminal:
+Cadastre contas diretamente na tabela privada `users` do D1. O script solicita
+os nomes e as senhas no terminal sem ecoar as senhas; esses dados não ficam em
+arquivos versionados nem em secrets do Worker:
 
 ```powershell
 uv run python apps/api/scripts/provision_auth_users.py preview
-uv run python apps/api/scripts/provision_auth_users.py local
 ```
 
-O primeiro comando grava `AUTH_USERS` em `apps/api/.env.preview`; o segundo
-reaproveita os hashes no `apps/api/.dev.vars`. Para produção, use o argumento
-`production` depois de criar `.env.production` a partir do exemplo. `AUTH_USERS`
-é um segredo JSON com IDs, nomes, papéis e hashes PBKDF2; nunca armazene senhas
-em texto puro no repositório. As senhas provisionadas precisam ter de 12 a 128
-caracteres; os hashes usam PBKDF2-SHA-256 com 100.000 iterações, compatível com
-o WebCrypto dos Workers. O Wrangler executa simuladores
+Execute depois de aplicar as migrations ao ambiente desejado. O script grava
+um SQL temporário ignorado pelo Git, aplica os hashes no D1 e apaga o arquivo.
+Use `local`, `preview` ou `production` como argumento. As senhas precisam ter
+de 4 a 128 caracteres; os hashes usam PBKDF2-SHA-256 com 100.000 iterações,
+compatível com o WebCrypto dos Workers. O Wrangler executa simuladores
 locais de D1, KV, R2, Durable Objects e Workflows. O servidor responde em
 `http://127.0.0.1:3000`; nenhum comando de desenvolvimento usa `--remote`.
 Ao desenvolver uma tela que chama a API por Service Binding, mantenha também
@@ -87,10 +86,11 @@ uv run scons api-preview
 uv run scons preview
 ```
 
-O `AUTH_USERS` é obrigatório no preview e em produção. Gere o JSON por meio do
-utilitário acima antes de publicar; o comando nunca imprime as senhas nem os
-hashes gerados. As contas são `bruno` e `ivone`, provisionadas sem cadastro
-público. Use sal/senha independentes em produção.
+As contas ficam no D1 e não existe cadastro público. Para criá-las ou trocar
+credenciais, execute o utilitário de provisionamento após aplicar as migrations
+do ambiente. Ele pede a quantidade de contas e os dados em prompts locais; os
+nomes não aparecem em código, exemplos versionados ou configuração do Worker.
+Use senhas e salts independentes entre preview e produção.
 
 `CLOUDFLARE_API_TOKEN` (no arquivo de secrets da API) deve ter somente a permissão necessária para exportar o D1
 correspondente. `BACKUP_DATABASE_ID` precisa ser o mesmo ID de
@@ -113,7 +113,7 @@ conferido sem credenciais com `pnpm build:api` e `wrangler deploy --env preview
 ## Rotas da API
 
 - `GET /health`: disponibilidade do Worker.
-- `POST /api/auth/login`: valida usuário contra o segredo `AUTH_USERS`, limita
+- `POST /api/auth/login`: valida usuário na tabela privada `users`, limita
   tentativas por IP e emite cookie HttpOnly compartilhado entre os subdomínios.
 - `GET /api/auth/session` e `POST /api/auth/logout`: consultam e revogam a sessão
   opaca, persistida somente como hash no D1.
@@ -128,8 +128,9 @@ conferido sem credenciais com `pnpm build:api` e `wrangler deploy --env preview
 - `POST /api/backups/run`: inicia backup manual autenticado e idempotente.
 - `POST /__local/import`: importação local protegida por token e hostname.
 
-Não existe rota de cadastro. Para provisionar usuários, gere sal/hash PBKDF2 e
-configure `AUTH_USERS` como secret em cada ambiente. O cookie tem validade de
+Não existe rota de cadastro. O provisionador local cadastra usuários diretamente
+na tabela privada `users`, que guarda salt e hash PBKDF2; nenhum nome de usuário
+é publicado como variável ou secret do Worker. O cookie tem validade de
 12 horas, `HttpOnly`, `SameSite=Strict` e `Secure` fora de localhost. Preview e
 produção usam nomes de cookie distintos. Mutations validam a origem somente
 contra a lista explícita do ambiente. Há limites de 10 tentativas por IP e por

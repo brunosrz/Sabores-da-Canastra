@@ -10,7 +10,7 @@ describe('proxy de autenticação do PDV', () => {
 			expect(request.headers.get('origin')).toBe('https://pdv.example.test');
 			expect(request.headers.get('x-client-ip')).toBe('203.0.113.5');
 			return Response.json(
-				{ user: { username: 'ivone' } },
+				{ user: { username: 'test-user' } },
 				{
 					headers: { 'set-cookie': 'sabores_session=nova; HttpOnly' },
 				},
@@ -35,13 +35,13 @@ describe('proxy de autenticação do PDV', () => {
 		let originalBody: ReadableStream<Uint8Array> | null = null;
 		const fetch = vi.fn(async (request: Request) => {
 			expect(request.body).toBe(originalBody);
-			expect(await request.json()).toEqual({ username: 'ivone' });
+			expect(await request.json()).toEqual({ username: 'test-user' });
 			return Response.json({ ok: true });
 		});
 		const request = new Request('https://pdv.example.test/api/auth/login', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ username: 'ivone' }),
+			body: JSON.stringify({ username: 'test-user' }),
 		});
 		originalBody = request.body;
 

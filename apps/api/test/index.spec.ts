@@ -6,35 +6,17 @@ const environment = {
   LOCAL_IMPORT_TOKEN: "x".repeat(40),
 };
 const sessionCookie = "sabores_session=session-for-test";
-const testAuthUsers = JSON.stringify([
-  {
-    id: "test-user",
-    username: "bruno",
-    role: "owner",
-    salt: "AAAAAAAAAAAAAAAAAAAAAA",
-    hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    iterations: 100_000,
-  },
-]);
 async function testCredentialFingerprint() {
-  const user = JSON.parse(testAuthUsers)[0] as {
-    id: string;
-    username: string;
-    role: string;
-    salt: string;
-    hash: string;
-    iterations: number;
-  };
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(
       JSON.stringify([
-        user.id,
-        user.username.toLowerCase(),
-        user.role,
-        user.salt,
-        user.hash,
-        user.iterations,
+        "test-user",
+        "test-user",
+        "owner",
+        "AAAAAAAAAAAAAAAAAAAAAA",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        100_000,
       ]),
     ),
   );
@@ -49,8 +31,11 @@ function databaseWithSession() {
       bind: () => ({
         first: async () => ({
           id: "test-user",
-          username: "bruno",
+          username: "test-user",
           role: "owner",
+          salt: "AAAAAAAAAAAAAAAAAAAAAA",
+          hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          iterations: 100_000,
           credential_fingerprint: await testCredentialFingerprint(),
         }),
       }),
@@ -132,7 +117,6 @@ describe("rotas locais da API", () => {
       },
       {
         DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
         PRIVATE_FILES: {} as R2Bucket,
         AUTH_ALLOWED_ORIGINS: "https://erp.example.test",
         D1_BACKUP: { create, get } as unknown as Workflow,
@@ -160,7 +144,6 @@ describe("rotas locais da API", () => {
       },
       {
         DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
         PRIVATE_FILES: {} as R2Bucket,
         AUTH_ALLOWED_ORIGINS: "https://erp.example.test",
         D1_BACKUP: { create } as unknown as Workflow,
@@ -180,7 +163,6 @@ describe("rotas locais da API", () => {
       },
       {
         DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
         PRIVATE_FILES: {} as R2Bucket,
         AUTH_ALLOWED_ORIGINS: "https://erp.example.test",
         BACKUP_ACCOUNT_ID: "local",
@@ -210,7 +192,6 @@ describe("rotas locais da API", () => {
       },
       {
         DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
         SALE_COORDINATOR: { getByName } as unknown as DurableObjectNamespace,
         AUTH_ALLOWED_ORIGINS: "http://localhost:5174",
       },
@@ -225,7 +206,6 @@ describe("rotas locais da API", () => {
       { headers: { cookie: sessionCookie } },
       {
         DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
         PRIVATE_FILES: {} as R2Bucket,
       },
     );

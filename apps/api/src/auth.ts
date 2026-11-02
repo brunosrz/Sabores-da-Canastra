@@ -3,7 +3,6 @@ const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_ATTEMPT_LIMIT = 10;
 const ACCOUNT_LOGIN_ATTEMPT_LIMIT = 100;
 const MIN_PBKDF2_ITERATIONS = 100_000;
-const MAX_PBKDF2_ITERATIONS = 1_000_000;
 
 export type AuthUser = { id: string; username: string; role: string };
 type ConfiguredUser = AuthUser & {
@@ -14,7 +13,6 @@ type ConfiguredUser = AuthUser & {
 
 type AuthBindings = {
   DB: D1Database;
-  AUTH_USERS?: string;
   AUTH_COOKIE_DOMAIN?: string;
   AUTH_COOKIE_NAME?: string;
   AUTH_ALLOWED_ORIGINS?: string;
@@ -47,42 +45,28 @@ async function sha256(value: string): Promise<string> {
   return base64Url(new Uint8Array(digest));
 }
 
-function configuredUsers(serialized: string | undefined): ConfiguredUser[] {
-  if (!serialized) throw new Error("AUTH_NOT_CONFIGURED");
-  let value: unknown;
-  try {
-    value = JSON.parse(serialized);
-  } catch {
+function databaseUser(value: unknown): ConfiguredUser {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof (value as ConfiguredUser).id !== "string" ||
+    !/^[A-Za-z0-9_-]{1,80}$/.test((value as ConfiguredUser).id) ||
+    typeof (value as ConfiguredUser).username !== "string" ||
+    !/^[A-Za-z0-9._-]{1,80}$/.test((value as ConfiguredUser).username) ||
+    typeof (value as ConfiguredUser).role !== "string" ||
+    typeof (value as ConfiguredUser).salt !== "string" ||
+    typeof (value as ConfiguredUser).hash !== "string" ||
+    !Number.isSafeInteger((value as ConfiguredUser).iterations) ||
+    (value as ConfiguredUser).iterations !== MIN_PBKDF2_ITERATIONS
+  )
     throw new Error("AUTH_NOT_CONFIGURED");
-  }
-  if (!Array.isArray(value) || value.length === 0 || value.length > 100)
+  const user = value as ConfiguredUser;
+  if (
+    fromBase64Url(user.salt).byteLength !== 16 ||
+    fromBase64Url(user.hash).byteLength !== 32
+  )
     throw new Error("AUTH_NOT_CONFIGURED");
-  for (const user of value) {
-    if (
-      !user ||
-      typeof user.id !== "string" ||
-      !/^[A-Za-z0-9_-]{1,80}$/.test(user.id) ||
-      typeof user.username !== "string" ||
-      !/^[A-Za-z0-9._-]{1,80}$/.test(user.username) ||
-      typeof user.role !== "string" ||
-      typeof user.salt !== "string" ||
-      typeof user.hash !== "string" ||
-      !Number.isSafeInteger(user.iterations) ||
-      user.iterations < MIN_PBKDF2_ITERATIONS ||
-      user.iterations > MAX_PBKDF2_ITERATIONS
-    )
-      throw new Error("AUTH_NOT_CONFIGURED");
-    try {
-      if (
-        fromBase64Url(user.salt).byteLength !== 16 ||
-        fromBase64Url(user.hash).byteLength !== 32
-      )
-        throw new Error("AUTH_NOT_CONFIGURED");
-    } catch {
-      throw new Error("AUTH_NOT_CONFIGURED");
-    }
-  }
-  return value as ConfiguredUser[];
+  return user;
 }
 
 async function verifyPassword(
@@ -281,9 +265,15 @@ export async function login(
       { status: 401 },
     );
 
-  let users: ConfiguredUser[];
+  let user: ConfiguredUser | null;
   try {
-    users = configuredUsers(bindings.AUTH_USERS);
+    const row = await bindings.DB.prepare(
+      `SELECT user_id AS id, username, role, salt, password_hash AS hash, iterations
+      FROM users WHERE username = ? COLLATE NOCASE AND active = 1`,
+    )
+      .bind(username)
+      .first();
+    user = row ? databaseUser(row) : null;
   } catch {
     return Response.json(
       { error: "Autenticação indisponível." },
@@ -310,16 +300,13 @@ export async function login(
       { status: 429 },
     );
 
-  const user = users.find(
-    (candidate) => candidate.username.toLowerCase() === username.toLowerCase(),
-  );
   const fakeUser: ConfiguredUser = {
     id: "invalid",
     username: "invalid",
     role: "owner",
-    salt: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    salt: "AAAAAAAAAAAAAAAAAAAAAA",
     hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    iterations: Math.max(...users.map((candidate) => candidate.iterations)),
+    iterations: MIN_PBKDF2_ITERATIONS,
   };
   let valid = false;
   try {
@@ -387,26 +374,30 @@ export async function currentUser(
 ): Promise<AuthUser | null> {
   const token = cookieValue(request, bindings);
   if (!token || token.length > 100) return null;
-  const users = configuredUsers(bindings.AUTH_USERS);
   const tokenHash = await sha256(token);
   const now = new Date().toISOString();
   const row = await bindings.DB.prepare(
-    `SELECT u.user_id AS id, u.username, u.role, s.credential_fingerprint
+    `SELECT u.user_id AS id, u.username, u.role, c.salt, c.password_hash AS hash,
+      c.iterations, s.credential_fingerprint
     FROM auth_sessions s JOIN auth_users u ON u.user_id = s.user_id
-    WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.active = 1`,
+    JOIN users c ON c.user_id = u.user_id
+    WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
+      AND u.active = 1 AND c.active = 1`,
   )
     .bind(tokenHash, now)
-    .first<AuthUser & { credential_fingerprint: string }>();
+    .first<ConfiguredUser & { credential_fingerprint: string }>();
   if (!row) return null;
-  const configured = users.find(
-    (user) =>
-      user.id === row.id &&
-      user.username.toLowerCase() === row.username.toLowerCase(),
-  );
-  if (!configured) return null;
-  if (row.credential_fingerprint !== (await credentialFingerprint(configured)))
+  const configured = databaseUser(row);
+  if (
+    configured.username.toLowerCase() !== row.username.toLowerCase() ||
+    row.credential_fingerprint !== (await credentialFingerprint(configured))
+  )
     return null;
-  return { id: row.id, username: row.username, role: configured.role };
+  return {
+    id: configured.id,
+    username: configured.username,
+    role: configured.role,
+  };
 }
 
 export async function sessionResponse(

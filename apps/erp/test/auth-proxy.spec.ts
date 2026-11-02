@@ -10,9 +10,9 @@ describe('proxy de autenticação do ERP', () => {
 			expect(request.headers.get('cookie')).toBe('sabores_session=anterior');
 			expect(request.headers.get('origin')).toBe('https://erp.example.test');
 			expect(request.headers.get('x-client-ip')).toBe('203.0.113.4');
-			expect(await request.json()).toEqual({ username: 'bruno' });
+			expect(await request.json()).toEqual({ username: 'test-user' });
 			return Response.json(
-				{ user: { username: 'bruno' } },
+				{ user: { username: 'test-user' } },
 				{
 					headers: { 'set-cookie': 'sabores_session=nova; HttpOnly' },
 				},
@@ -27,7 +27,7 @@ describe('proxy de autenticação do ERP', () => {
 				'cf-connecting-ip': '203.0.113.4',
 				host: 'erp.example.test',
 			},
-			body: JSON.stringify({ username: 'bruno' }),
+			body: JSON.stringify({ username: 'test-user' }),
 		});
 		originalBody = request.body;
 

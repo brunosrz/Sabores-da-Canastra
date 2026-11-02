@@ -35,35 +35,17 @@ const payload = {
 };
 const testActorId = "test-ledger-actor";
 const backupTestUserId = "backup-test-user";
-const backupAuthUsers = JSON.stringify([
-  {
-    id: backupTestUserId,
-    username: backupTestUserId,
-    role: "owner",
-    salt: "AAAAAAAAAAAAAAAAAAAAAA",
-    hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    iterations: 100_000,
-  },
-]);
 async function backupCredentialFingerprint() {
-  const user = JSON.parse(backupAuthUsers)[0] as {
-    id: string;
-    username: string;
-    role: string;
-    salt: string;
-    hash: string;
-    iterations: number;
-  };
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(
       JSON.stringify([
-        user.id,
-        user.username.toLowerCase(),
-        user.role,
-        user.salt,
-        user.hash,
-        user.iterations,
+        backupTestUserId,
+        backupTestUserId,
+        "owner",
+        "AAAAAAAAAAAAAAAAAAAAAA",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        100_000,
       ]),
     ),
   );
@@ -99,6 +81,13 @@ async function authenticatedCookie() {
     "INSERT INTO auth_users (user_id, username, role, active, created_at) VALUES (?, ?, 'owner', 1, ?) ON CONFLICT(user_id) DO UPDATE SET active = 1",
   )
     .bind(userId, userId, new Date().toISOString())
+    .run();
+  await bindings.DB.prepare(
+    `INSERT OR REPLACE INTO users
+      (user_id, username, role, salt, password_hash, iterations, active, created_at, updated_at)
+     VALUES (?, ?, 'owner', 'AAAAAAAAAAAAAAAAAAAAAA', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 100000, 1, ?, ?)`,
+  )
+    .bind(userId, userId, new Date().toISOString(), new Date().toISOString())
     .run();
   await bindings.DB.prepare(
     "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, credential_fingerprint) VALUES (?, ?, ?, ?, ?)",
@@ -338,7 +327,7 @@ describe("bindings Cloudflare locais", () => {
       }),
     );
     const url = `https://api.example.test/api/backups/file/${key}`;
-    const appBindings = { ...bindings, AUTH_USERS: backupAuthUsers };
+    const appBindings = bindings;
     const cookie = await authenticatedCookie();
     const unauthorized = await app.request(url, {}, appBindings);
     expect(unauthorized.status).toBe(401);

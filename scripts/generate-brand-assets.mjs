@@ -1,8 +1,8 @@
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Resvg } from "@resvg/resvg-js";
-
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const brandDirectory = join(root, "assets", "brand");
 const fontsDirectory = join(root, "assets", "fonts");
@@ -31,6 +31,36 @@ const apps = [
 
 async function loadSvg(fileName) {
   return Buffer.from(await readFile(join(brandDirectory, fileName), "utf8"));
+}
+
+function svgParts(svg, name) {
+  const source = svg.replace(/^<\?xml[^>]*\?>\s*/, "").trim();
+  const opening = source.match(/<(?:[\w.-]+:)?svg\b[^>]*>/)?.[0];
+  const closing = source.match(/<\/(?:[\w.-]+:)?svg\s*>\s*$/)?.[0];
+  if (!opening || !closing) throw new Error(`SVG inválido: ${name}`);
+  const closingIndex = source.length - closing.length;
+  return {
+    opening,
+    content: source.slice(opening.length, closingIndex),
+    closing,
+  };
+}
+
+function silhouetteMarkup(source, name, strokeWidth) {
+  const { content } = svgParts(source, name);
+  const shapes = content
+    .replace(
+      /<(?:[\w.-]+:)?title\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?title\s*>/g,
+      "",
+    )
+    .replace(/<(?:[\w.-]+:)?desc\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?desc\s*>/g, "")
+    .trim();
+  return `<g fill="#fff" stroke="#fff" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${shapes}</g>`;
+}
+
+function addBehindSilhouette(svg, silhouette, name) {
+  const { opening, content, closing } = svgParts(svg, name);
+  return `${opening}${silhouette}${content}${closing}`;
 }
 
 async function embedLocalFonts(svg) {
@@ -62,6 +92,25 @@ async function writePng(svg, destination, width) {
   await writeFile(destination, renderer.render().asPng());
 }
 
+function runSvgFormatter(paths) {
+  const result = spawnSync(
+    "uv",
+    ["run", "python", "scripts/optimize_svg_files.py", ...paths],
+    {
+      cwd: root,
+      stdio: "inherit",
+      windowsHide: true,
+      env: { ...process.env, SABORES_GENERATING_BRAND_ASSETS: "1" },
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(
+      `SVGO encerrou com código ${result.status ?? "desconhecido"}`,
+    );
+  }
+}
+
 function icoFromPngs(entries) {
   const headerLength = 6 + entries.length * 16;
   let imageOffset = headerLength;
@@ -88,7 +137,17 @@ function icoFromPngs(entries) {
 
 const logo = await loadSvg("logo.svg");
 const logoSource = logo.toString("utf8").replace(/^<\?xml[^>]*\?>\s*/, "");
-const publicLogo = Buffer.from(await embedLocalFonts(logo.toString("utf8")));
+const logoSilhouette = await loadSvg("logo-silhouette.svg");
+const logoSilhouetteLayer = silhouetteMarkup(
+  logoSilhouette.toString("utf8"),
+  "logo-silhouette.svg",
+  12,
+);
+const publicLogo = Buffer.from(
+  await embedLocalFonts(
+    addBehindSilhouette(logoSource, logoSilhouetteLayer, "logo.svg"),
+  ),
+);
 const logoMatch = logoSource.match(
   /<(?:[\w.-]+:)?svg\b[^>]*>([\s\S]*)<\/(?:[\w.-]+:)?svg>\s*$/,
 );
@@ -100,29 +159,13 @@ const logoContent = logoMatch[1]
   .replace(/<([\w.-]+):style\b[^>]*>[\s\S]*?<\/\1:style\s*>/g, "")
   .replace(/\sdisplay="none"/g, "")
   .trim();
-const normalizeNamespace = (markup) =>
-  markup
-    .replace(/<([\w.-]+):([\w.-]+)(?=[\s>])/g, "<$2")
-    .replace(/<\/([\w.-]+):([\w.-]+)\s*>/g, "</$2>");
-const extractElement = (name) => {
-  const match = logoSource.match(
-    new RegExp(`<ns0:${name}\\b[^>]*>[\\s\\S]*?<\\/ns0:${name}>`),
-  );
-  if (!match) throw new Error(`Elemento ${name} ausente no SVG da marca`);
-  return normalizeNamespace(match[0]);
-};
-const extractGroup = (id) => {
-  const match = logoSource.match(
-    new RegExp(`<ns0:g\\b(?=[^>]*\\bid="${id}")[^>]*>[\\s\\S]*?<\\/ns0:g>`),
-  );
-  if (!match) throw new Error(`Grupo ${id} ausente no SVG da marca`);
-  return normalizeNamespace(match[0]);
-};
-const gradients = `${extractElement("radialGradient")}${extractElement("linearGradient")}`;
-const mountainArt = `${extractGroup("sol")}${extractGroup("montanhas-e-passaros")}`;
-const faviconSource = await readFile(
-  join(brandDirectory, "favicon.svg"),
-  "utf8",
+const logoCompositeContent = `${logoSilhouetteLayer}${logoContent}`;
+const faviconSource = (await loadSvg("favicon.svg")).toString("utf8");
+const faviconSilhouette = await loadSvg("favicon-silhouette.svg");
+const faviconSilhouetteLayer = silhouetteMarkup(
+  faviconSilhouette.toString("utf8"),
+  "favicon-silhouette.svg",
+  12,
 );
 const socialCards = new Map(
   await Promise.all(
@@ -130,7 +173,9 @@ const socialCards = new Map(
       const template = await loadSvg(`social-card-${slug}.svg`);
       const card = Buffer.from(
         await embedLocalFonts(
-          template.toString("utf8").replace("__BRAND_CONTENT__", logoContent),
+          template
+            .toString("utf8")
+            .replace("__BRAND_CONTENT__", logoCompositeContent),
         ),
       );
       if (card.includes(Buffer.from("__BRAND_CONTENT__")))
@@ -177,18 +222,30 @@ for (const {
     ),
   );
 
+  const {
+    opening: faviconOpening,
+    content: faviconContent,
+    closing: faviconClosing,
+  } = svgParts(faviconSource, "favicon.svg");
   const favicon = Buffer.from(
-    faviconSource
-      .replace("__GRADIENTS__", gradients)
-      .replace("__MOUNTAIN_ART__", mountainArt)
-      .replace("__APP_ACCENT__", accent),
+    `${faviconOpening}<title>${name}</title>${faviconSilhouetteLayer}${faviconContent}<circle id="app-accent" cx="453" cy="78" r="22" fill="${accent}" stroke="#fff" stroke-width="7"/>${faviconClosing}`,
   );
   await writeFile(join(publicDirectory, "favicon.svg"), favicon);
   const socialCard = socialCards.get(slug);
   if (!socialCard) throw new Error(`Cartão social ausente para ${slug}`);
   await writeFile(join(publicDirectory, `social-card-${slug}.svg`), socialCard);
+  runSvgFormatter([
+    join(brandPublicDirectory, "logo-sabores-canastra.svg"),
+    join(publicDirectory, "logo.svg"),
+    join(publicDirectory, "favicon.svg"),
+    join(publicDirectory, `social-card-${slug}.svg`),
+  ]);
+  const optimizedSocialCard = await readFile(
+    join(publicDirectory, `social-card-${slug}.svg`),
+  );
+  const optimizedFavicon = await readFile(join(publicDirectory, "favicon.svg"));
   await writePng(
-    socialCard,
+    optimizedSocialCard,
     join(publicDirectory, `social-card-${slug}.png`),
     1200,
   );
@@ -196,18 +253,22 @@ for (const {
   const iconPngs = await Promise.all(
     [16, 32, 48].map(async (size) => {
       const destination = join(publicDirectory, `favicon-${size}x${size}.png`);
-      await writePng(favicon, destination, size);
+      await writePng(optimizedFavicon, destination, size);
       return { size, png: await readFile(destination) };
     }),
   );
-  await writePng(favicon, join(publicDirectory, "apple-touch-icon.png"), 180);
   await writePng(
-    favicon,
+    optimizedFavicon,
+    join(publicDirectory, "apple-touch-icon.png"),
+    180,
+  );
+  await writePng(
+    optimizedFavicon,
     join(publicDirectory, "android-chrome-192x192.png"),
     192,
   );
   await writePng(
-    favicon,
+    optimizedFavicon,
     join(publicDirectory, "android-chrome-512x512.png"),
     512,
   );

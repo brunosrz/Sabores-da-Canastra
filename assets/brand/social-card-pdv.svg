@@ -1,16 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
   <defs>
     <style>
-      @font-face { font-family: "Oswald"; font-weight: 600; src: url("fonts/Oswald-SemiBold.ttf") format("truetype"); }
-      @font-face { font-family: "Lobster"; src: url("fonts/Lobster-Regular.ttf") format("truetype"); }
+      @font-face{font-family:&quot;Oswald&quot;;font-weight:600;src:url(fonts/Oswald-SemiBold.ttf)format(&quot;truetype&quot;)}@font-face{font-family:&quot;Lobster&quot;;src:url(fonts/Lobster-Regular.ttf)format(&quot;truetype&quot;)}
     </style>
   </defs>
-  <svg x="16" y="0" width="1168" height="389.333" viewBox="0 0 1536 512" aria-label="Sabores da Canastra">
+  <svg width="1168" height="389.333" x="16" aria-label="Sabores da Canastra" viewBox="0 0 1536 512">
     __BRAND_CONTENT__
   </svg>
-  <path d="M78 390h1044" stroke="#7b1c0e" stroke-width="8" stroke-linecap="round" />
-  <rect x="76" y="437" width="225" height="76" rx="23" fill="#7b1c0e" />
-  <text data-font="Oswald" x="188" y="489" text-anchor="middle" fill="#fff9f1" font-family="Oswald, sans-serif" font-size="38" font-weight="600" letter-spacing="3">PDV</text>
-  <text data-font="Oswald" x="330" y="479" fill="#181818" font-family="Oswald, sans-serif" font-size="36" font-weight="600">Frente de caixa</text>
+  <path stroke="#7b1c0e" stroke-linecap="round" stroke-width="8" d="M78 390h1044"/>
+  <rect width="225" height="76" x="76" y="437" fill="#7b1c0e" rx="23"/>
+  <text x="188" y="489" fill="#fff9f1" data-font="Oswald" font-family="Oswald, sans-serif" font-size="38" font-weight="600" letter-spacing="3" text-anchor="middle">PDV</text>
+  <text x="330" y="479" fill="#181818" data-font="Oswald" font-family="Oswald, sans-serif" font-size="36" font-weight="600">Frente de caixa</text>
   <text x="78" y="565" fill="#5a574f" font-family="Arial, sans-serif" font-size="24">Pedidos · vendas · pagamentos · caixa diário</text>
 </svg>

@@ -1,114 +1,113 @@
-"""Gera hashes PBKDF2 e os grava em um arquivo de secrets ignorado pelo Git."""
+"""Cadastra credenciais diretamente na tabela privada users do D1."""
 
 from __future__ import annotations
 
 import argparse
 import base64
+from datetime import datetime, timezone
 import getpass
 import hashlib
-import json
+import re
 import secrets
+import shutil
+import subprocess
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-ITERATIONS = 600_000
-USERS = (("user_bruno", "bruno"), ("user_ivone", "ivone"))
-LEGACY_KEYS = {"PDV_WRITE_TOKEN", "CATALOG_READ_TOKEN", "BACKUP_DOWNLOAD_TOKEN"}
+API = ROOT / "apps" / "api"
+ITERATIONS = 100_000
+DATABASES = {
+    "local": "sabores-canastra-local",
+    "preview": "sabores-canastra-preview",
+    "production": "sabores-canastra-production",
+}
 
 
 def encode(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
 
-def hash_password(username: str) -> dict[str, str | int]:
-    password = getpass.getpass(f"Senha para {username}: ")
-    confirmation = getpass.getpass(f"Confirme a senha de {username}: ")
+def sql_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def collect_user() -> tuple[str, str, str, str, str]:
+    username = input("Nome de usuário: ").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", username):
+        raise SystemExit("O nome de usuário precisa ter de 1 a 80 caracteres.")
+    password = getpass.getpass("Senha (mínimo de 4 caracteres): ")
+    confirmation = getpass.getpass("Confirme a senha: ")
     if password != confirmation:
-        raise SystemExit(f"As senhas de {username} não conferem.")
-    password_length = len(password.encode("utf-16-le")) // 2
-    if not 6 <= password_length <= 128:
-        raise SystemExit(f"A senha de {username} deve ter entre 6 e 128 caracteres.")
+        raise SystemExit("As senhas não conferem.")
+    if not 4 <= len(password.encode("utf-16-le")) // 2 <= 128:
+        raise SystemExit("A senha deve ter entre 4 e 128 caracteres.")
     salt = secrets.token_bytes(16)
-    password_hash = hashlib.pbkdf2_hmac(
+    digest = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt, ITERATIONS, dklen=32
     )
-    return {
-        "salt": encode(salt),
-        "hash": encode(password_hash),
-        "iterations": ITERATIONS,
-    }
+    return (
+        username,
+        encode(salt),
+        encode(digest),
+        str(uuid.uuid4()),
+        "owner",
+    )
+
+
+def statements(user: tuple[str, str, str, str, str]) -> str:
+    username, salt, digest, user_id, role = user
+    name = sql_string(username)
+    created = sql_string(datetime.now(timezone.utc).isoformat())
+    return f"""INSERT INTO users (user_id, username, role, salt, password_hash, iterations, active, created_at, updated_at)
+VALUES (COALESCE((SELECT user_id FROM auth_users WHERE username = {name} COLLATE NOCASE LIMIT 1), {sql_string(user_id)}), {name}, {sql_string(role)}, {sql_string(salt)}, {sql_string(digest)}, {ITERATIONS}, 1, {created}, {created})
+ON CONFLICT(username) DO UPDATE SET role=excluded.role, salt=excluded.salt, password_hash=excluded.password_hash, iterations=excluded.iterations, active=1, updated_at=excluded.updated_at;
+INSERT INTO auth_users (user_id, username, role, active, created_at)
+SELECT user_id, username, role, active, created_at FROM users WHERE username = {name} COLLATE NOCASE
+ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, role=excluded.role, active=excluded.active;
+UPDATE auth_sessions SET revoked_at = {created}
+WHERE user_id = (SELECT user_id FROM users WHERE username = {name} COLLATE NOCASE) AND revoked_at IS NULL;
+"""
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("environment", choices=("local", "preview", "production"))
+    parser.add_argument("environment", choices=tuple(DATABASES))
     args = parser.parse_args()
-    api = ROOT / "apps" / "api"
-    target = api / (
-        ".dev.vars" if args.environment == "local" else f".env.{args.environment}"
-    )
-    if args.environment == "local":
-        preview = api / ".env.preview"
-        auth_line = (
-            next(
-                (
-                    line
-                    for line in preview.read_text(encoding="utf-8").splitlines()
-                    if line.startswith("AUTH_USERS=")
-                ),
-                None,
-            )
-            if preview.exists()
-            else None
-        )
-        if auth_line is None:
-            raise SystemExit(
-                "Gere primeiro os usuários para preview: uv run python apps/api/scripts/provision_auth_users.py preview"
-            )
-        lines = (
-            target.read_text(encoding="utf-8").splitlines() if target.exists() else []
-        )
-        lines = [
-            line
-            for line in lines
-            if not line.startswith("AUTH_USERS=")
-            and line.partition("=")[0] not in LEGACY_KEYS
-        ]
-        lines.append(auth_line)
-        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        print("Hashes de autenticação aplicados ao arquivo local ignorado pelo Git.")
-        return
-    if not target.exists():
-        template = target.with_name(f".env.{args.environment}.example")
-        target.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
-
-    configured = []
-    for user_id, username in USERS:
-        password_data = hash_password(username)
-        configured.append(
-            {
-                "id": user_id,
-                "username": username,
-                "role": "owner",
-                **password_data,
-            }
-        )
-    serialized = json.dumps(configured, separators=(",", ":"))
-    lines = target.read_text(encoding="utf-8").splitlines()
-    lines = [
-        line
-        for line in lines
-        if not line.startswith("AUTH_USERS=")
-        and line.partition("=")[0] not in LEGACY_KEYS
+    count = input("Quantidade de usuários para cadastrar/atualizar: ").strip()
+    if not count.isdecimal() or not 1 <= int(count) <= 100:
+        raise SystemExit("Informe uma quantidade entre 1 e 100.")
+    sql = "\n".join(statements(collect_user()) for _ in range(int(count)))
+    temporary = ROOT / ".local" / f"provision-users-{args.environment}.sql"
+    temporary.parent.mkdir(parents=True, exist_ok=True)
+    temporary.write_text(sql, encoding="utf-8")
+    pnpm = shutil.which("pnpm.cmd") or shutil.which("pnpm")
+    if not pnpm:
+        temporary.unlink(missing_ok=True)
+        raise SystemExit("pnpm não foi encontrado no PATH.")
+    command = [
+        pnpm,
+        "--filter",
+        "@sabores/api",
+        "exec",
+        "wrangler",
+        "d1",
+        "execute",
+        DATABASES[args.environment],
+        "--file",
+        str(temporary),
+        "--config",
+        "wrangler.jsonc",
     ]
-    lines.append(f"AUTH_USERS={serialized}")
-    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(
-        f"Hashes PBKDF2 das contas autorizadas gravados em {target.relative_to(ROOT)}."
-    )
-    print(
-        "O arquivo é ignorado pelo Git. Confirme também os outros secrets antes do deploy."
-    )
+    if args.environment == "local":
+        command.append("--local")
+    else:
+        command.extend(("--remote", "--env", args.environment))
+    try:
+        subprocess.run(command, cwd=API, check=True)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print("Credenciais cadastradas/atualizadas no D1; nenhuma senha foi exibida.")
 
 
 if __name__ == "__main__":

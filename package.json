@@ -34,6 +34,7 @@
     "lint:docs": "pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml AGENTS.md README.md docs/json-contract.md docs/arquitetura-web.md apps/erp/README.md apps/pdv/README.md apps/api/README.md"
   },
   "devDependencies": {
-    "@resvg/resvg-js": "^2.6.2"
+    "@resvg/resvg-js": "^2.6.2",
+    "svgo": "^4.1.0"
   }
 }

@@ -6,7 +6,7 @@ const origin = "https://erp.example.test";
 const salt = new Uint8Array(16).fill(7);
 const userId = "test-user-auth";
 const username = "auth-test-user";
-let authUsers: string;
+let credentialHash: string;
 
 function encode(bytes: Uint8Array): string {
   let binary = "";
@@ -26,22 +26,14 @@ async function sha256(value: string): Promise<string> {
 }
 
 async function configuredCredentialFingerprint(): Promise<string> {
-  const [user] = JSON.parse(authUsers) as Array<{
-    id: string;
-    username: string;
-    role: string;
-    salt: string;
-    hash: string;
-    iterations: number;
-  }>;
   return sha256(
     JSON.stringify([
-      user!.id,
-      user!.username.toLowerCase(),
-      user!.role,
-      user!.salt,
-      user!.hash,
-      user!.iterations,
+      userId,
+      username.toLowerCase(),
+      "owner",
+      encode(salt),
+      credentialHash,
+      100_000,
     ]),
   );
 }
@@ -65,7 +57,6 @@ async function passwordHash(password: string): Promise<string> {
 function bindings() {
   return {
     DB: env.DB,
-    AUTH_USERS: authUsers,
     AUTH_ALLOWED_ORIGINS: origin,
   };
 }
@@ -92,16 +83,21 @@ async function login(
 
 describe("autenticação e sessão", () => {
   beforeAll(async () => {
-    authUsers = JSON.stringify([
-      {
-        id: userId,
+    credentialHash = await passwordHash("correct-password");
+    await env.DB.prepare(
+      `INSERT OR REPLACE INTO users
+        (user_id, username, role, salt, password_hash, iterations, active, created_at, updated_at)
+       VALUES (?, ?, 'owner', ?, ?, 100000, 1, ?, ?)`,
+    )
+      .bind(
+        userId,
         username,
-        role: "owner",
-        salt: encode(salt),
-        hash: await passwordHash("correct-password"),
-        iterations: 100_000,
-      },
-    ]);
+        encode(salt),
+        credentialHash,
+        new Date().toISOString(),
+        new Date().toISOString(),
+      )
+      .run();
   });
 
   it("cria sessão, identifica o usuário e revoga no logout", async () => {
@@ -142,18 +138,12 @@ describe("autenticação e sessão", () => {
   it("invalida sessões quando as credenciais configuradas mudam", async () => {
     const loggedIn = await login();
     const cookie = loggedIn.headers.get("set-cookie")!.split(";")[0]!;
-    const previousUsers = authUsers;
     const replacementHash = await passwordHash("replacement-password");
-    authUsers = JSON.stringify([
-      {
-        id: userId,
-        username,
-        role: "owner",
-        salt: encode(salt),
-        hash: replacementHash,
-        iterations: 100_000,
-      },
-    ]);
+    await env.DB.prepare(
+      "UPDATE users SET password_hash = ?, updated_at = ? WHERE user_id = ?",
+    )
+      .bind(replacementHash, new Date().toISOString(), userId)
+      .run();
 
     try {
       const session = await app.request(
@@ -163,7 +153,11 @@ describe("autenticação e sessão", () => {
       );
       expect(session.status).toBe(401);
     } finally {
-      authUsers = previousUsers;
+      await env.DB.prepare(
+        "UPDATE users SET password_hash = ?, updated_at = ? WHERE user_id = ?",
+      )
+        .bind(credentialHash, new Date().toISOString(), userId)
+        .run();
     }
   });
 

@@ -1,7 +1,19 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell, Button } from '@sabores/ui';
-import { clearErpSession, loadErpSession, saveErpSession } from './offline/store';
+import { clearErpSession, loadErpSession, saveErpSession, hasPendingLogout, setPendingLogout, clearPendingLogout } from './offline/store';
+
+async function finishPendingLogout() {
+	if (!(await hasPendingLogout())) return true;
+	try {
+		const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+		if (!response.ok) return false;
+		await clearPendingLogout();
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 type User = { id: string; username: string; role: string };
 const NAV_ITEMS = [
@@ -17,6 +29,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	const session = useQuery({
 		queryKey: ['auth', 'session'],
 		queryFn: async (): Promise<User | null> => {
+			if (await hasPendingLogout()) {
+				await finishPendingLogout();
+				return null;
+			}
 			try {
 				const response = await fetch('/api/auth/session', {
 					credentials: 'same-origin',
@@ -51,6 +67,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		setError('');
 		const form = new FormData(formElement);
 		try {
+			if (!(await finishPendingLogout())) throw new Error('logout pendente');
 			const response = await fetch('/api/auth/login', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
@@ -83,15 +100,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 	async function signOut() {
 		setBusy(true);
-		await clearErpSession();
 		try {
-			const response = await fetch('/api/auth/logout', {
-				method: 'POST',
-				credentials: 'same-origin',
-			});
-			if (!response.ok) setError('Sessão encerrada neste dispositivo; o servidor será avisado quando houver conexão.');
+			await setPendingLogout();
+			await clearErpSession();
+			if (!(await finishPendingLogout())) setError('Sessão encerrada neste dispositivo; o servidor será avisado quando houver conexão.');
 		} catch {
-			setError('Sessão encerrada neste dispositivo; o servidor será avisado quando houver conexão.');
+			setError('Não foi possível salvar a saída neste dispositivo. Tente novamente.');
+			setBusy(false);
+			return;
 		} finally {
 			queryClient.setQueryData(['auth', 'session'], null);
 			setBusy(false);

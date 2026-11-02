@@ -19,6 +19,10 @@ export function ProductsPrototype() {
 	const [status, setStatus] = useState('Carregando catálogo…');
 	const [busy, setBusy] = useState(false);
 	useEffect(() => {
+		const reloadCatalog = () => {
+			void loadProducts().then(setProducts);
+		};
+		window.addEventListener('erp-catalog-changed', reloadCatalog);
 		void loadProducts()
 			.then((cached) => {
 				setProducts(cached);
@@ -30,6 +34,7 @@ export function ProductsPrototype() {
 				setStatus(`${fresh.length} produtos sincronizados com o D1`);
 			})
 			.catch(() => setStatus('Offline: exibindo o catálogo deste dispositivo.'));
+		return () => window.removeEventListener('erp-catalog-changed', reloadCatalog);
 	}, []);
 	const filtered = products.filter((product) =>
 		`${product.name} ${product.barcode ?? ''} ${product.auxiliary_code ?? ''} ${product.category}`

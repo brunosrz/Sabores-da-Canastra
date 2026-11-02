@@ -503,7 +503,7 @@ app.get("/api/pdv/sales", async (context) => {
         ([, payments]) => payments.results,
       );
       const adjustedPaymentResults = queryResults.flatMap(
-        ([, payments]) => payments.results,
+        ([, , payments]) => payments.results,
       );
       const itemsBySale = new Map<string, Record<string, unknown>[]>();
       const basePaymentsBySale = new Map<string, Record<string, unknown>[]>();

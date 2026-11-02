@@ -333,6 +333,81 @@ describe("bindings Cloudflare locais", () => {
     expect(actor?.actor_user_id).toBe(testActorId);
   });
 
+  it("retorna pagamentos corrigidos e taxas atuais no histórico", async () => {
+    const sale = await makeOfflineOperation();
+    if (sale.operationType !== "sale.create") throw new Error("tipo inválido");
+    const salePayload = sale.payload as SaleCreatePayload;
+    const date = salePayload.occurredOn;
+    const saleId = salePayload.saleId;
+    await bindings.DB.prepare(
+      "INSERT INTO parameters (name, value, status, updated_at) VALUES ('pos_credit_rate', '0.03', 'test', ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+    )
+      .bind(new Date().toISOString())
+      .run();
+    const stub = bindings.SALE_COORDINATOR.get(
+      bindings.SALE_COORDINATOR.idFromName(`pdv-device:${sale.deviceId}`),
+    );
+    const send = (body: OperationEnvelope) =>
+      stub.fetch(
+        new Request("https://coordinator.local/operations", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-actor-user-id": testActorId,
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+    expect((await send(sale)).status).toBe(201);
+    const adjustment: OperationEnvelope = {
+      ...sale,
+      operationId: crypto.randomUUID(),
+      operationType: "sale.adjust_payments",
+      payloadHash: "0".repeat(64),
+      payload: {
+        saleId: sale.payload.saleId,
+        basePaymentVersion: 1,
+        reason: "Correção",
+        payments: [
+          {
+            method: "Crédito",
+            methodLabel: null,
+            amountCents: 2500,
+            feeRate: "0.03",
+            feeCents: 75,
+            partNumber: 1,
+            position: 0,
+          },
+        ],
+      },
+    };
+    adjustment.payloadHash = await operationPayloadHash(adjustment);
+    const adjustmentResponse = await send(adjustment);
+    expect(adjustmentResponse.status, await adjustmentResponse.text()).toBe(
+      201,
+    );
+    const response = await app.request(
+      `https://api.example.test/api/pdv/sales?from=${date}&to=${date}`,
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const data = await response.json<{
+      sales: Array<{
+        sale_id: string;
+        fee_cents: number;
+        net_cents: number;
+        payments: Array<{ method: string }>;
+      }>;
+    }>();
+    const result = data.sales.find((row) => row.sale_id === saleId);
+    expect(result).toMatchObject({
+      fee_cents: 75,
+      net_cents: 2425,
+      payments: [{ method: "Crédito" }],
+    });
+  });
+
   it("recusa reuso de chave com payload diferente", async () => {
     const operation = await makeOfflineOperation();
     const stub = bindings.SALE_COORDINATOR.get(

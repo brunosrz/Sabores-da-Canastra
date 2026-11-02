@@ -116,7 +116,7 @@ def _load_comparison_bundle(path: Path, current: dict) -> dict:
     if not isinstance(tables, dict) or any(not isinstance(rows, list) for rows in tables.values()):
         raise ValueError("estrutura tables inválida")
     if not isinstance(financial, dict):
-        raise TypeError("estrutura reconciliation.financial inválida")
+        raise ValueError("estrutura reconciliation.financial inválida")
     return value
 
 

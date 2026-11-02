@@ -65,6 +65,9 @@ export const loadErpSession = () =>
 export const saveErpSession = (session: ErpSession) =>
 	request('metadata', 'readwrite', (store) => store.put({ key: 'session', value: session }));
 export const clearErpSession = () => request('metadata', 'readwrite', (store) => store.delete('session'));
+export const hasPendingLogout = () => request('metadata', 'readonly', (store) => store.get('pendingLogout')).then(Boolean);
+export const setPendingLogout = () => request('metadata', 'readwrite', (store) => store.put({ key: 'pendingLogout', value: true }));
+export const clearPendingLogout = () => request('metadata', 'readwrite', (store) => store.delete('pendingLogout'));
 export const loadProducts = () => request<ErpProduct[]>('products', 'readonly', (store) => store.getAll());
 export async function refreshProducts() {
 	const response = await fetch('/api/erp/catalog/products', {
@@ -76,7 +79,7 @@ export async function refreshProducts() {
 	const operations = await listPriceOperations();
 	const pendingByProduct = new Map<string, PriceOperation[]>();
 	for (const operation of operations) {
-		if (operation.state === 'synced') continue;
+		if (operation.state === 'synced' || operation.state === 'conflict') continue;
 		const queued = pendingByProduct.get(operation.productId) ?? [];
 		queued.push(operation);
 		pendingByProduct.set(operation.productId, queued);
@@ -98,6 +101,21 @@ export async function refreshProducts() {
 	return mergedProducts;
 }
 export const listPriceOperations = () => request<PriceOperation[]>('operations', 'readonly', (store) => store.getAll());
+export async function discardPriceConflict(operationId: string) {
+	const db = await openDatabase();
+	await new Promise<void>((resolve, reject) => {
+		const tx = db.transaction('operations', 'readwrite');
+		const store = tx.objectStore('operations');
+		const get = store.get(operationId);
+		get.onsuccess = () => {
+			if (get.result?.state === 'conflict') store.delete(operationId);
+		};
+		tx.oncomplete = () => resolve();
+		tx.onerror = () => reject(tx.error);
+		tx.onabort = () => reject(tx.error);
+	});
+	window.dispatchEvent(new Event('erp-price-queue-changed'));
+}
 export async function enqueuePriceChange(productId: string, salePriceCents: number) {
 	const operation: PriceOperation = {
 		operationId: crypto.randomUUID(),

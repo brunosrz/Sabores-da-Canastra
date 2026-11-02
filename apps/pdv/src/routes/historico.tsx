@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { feeCents } from '@sabores/pdv-sync';
 import { createOperation, getDeviceId, listQueue, removeQueuedOperation, syncQueue, type QueuedOperation } from '../offline/store';
 import { useAuthUser } from '../auth-gate';
+import { summarizeSales } from '../sales-summary';
 import type { OperationEnvelope, PaymentMethod, SaleAdjustPaymentsPayload, SaleCreatePayload, SalePayment } from '@sabores/pdv-sync';
 
 export const Route = createFileRoute('/historico')({ component: SalesHistory });
@@ -175,6 +176,8 @@ function SalesHistory() {
 		return names[row.state];
 	}
 
+	const summary = summarizeSales(sales);
+
 	return (
 		<div className="pdv-page">
 			<section className="pdv-heading">
@@ -219,6 +222,33 @@ function SalesHistory() {
 						{busy ? 'Carregando…' : 'Filtrar'}
 					</button>
 				</div>
+				{navigator.onLine && !error && sales.length > 0 ? (
+					<section aria-label="Resumo das vendas carregadas" className="pdv-panel">
+						<h3>Resumo das vendas carregadas</h3>
+						{sales.length >= 500 ? (
+							<p role="status">O histórico está limitado a 500 vendas. Reduza o período para obter totais completos.</p>
+						) : null}
+						<p>
+							{summary.count} vendas · Bruto {money(summary.gross)} · Taxas {money(summary.fees)} · Recebido {money(summary.net)}
+						</p>
+						<p>Recebido por forma de pagamento</p>
+						<ul>
+							{summary.payments.map(([method, amount]) => (
+								<li key={method}>
+									{method}: {money(amount)}
+								</li>
+							))}
+						</ul>
+						<p>Itens vendidos</p>
+						<ul>
+							{summary.products.map(([name, item]) => (
+								<li key={name}>
+									{name}: {item.quantity.toLocaleString('pt-BR')} · {money(item.total)}
+								</li>
+							))}
+						</ul>
+					</section>
+				) : null}
 				{!navigator.onLine ? (
 					<div className="pdv-history-list">
 						{queue

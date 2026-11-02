@@ -17,6 +17,35 @@ function encode(bytes: Uint8Array): string {
     .replace(/=+$/, "");
 }
 
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return encode(new Uint8Array(digest));
+}
+
+async function configuredCredentialFingerprint(): Promise<string> {
+  const [user] = JSON.parse(authUsers) as Array<{
+    id: string;
+    username: string;
+    role: string;
+    salt: string;
+    hash: string;
+    iterations: number;
+  }>;
+  return sha256(
+    JSON.stringify([
+      user!.id,
+      user!.username.toLowerCase(),
+      user!.role,
+      user!.salt,
+      user!.hash,
+      user!.iterations,
+    ]),
+  );
+}
+
 async function passwordHash(password: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -163,14 +192,28 @@ describe("autenticação e sessão", () => {
 
   it("limita tentativas seguidas por endereço", async () => {
     const clientIp = crypto.randomUUID();
+    const accountBucketKey = `account:${await sha256(username)}`;
     for (let attempt = 0; attempt < 10; attempt += 1) {
       expect((await login("incorrect", clientIp)).status).toBe(401);
     }
+    const accountBucketBeforeBlock = await env.DB.prepare(
+      "SELECT attempts FROM auth_login_attempts WHERE bucket_hash = ?",
+    )
+      .bind(accountBucketKey)
+      .first<{ attempts: number }>();
     const blocked = await login("correct-password", clientIp);
     expect(blocked.status).toBe(429);
     expect(await blocked.json()).toEqual({
       error: "Usuário ou senha inválidos.",
     });
+    const accountBucketAfterBlock = await env.DB.prepare(
+      "SELECT attempts FROM auth_login_attempts WHERE bucket_hash = ?",
+    )
+      .bind(accountBucketKey)
+      .first<{ attempts: number }>();
+    expect(accountBucketAfterBlock?.attempts).toBe(
+      accountBucketBeforeBlock?.attempts,
+    );
   });
 
   it("rejeita acesso a rotas financeiras sem sessão, mesmo com token legado", async () => {
@@ -218,13 +261,14 @@ describe("autenticação e sessão", () => {
       new TextEncoder().encode(token),
     );
     await env.DB.prepare(
-      "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+      "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, credential_fingerprint) VALUES (?, ?, ?, ?, ?)",
     )
       .bind(
         encode(new Uint8Array(digest)),
         userId,
         new Date(Date.now() - 60_000).toISOString(),
         new Date(Date.now() - 1).toISOString(),
+        await configuredCredentialFingerprint(),
       )
       .run();
     const expired = await app.request(
@@ -235,6 +279,31 @@ describe("autenticação e sessão", () => {
       bindings(),
     );
     expect(expired.status).toBe(401);
+
+    const validToken = "valid-session-token";
+    const validDigest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(validToken),
+    );
+    await env.DB.prepare(
+      "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, credential_fingerprint) VALUES (?, ?, ?, ?, ?)",
+    )
+      .bind(
+        encode(new Uint8Array(validDigest)),
+        userId,
+        new Date().toISOString(),
+        new Date(Date.now() + 60_000).toISOString(),
+        await configuredCredentialFingerprint(),
+      )
+      .run();
+    const valid = await app.request(
+      "https://api.example.test/api/auth/session",
+      {
+        headers: { cookie: `sabores_session=${validToken}` },
+      },
+      bindings(),
+    );
+    expect(valid.status).toBe(200);
   });
 
   it("bloqueia login sem origem aprovada", async () => {

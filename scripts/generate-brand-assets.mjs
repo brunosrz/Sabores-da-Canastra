@@ -33,6 +33,23 @@ async function loadSvg(fileName) {
   return Buffer.from(await readFile(join(brandDirectory, fileName), "utf8"));
 }
 
+async function embedLocalFonts(svg) {
+  let result = svg;
+  for (const fileName of ["Lobster-Regular.ttf", "Oswald-SemiBold.ttf"]) {
+    const font = await readFile(join(fontsDirectory, fileName));
+    const dataUrl = `data:font/ttf;base64,${font.toString("base64")}`;
+    for (const relativePath of [`../fonts/${fileName}`, `fonts/${fileName}`]) {
+      for (const quote of ["'", '"', ""]) {
+        result = result.replaceAll(
+          `url(${quote}${relativePath}${quote})`,
+          `url("${dataUrl}")`,
+        );
+      }
+    }
+  }
+  return result;
+}
+
 async function writePng(svg, destination, width) {
   const renderer = new Resvg(svg, {
     fitTo: { mode: "width", value: width },
@@ -71,11 +88,7 @@ function icoFromPngs(entries) {
 
 const logo = await loadSvg("logo.svg");
 const logoSource = logo.toString("utf8").replace(/^<\?xml[^>]*\?>\s*/, "");
-const publicLogo = Buffer.from(
-  logo
-    .toString("utf8")
-    .replaceAll("../fonts/Oswald-SemiBold.ttf", "fonts/Oswald-SemiBold.ttf"),
-);
+const publicLogo = Buffer.from(await embedLocalFonts(logo.toString("utf8")));
 const logoMatch = logoSource.match(
   /<(?:[\w.-]+:)?svg\b[^>]*>([\s\S]*)<\/(?:[\w.-]+:)?svg>\s*$/,
 );
@@ -116,7 +129,9 @@ const socialCards = new Map(
     ["erp", "pdv"].map(async (slug) => {
       const template = await loadSvg(`social-card-${slug}.svg`);
       const card = Buffer.from(
-        template.toString("utf8").replace("__BRAND_CONTENT__", logoContent),
+        await embedLocalFonts(
+          template.toString("utf8").replace("__BRAND_CONTENT__", logoContent),
+        ),
       );
       if (card.includes(Buffer.from("__BRAND_CONTENT__")))
         throw new Error(`Marca ausente no cartão social de ${slug}`);

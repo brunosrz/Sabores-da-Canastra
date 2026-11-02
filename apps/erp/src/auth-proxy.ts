@@ -10,14 +10,14 @@ export async function proxyAuth(request: Request, api: Fetcher, endpoint: string
 	if (clientIp) headers.set('x-client-ip', clientIp);
 	if (host) headers.set('x-forwarded-host', host);
 	headers.set('x-forwarded-proto', proto);
-	const body = request.method === 'GET' ? undefined : await request.text();
-	const response = await api.fetch(
-		new Request(`https://sabores-api.internal/api/auth/${endpoint}`, {
-			method: request.method,
-			headers,
-			body,
-		}),
-	);
+	const body = ['GET', 'HEAD'].includes(request.method) ? null : request.body;
+	const init = {
+		method: request.method,
+		headers,
+		body,
+		...(body ? { duplex: 'half' as const } : {}),
+	} as RequestInit & { duplex?: 'half' };
+	const response = await api.fetch(new Request(`https://sabores-api.internal/api/auth/${endpoint}`, init));
 	const responseHeaders = new Headers(response.headers);
 	responseHeaders.set('cache-control', 'no-store');
 	return new Response(response.body, { status: response.status, headers: responseHeaders });

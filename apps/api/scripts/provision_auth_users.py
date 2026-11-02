@@ -11,7 +11,7 @@ import secrets
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-ITERATIONS = 100_000
+ITERATIONS = 600_000
 USERS = (("user_bruno", "bruno"), ("user_ivone", "ivone"))
 LEGACY_KEYS = {"PDV_WRITE_TOKEN", "CATALOG_READ_TOKEN", "BACKUP_DOWNLOAD_TOKEN"}
 
@@ -26,8 +26,8 @@ def hash_password(username: str) -> dict[str, str | int]:
     if password != confirmation:
         raise SystemExit(f"As senhas de {username} não conferem.")
     password_length = len(password.encode("utf-16-le")) // 2
-    if not 12 <= password_length <= 128:
-        raise SystemExit(f"A senha de {username} deve ter entre 12 e 128 caracteres.")
+    if not 6 <= password_length <= 128:
+        raise SystemExit(f"A senha de {username} deve ter entre 6 e 128 caracteres.")
     salt = secrets.token_bytes(16)
     password_hash = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt, ITERATIONS, dklen=32

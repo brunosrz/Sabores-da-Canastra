@@ -180,6 +180,20 @@ async function consumeLoginAttempt(
   const identityHash = await sha256(`${ipHash}:${normalizedUsername}`);
   const accountHash = await sha256(normalizedUsername);
   const now = Math.floor(Date.now() / 1000);
+  const ipBucketKey = `ip:${ipHash}`;
+  const currentIpBucket = await db
+    .prepare(
+      "SELECT window_started_at, attempts FROM auth_login_attempts WHERE bucket_hash = ?",
+    )
+    .bind(ipBucketKey)
+    .first<{ window_started_at: number; attempts: number }>();
+  if (
+    currentIpBucket &&
+    currentIpBucket.window_started_at > now - LOGIN_WINDOW_SECONDS &&
+    currentIpBucket.attempts >= LOGIN_ATTEMPT_LIMIT
+  )
+    return false;
+
   if (now % 300 < 60) {
     await db
       .prepare("DELETE FROM auth_login_attempts WHERE window_started_at < ?")
@@ -194,18 +208,21 @@ async function consumeLoginAttempt(
       window_started_at = CASE WHEN window_started_at <= ? THEN excluded.window_started_at ELSE window_started_at END
     RETURNING attempts
   `;
+  const upsertBucket = (key: string) =>
+    db
+      .prepare(bucketSql)
+      .bind(key, now, now - LOGIN_WINDOW_SECONDS, now - LOGIN_WINDOW_SECONDS)
+      .first<{ attempts: number }>();
+  const ipResult = await upsertBucket(ipBucketKey);
+  if ((ipResult?.attempts ?? LOGIN_ATTEMPT_LIMIT + 1) > LOGIN_ATTEMPT_LIMIT)
+    return false;
+
   const buckets = [
-    { key: `ip:${ipHash}`, limit: LOGIN_ATTEMPT_LIMIT },
     { key: `identity:${identityHash}`, limit: LOGIN_ATTEMPT_LIMIT },
     { key: `account:${accountHash}`, limit: ACCOUNT_LOGIN_ATTEMPT_LIMIT },
   ];
   const results = await Promise.all(
-    buckets.map(({ key }) =>
-      db
-        .prepare(bucketSql)
-        .bind(key, now, now - LOGIN_WINDOW_SECONDS, now - LOGIN_WINDOW_SECONDS)
-        .first<{ attempts: number }>(),
-    ),
+    buckets.map(({ key }) => upsertBucket(key)),
   );
   return results.every(
     (result, index) =>

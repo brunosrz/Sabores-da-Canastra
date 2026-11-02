@@ -23,6 +23,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	const user = session.data ?? null;
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
+	const [showPassword, setShowPassword] = useState(false);
 
 	async function submit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -110,15 +111,38 @@ export function AuthGate({ children }: { children: ReactNode }) {
 					<label className="mt-4 block text-sm font-semibold" htmlFor="password">
 						Senha
 					</label>
-					<input
-						id="password"
-						name="password"
-						type="password"
-						autoComplete="current-password"
-						required
-						maxLength={128}
-						className="mt-2 w-full rounded-xl border border-black/20 bg-transparent px-4 py-3 outline-none focus:ring-2 focus:ring-[#fca336]"
-					/>
+					<div className="relative mt-2">
+						<input
+							id="password"
+							name="password"
+							type={showPassword ? 'text' : 'password'}
+							autoComplete="current-password"
+							required
+							maxLength={128}
+							className="w-full rounded-xl border border-black/20 bg-transparent px-4 py-3 pr-12 outline-none focus:ring-2 focus:ring-[#fca336]"
+						/>
+						<button
+							type="button"
+							aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+							aria-pressed={showPassword}
+							onClick={() => setShowPassword((visible) => !visible)}
+							className="absolute inset-y-0 right-0 grid w-12 place-items-center rounded-r-xl text-[var(--sea-ink-soft)] hover:text-[var(--sea-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fca336]"
+						>
+							<svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+								{showPassword ? (
+									<>
+										<path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8" />
+										<path d="M9.9 5.2A10.8 10.8 0 0112 5c5 0 8.5 4.5 9.5 7-.4 1-1.2 2.1-2.3 3.2M6.2 6.2C3.9 7.7 2.8 9.8 2.5 12c.6 1.5 2.2 3.5 4.5 5a9.8 9.8 0 005 1.5" />
+									</>
+								) : (
+									<>
+										<path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z" />
+										<circle cx="12" cy="12" r="2.5" />
+									</>
+								)}
+							</svg>
+						</button>
+					</div>
 					{error || session.isError ? (
 						<p role="alert" className="mt-4 text-sm font-medium text-red-700 dark:text-red-300">
 							{error || 'Não foi possível validar o acesso. Tente novamente.'}

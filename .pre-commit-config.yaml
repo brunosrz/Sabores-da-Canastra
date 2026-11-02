@@ -1,42 +1,76 @@
 minimum_pre_commit_version: "4.7.0"
 default_language_version:
   python: python3.12
+default_stages: [pre-commit]
+
+exclude: |
+  (?x)^(
+    \.git/.*|
+    .*\.lock$|
+    .*pnpm-lock\.yaml|
+    apps/(erp|pdv)/\.vscode/.*|
+    apps/(erp|pdv)/src/routeTree\.gen\.ts|
+    apps/api/worker-configuration\.d\.ts|
+    packages/ui/src/fonts/.*/OFL\.txt|
+    \.env.*|
+    \.venv/.*|
+    (^|/)node_modules/.*|
+    (^|/)dist/.*|
+    (^|/)build/.*|
+    (^|/)coverage/.*|
+    (^|/)\.wrangler/.*|
+    (^|/)__pycache__/.*|
+    .*\.mjs$
+  )$
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
       - id: check-yaml
         args: [--allow-multiple-documents]
       - id: check-json
       - id: check-toml
-      - id: check-ast
       - id: check-merge-conflict
       - id: detect-private-key
       - id: check-added-large-files
+        args: [--maxkb=5000]
 
   - repo: local
     hooks:
-      - id: ui-format
-        name: Shared UI formatting
-        entry: pnpm format:check:ui
+      - id: uv-lock-check
+        name: Check uv lockfile
+        entry: uv lock --check
         language: system
-        types_or: [javascript, jsx, ts, tsx, css]
-        files: ^packages/ui/.*\.(js|jsx|ts|tsx|css|mts)$
         pass_filenames: false
+        always_run: true
+      - id: python-compileall
+        name: Python syntax (compileall)
+        entry: uv run python -m compileall -q
+        language: system
+        types: [python]
+      - id: ruff-check
+        name: Ruff lint (uv)
+        entry: uv run ruff check --no-cache --fix --select=E4,E7,E9 --ignore=E701,E702
+        language: system
+        types: [python]
+      - id: prettier
+        name: Prettier (version pinned)
+        entry: prettier --write
+        language: node
+        additional_dependencies: [prettier@3.9.10]
+        types_or: [javascript, jsx, ts, tsx, json, yaml, markdown, css]
+        files: ^(apps/(erp|pdv|api)/(src|test)/|packages/(ui|pdv-sync)/(src|test)/|scripts/).+\.(js|jsx|ts|tsx|mjs|cjs|mts|css)$
+        exclude: (^|/)routeTree\.gen\.ts$|(^|/)worker-configuration\.d\.ts$
       - id: ui-lint
         name: Shared UI ESLint
         entry: pnpm lint:ui
         language: system
         types_or: [javascript, jsx, ts, tsx]
         files: ^packages/ui/.*\.(js|jsx|ts|tsx)$
-        pass_filenames: false
-      - id: erp-format
-        name: ERP formatting
-        entry: pnpm format:check:erp
-        language: system
-        types_or: [javascript, jsx, ts, tsx, css]
-        files: ^apps/erp/.*\.(js|jsx|ts|tsx|css|mts)$
         pass_filenames: false
       - id: erp-lint
         name: ERP ESLint
@@ -45,13 +79,6 @@ repos:
         types_or: [javascript, jsx, ts, tsx]
         files: ^apps/erp/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false
-      - id: pdv-format
-        name: PDV formatting
-        entry: pnpm format:check:pdv
-        language: system
-        types_or: [javascript, jsx, ts, tsx, css]
-        files: ^apps/pdv/.*\.(js|jsx|ts|tsx|css|mts)$
-        pass_filenames: false
       - id: pdv-lint
         name: PDV ESLint
         entry: pnpm lint:pdv
@@ -59,12 +86,12 @@ repos:
         types_or: [javascript, jsx, ts, tsx]
         files: ^apps/pdv/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false
-      - id: api-format
-        name: API formatting
-        entry: pnpm format:check:api
+      - id: sync-lint
+        name: Shared PDV contract ESLint
+        entry: pnpm lint:sync
         language: system
-        types_or: [javascript, ts]
-        files: ^apps/api/.*\.(js|mjs|ts|json|jsonc)$
+        types_or: [javascript, jsx, ts, tsx]
+        files: ^packages/pdv-sync/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false
       - id: api-lint
         name: API ESLint
@@ -74,22 +101,22 @@ repos:
         files: ^apps/api/.*\.(js|mjs|ts)$
         pass_filenames: false
       - id: markdownlint
-        name: markdown lint
+        name: Markdown lint
         entry: pnpm lint:docs
         language: system
         types: [markdown]
-        files: ^(AGENTS\.md|README\.md|docs/(json-contract|arquitetura-web)\.md|apps/(erp|pdv|api)/README\.md)$
+        files: ^(AGENTS\.md|README\.md|docs/.*\.md|apps/(erp|pdv|api)/README\.md)$
+        pass_filenames: false
       - id: svg-optimization
-        name: SVG optimization (SVGO)
+        name: SVG optimization and brand asset generation (uv)
         entry: uv run python scripts/optimize_svg_files.py --pre-commit
         language: system
         types: [file]
         files: \.svg$
         pass_filenames: false
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.3
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
     hooks:
-      - id: ruff-check
-        args: [--select=E4, E7, E9]
-        files: ^(SConstruct|src/sabores/.*\.py|tests/.*\.py|utils/.*\.py|apps/api/scripts/.*\.py)$
+      - id: actionlint
+        files: ^\.github/workflows/.*\.ya?ml$

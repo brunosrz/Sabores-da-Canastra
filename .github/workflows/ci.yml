@@ -52,8 +52,8 @@ jobs:
 
       - name: Check repository configuration and Python lint
         run: >-
-          SKIP=ui-format,ui-lint,erp-format,erp-lint,pdv-format,pdv-lint,api-format,api-lint,markdownlint
-          uvx --from pre-commit==4.7.0 pre-commit run --all-files
+          SKIP=ui-lint,erp-lint,pdv-lint,sync-lint,api-lint,markdownlint
+          uv run pre-commit run --all-files
 
       - name: Run Python tests
         run: uv run pytest

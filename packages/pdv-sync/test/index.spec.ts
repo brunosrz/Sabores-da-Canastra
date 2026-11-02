@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canSyncOperation,
   feeCents,
   lineTotalCents,
   occurredOnInSaoPaulo,
@@ -67,6 +68,13 @@ async function seal(operation: OperationEnvelope): Promise<OperationEnvelope> {
 }
 
 describe("contrato de sincronização do PDV", () => {
+  it("só permite sincronizar operações com a identidade autenticada", () => {
+    expect(canSyncOperation("owner-1", "owner-1")).toBe(true);
+    expect(canSyncOperation("owner-1", "owner-2")).toBe(false);
+    expect(canSyncOperation("owner-1", null)).toBe(false);
+    expect(canSyncOperation("owner-1", undefined)).toBe(false);
+  });
+
   it("calcula quantidades e taxas em centavos com arredondamento half-up", () => {
     expect(lineTotalCents("1.005", 101)).toBe(102);
     expect(feeCents(101, "0.005")).toBe(1);

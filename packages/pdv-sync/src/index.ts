@@ -44,7 +44,9 @@ export type SaleAdjustPaymentsPayload = {
   payments: SalePayment[];
 };
 export type OperationType =
-  "sale.create" | "sale.cancel" | "sale.adjust_payments";
+  | "sale.create"
+  | "sale.cancel"
+  | "sale.adjust_payments";
 export type OperationEnvelope = {
   operationId: string;
   deviceId: string;
@@ -57,6 +59,15 @@ export type OperationEnvelope = {
   payloadHash: string;
   payload: SaleCreatePayload | SaleCancelPayload | SaleAdjustPaymentsPayload;
 };
+
+export function canSyncOperation(
+  operationActorId: string,
+  authenticatedActorId: string | null | undefined,
+): boolean {
+  return Boolean(
+    authenticatedActorId && operationActorId === authenticatedActorId,
+  );
+}
 
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 const QUANTITY_SCALE = 1_000n;

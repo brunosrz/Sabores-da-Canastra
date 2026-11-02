@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell, Button } from '@sabores/ui';
+import { clearAuthSession, loadAuthSession, saveAuthSession, type OfflineAuthSession } from './offline/store';
 
 type User = { id: string; username: string; role: string };
 const AuthUserContext = createContext<User | null>(null);
@@ -19,36 +20,35 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	const queryClient = useQueryClient();
 	const session = useQuery({
 		queryKey: ['auth', 'session'],
-		queryFn: async (): Promise<User | null> => {
+		queryFn: async (): Promise<OfflineAuthSession | null> => {
 			try {
 				const response = await fetch('/api/auth/session', {
 					credentials: 'same-origin',
 					cache: 'no-store',
 				});
 				if (response.status === 401) {
-					if (typeof localStorage !== 'undefined') localStorage.removeItem('pdv-last-user');
+					await clearAuthSession();
 					return null;
 				}
 				if (!response.ok) throw new Error('session unavailable');
-				const body = (await response.json()) as { user?: User };
-				if (body.user && typeof localStorage !== 'undefined') localStorage.setItem('pdv-last-user', JSON.stringify(body.user));
-				return body.user ?? null;
+				const body = (await response.json()) as {
+					user?: User;
+					expiresAt?: string;
+				};
+				if (!body.user || !body.expiresAt) return null;
+				const cached = { user: body.user, expiresAt: body.expiresAt };
+				await saveAuthSession(cached);
+				return cached;
 			} catch {
-				const cached = typeof localStorage !== 'undefined' ? localStorage.getItem('pdv-last-user') : null;
-				if (cached) {
-					try {
-						return JSON.parse(cached) as User;
-					} catch {
-						localStorage.removeItem('pdv-last-user');
-					}
-				}
+				const cached = await loadAuthSession();
+				if (cached) return cached;
 				throw new Error('session unavailable');
 			}
 		},
 		retry: false,
 		staleTime: 0,
 	});
-	const user = session.data ?? null;
+	const user = session.data?.user ?? null;
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [showPassword, setShowPassword] = useState(false);
@@ -75,8 +75,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
 				};
 				setError(body.error ?? 'Não foi possível entrar.');
 			} else {
-				const body = (await response.json()) as { user: User };
-				queryClient.setQueryData(['auth', 'session'], body.user);
+				const body = (await response.json()) as OfflineAuthSession;
+				await saveAuthSession(body);
+				queryClient.setQueryData(['auth', 'session'], body);
 				formElement.reset();
 			}
 		} catch {
@@ -88,7 +89,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 	async function signOut() {
 		setBusy(true);
-		localStorage.removeItem('pdv-last-user');
+		await clearAuthSession();
 		queryClient.setQueryData(['auth', 'session'], null);
 		try {
 			const response = await fetch('/api/auth/logout', {

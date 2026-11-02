@@ -44,9 +44,7 @@ export type SaleAdjustPaymentsPayload = {
   payments: SalePayment[];
 };
 export type OperationType =
-  | "sale.create"
-  | "sale.cancel"
-  | "sale.adjust_payments";
+  "sale.create" | "sale.cancel" | "sale.adjust_payments";
 export type OperationEnvelope = {
   operationId: string;
   deviceId: string;

@@ -2,6 +2,8 @@ const SESSION_SECONDS = 60 * 60 * 12;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_ATTEMPT_LIMIT = 10;
 const ACCOUNT_LOGIN_ATTEMPT_LIMIT = 100;
+const MIN_PBKDF2_ITERATIONS = 100_000;
+const MAX_PBKDF2_ITERATIONS = 1_000_000;
 
 export type AuthUser = { id: string; username: string; role: string };
 type ConfiguredUser = AuthUser & {
@@ -66,8 +68,8 @@ function configuredUsers(serialized: string | undefined): ConfiguredUser[] {
       typeof user.salt !== "string" ||
       typeof user.hash !== "string" ||
       !Number.isSafeInteger(user.iterations) ||
-      user.iterations < 100_000 ||
-      user.iterations > 100_000
+      user.iterations < MIN_PBKDF2_ITERATIONS ||
+      user.iterations > MAX_PBKDF2_ITERATIONS
     )
       throw new Error("AUTH_NOT_CONFIGURED");
     try {

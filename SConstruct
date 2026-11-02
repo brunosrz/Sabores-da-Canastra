@@ -263,7 +263,7 @@ def _secrets_for(environment: str) -> dict[str, str]:
                     or len(password_hash) != 32
                     or not isinstance(iterations, int)
                     or isinstance(iterations, bool)
-                    or iterations != 100_000
+                    or not 100_000 <= iterations <= 1_000_000
                 ):
                     raise SystemExit("AUTH_USERS precisa usar sal de 16 bytes, hash de 32 bytes e iterações PBKDF2 válidas.")
             continue

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -209,7 +210,7 @@ def _secrets_for(environment: str) -> dict[str, str]:
             f"apps/api/.env.{environment}.example e preencha os secrets."
         )
     secrets = _dotenv(path)
-    required = {"PDV_WRITE_TOKEN", "CATALOG_READ_TOKEN", "BACKUP_DOWNLOAD_TOKEN"}
+    required = {"AUTH_USERS"}
     if environment == "production":
         required.add("CLOUDFLARE_API_TOKEN")
     missing = required - secrets.keys()
@@ -217,6 +218,33 @@ def _secrets_for(environment: str) -> dict[str, str]:
         raise SystemExit(f"Secrets ausentes em {path.name}: {', '.join(sorted(missing))}.")
     for key in required:
         value = secrets[key]
+        if key == "AUTH_USERS":
+            try:
+                users = json.loads(value)
+            except json.JSONDecodeError as error:
+                raise SystemExit("AUTH_USERS precisa ser um JSON válido.") from error
+            if not isinstance(users, list) or not users:
+                raise SystemExit("AUTH_USERS precisa conter ao menos um usuário autorizado.")
+            user_ids: set[str] = set()
+            usernames: set[str] = set()
+            for user in users:
+                if not isinstance(user, dict) or not all(
+                    isinstance(user.get(field), str) and user[field]
+                    for field in ("id", "username", "role", "salt", "hash")
+                ):
+                    raise SystemExit("Cada usuário em AUTH_USERS precisa ter id, username, role, salt e hash.")
+                if user["id"] in user_ids or user["username"].lower() in usernames:
+                    raise SystemExit("AUTH_USERS não pode repetir IDs nem nomes de usuário.")
+                user_ids.add(user["id"])
+                usernames.add(user["username"].lower())
+                try:
+                    salt = base64.urlsafe_b64decode(user["salt"] + "=" * (-len(user["salt"]) % 4))
+                    password_hash = base64.urlsafe_b64decode(user["hash"] + "=" * (-len(user["hash"]) % 4))
+                except ValueError as error:
+                    raise SystemExit("AUTH_USERS contém sal ou hash Base64URL inválido.") from error
+                if len(salt) != 16 or len(password_hash) != 32 or not isinstance(user.get("iterations"), int) or not 100_000 <= user["iterations"] <= 2_000_000:
+                    raise SystemExit("AUTH_USERS precisa usar sal de 16 bytes, hash de 32 bytes e iterações PBKDF2 válidas.")
+            continue
         if len(value) < 32 or value.lower().startswith(
             ("gere-", "replace-", "changeme", "token-cloudflare-")
         ):

@@ -15,8 +15,9 @@ pnpm install
 pnpm dev:erp
 ```
 
-O servidor local usa `http://127.0.0.1:3001`. `GET /api/health` verifica
-somente se este app está ativo; não é a futura API de negócio.
+O servidor local usa `http://127.0.0.1:3001`. `GET /api/health` verifica se
+este app está ativo. O app exige login compartilhado com o PDV e encaminha as
+rotas de autenticação ao backend pelo Service Binding.
 
 ## Stack
 
@@ -37,10 +38,10 @@ pnpm test:erp
 pnpm build:erp
 ```
 
-O backend de negócio será compartilhado com o PDV e terá o único acesso ao D1.
-Este app usará server functions para chamar esse backend por binding interno;
-essa integração ainda não foi implementada. O SQLite do sistema Python legado
-é independente e não sincroniza com D1.
+O backend de negócio é compartilhado com o PDV e tem o único acesso ao D1. A
+tela de login protege o conteúdo e a API valida a sessão em todas as rotas de
+dados. O navegador não recebe credenciais internas. O SQLite do sistema Python
+legado é independente e não sincroniza com D1.
 
 Consulte [a arquitetura web](../../docs/arquitetura-web.md) para as decisões de
 backend, bibliotecas e ambientes.

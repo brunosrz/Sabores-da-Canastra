@@ -172,6 +172,7 @@ export async function createIdempotentSale(
   db: D1Database,
   idempotencyKey: string,
   input: SaleInput,
+  actorUserId: string,
 ): Promise<{ result: SaleResult; replayed: boolean }> {
   const canonicalRequest = JSON.stringify(canonicalize(input));
   if (canonicalRequest === undefined)
@@ -219,8 +220,8 @@ export async function createIdempotentSale(
     db
       .prepare(
         `INSERT INTO ledger_entries (ledger_id, idempotency_key, entry_type, occurred_on, recorded_at,
-        amount_cents, description, category, counterparty, notes, source_system, source_id)
-       VALUES (?, ?, 'sale', ?, ?, ?, ?, 'Vendas', ?, ?, 'pdv', ?)`,
+        amount_cents, description, category, counterparty, notes, source_system, source_id, actor_user_id)
+       VALUES (?, ?, 'sale', ?, ?, ?, ?, 'Vendas', ?, ?, 'pdv', ?, ?)`,
       )
       .bind(
         ledgerId,
@@ -232,6 +233,7 @@ export async function createIdempotentSale(
         input.customer ?? null,
         input.notes ?? null,
         idempotencyKey,
+        actorUserId,
       ),
     db
       .prepare(

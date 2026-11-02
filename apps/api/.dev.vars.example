@@ -1,4 +1,2 @@
 LOCAL_IMPORT_TOKEN=replace-with-a-local-random-value-at-least-32-characters
-PDV_WRITE_TOKEN=replace-with-a-unique-random-secret-for-pdv-writes
-CATALOG_READ_TOKEN=replace-with-a-unique-random-secret-for-catalog-reads
-BACKUP_DOWNLOAD_TOKEN=replace-with-a-unique-random-secret-for-backup-access
+AUTH_USERS=[]

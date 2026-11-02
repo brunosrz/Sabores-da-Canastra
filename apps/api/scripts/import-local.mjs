@@ -41,7 +41,9 @@ if (!previewResponse.ok || preview.state === "occupied") {
   process.exit(1);
 }
 if (preview.state === "already_imported") {
-  console.log("Este pacote já foi importado; nenhuma nova gravação foi enviada.");
+  console.log(
+    "Este pacote já foi importado; nenhuma nova gravação foi enviada.",
+  );
   process.exit(0);
 }
 if (!apply) {

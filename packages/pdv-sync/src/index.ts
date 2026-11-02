@@ -71,6 +71,7 @@ const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 const QUANTITY_SCALE = 1_000n;
 
 function decimalScaled(value: string, scale: bigint): bigint | null {
+  if (typeof value !== "string") return null;
   if (!/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(value)) return null;
   const [whole, fraction = ""] = value.split(".");
   const fractionDigits = scale.toString().length - 1;
@@ -287,6 +288,7 @@ export function validateOperationPayload(
         typeof item.category !== "string" ||
         !item.category.trim() ||
         item.category.length > 100 ||
+        typeof item.quantity !== "string" ||
         !Number.isSafeInteger(item.position) ||
         item.position !== index ||
         !isSafeCents(item.unitPriceCents) ||
@@ -321,6 +323,7 @@ export function validateOperationPayload(
         payment.position !== index ||
         !isSafeCents(payment.amountCents) ||
         payment.amountCents <= 0 ||
+        typeof payment.feeRate !== "string" ||
         !Number.isSafeInteger(payment.partNumber) ||
         !partTotals.has(payment.partNumber) ||
         (payment.methodLabel !== null &&
@@ -375,6 +378,7 @@ export function validateOperationPayload(
         payment.partNumber < 1 ||
         !isSafeCents(payment.amountCents) ||
         payment.amountCents <= 0 ||
+        typeof payment.feeRate !== "string" ||
         (payment.methodLabel !== null &&
           typeof payment.methodLabel !== "string")
       )

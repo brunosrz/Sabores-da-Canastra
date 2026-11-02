@@ -286,45 +286,97 @@ app.get("/api/pdv/sales", async (context) => {
     )
       .bind(from, to)
       .all();
-    const sales = await Promise.all(
-      results.map(async (row) => {
-        const sale = row as {
-          sale_id: string;
-          [key: string]: unknown;
-          payment_version: number | null;
-        };
+    const saleRows = results as Array<{
+      sale_id: string;
+      gross_cents: number;
+      payment_version: number | null;
+      [key: string]: unknown;
+    }>;
+    const saleIds = saleRows.map((sale) => sale.sale_id);
+    const sales: Array<Record<string, unknown>> = [];
+    if (saleIds.length) {
+      const chunks = Array.from(
+        { length: Math.ceil(saleIds.length / 80) },
+        (_, index) => saleIds.slice(index * 80, index * 80 + 80),
+      );
+      const queryResults = await Promise.all(
+        chunks.map(async (ids) => {
+          const placeholders = ids.map(() => "?").join(",");
+          return Promise.all([
+            context.env.DB.prepare(
+              `SELECT sale_id, product_name_snapshot, category_snapshot, quantity, unit_price_cents, unit_cost_cents, line_total_cents FROM sale_items WHERE sale_id IN (${placeholders}) ORDER BY sale_id, position`,
+            )
+              .bind(...ids)
+              .all<Record<string, unknown> & { sale_id: string }>(),
+            context.env.DB.prepare(
+              `SELECT sale_id, method, method_label, amount_cents, fee_rate, fee_cents, part_number, payment_version FROM sale_payments WHERE sale_id IN (${placeholders}) ORDER BY sale_id, position`,
+            )
+              .bind(...ids)
+              .all<
+                Record<string, unknown> & {
+                  sale_id: string;
+                  payment_version: number;
+                }
+              >(),
+            context.env.DB.prepare(
+              `SELECT a.sale_id, a.payment_version, l.method, l.method_label, l.amount_cents, l.fee_rate, l.fee_cents, l.part_number, l.position FROM sale_payment_adjustments a JOIN sale_payment_adjustment_lines l ON l.adjustment_id = a.adjustment_id WHERE a.sale_id IN (${placeholders}) ORDER BY a.sale_id, a.payment_version, l.position`,
+            )
+              .bind(...ids)
+              .all<
+                Record<string, unknown> & {
+                  sale_id: string;
+                  payment_version: number;
+                }
+              >(),
+          ]);
+        }),
+      );
+      const itemResults = queryResults.flatMap(([items]) => items.results);
+      const basePaymentResults = queryResults.flatMap(
+        ([, payments]) => payments.results,
+      );
+      const adjustedPaymentResults = queryResults.flatMap(
+        ([, payments]) => payments.results,
+      );
+      const itemsBySale = new Map<string, Record<string, unknown>[]>();
+      const basePaymentsBySale = new Map<string, Record<string, unknown>[]>();
+      const adjustedByVersion = new Map<string, Record<string, unknown>[]>();
+      for (const item of itemResults)
+        itemsBySale.set(item.sale_id, [
+          ...(itemsBySale.get(item.sale_id) ?? []),
+          item,
+        ]);
+      for (const payment of basePaymentResults)
+        basePaymentsBySale.set(payment.sale_id, [
+          ...(basePaymentsBySale.get(payment.sale_id) ?? []),
+          payment,
+        ]);
+      for (const payment of adjustedPaymentResults) {
+        const key = `${payment.sale_id}:${payment.payment_version}`;
+        adjustedByVersion.set(key, [
+          ...(adjustedByVersion.get(key) ?? []),
+          payment,
+        ]);
+      }
+      for (const sale of saleRows) {
         const version = sale.payment_version ?? 1;
         const payments =
           version === 1
-            ? await context.env.DB.prepare(
-                "SELECT method, method_label, amount_cents, fee_rate, fee_cents, part_number FROM sale_payments WHERE sale_id = ? ORDER BY position",
-              )
-                .bind(sale.sale_id)
-                .all()
-            : await context.env.DB.prepare(
-                "SELECT method, method_label, amount_cents, fee_rate, fee_cents, part_number FROM sale_payment_adjustment_lines WHERE adjustment_id = (SELECT adjustment_id FROM sale_payment_adjustments WHERE sale_id = ? AND payment_version = ?) ORDER BY position",
-              )
-                .bind(sale.sale_id, version)
-                .all();
-        const items = await context.env.DB.prepare(
-          "SELECT product_name_snapshot, category_snapshot, quantity, unit_price_cents, unit_cost_cents, line_total_cents FROM sale_items WHERE sale_id = ? ORDER BY position",
-        )
-          .bind(sale.sale_id)
-          .all();
-        const currentFees = payments.results.reduce(
-          (sum, payment) =>
-            sum + Number((payment as { fee_cents: number }).fee_cents),
+            ? (basePaymentsBySale.get(sale.sale_id) ?? [])
+            : (adjustedByVersion.get(`${sale.sale_id}:${version}`) ?? []);
+        const currentFees = payments.reduce(
+          (sum, payment) => sum + Number(payment.fee_cents),
           0,
         );
-        return {
+        sales.push({
           ...sale,
           fee_cents: currentFees,
           net_cents: Number(sale.gross_cents) - currentFees,
-          payments: payments.results,
-          items: items.results,
-        };
-      }),
-    );
+          payments,
+          items: itemsBySale.get(sale.sale_id) ?? [],
+        });
+      }
+    }
     const { results: rateRows } = await context.env.DB.prepare(
       "SELECT name, value FROM parameters WHERE name IN ('pos_debit_rate', 'pos_credit_rate')",
     ).all<{ name: string; value: string }>();

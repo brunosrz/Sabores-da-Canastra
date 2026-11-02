@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
@@ -12,6 +13,7 @@ import sqlite3
 import os
 import shutil
 import tempfile
+from typing import Iterator
 from zoneinfo import ZoneInfo
 
 from .workbook import validate_workbook
@@ -66,8 +68,9 @@ def _stable_ingredient_id(name: str) -> str:
 def _source_fingerprint(path: Path, component_names: set[str] | None = None) -> dict:
     """Hash SQLite data files; the shared-memory index is transient and excluded."""
     files = [path]
-    if path.suffix.casefold() in {".db", ".sqlite", ".sqlite3"}:
-        files.append(Path(f"{path}-wal"))
+    wal_path = Path(f"{path}-wal")
+    if wal_path.is_file():
+        files.append(wal_path)
     components = []
     for source in files:
         if component_names is not None and source.name not in component_names:
@@ -96,6 +99,22 @@ def _source_fingerprint(path: Path, component_names: set[str] | None = None) -> 
         "size_bytes": sum(item.get("size_bytes", 0) for item in components),
         "components": components,
     }
+
+
+@contextmanager
+def _validated_sqlite_snapshot(path: Path) -> Iterator[tuple[Path, dict]]:
+    """Copy a consistent SQLite/WAL pair and remove it on every exit path."""
+    with tempfile.TemporaryDirectory(prefix="sabores-d1-source-") as directory:
+        snapshot = Path(directory) / path.name
+        fingerprint = _source_fingerprint(path)
+        shutil.copy2(path, snapshot)
+        source_wal = Path(f"{path}-wal")
+        if source_wal.is_file():
+            shutil.copy2(source_wal, Path(f"{snapshot}-wal"))
+        final_fingerprint = _source_fingerprint(path)
+        if final_fingerprint["sha256"] != fingerprint["sha256"]:
+            raise MigrationValidationError(["SQLite de origem mudou durante a cópia; nenhum pacote foi produzido."])
+        yield snapshot, fingerprint
 
 
 def _instant(value: str | None) -> str | None:
@@ -534,40 +553,29 @@ def build_import_bundle(sqlite_path: str | Path, workbook_path: str | Path) -> d
         raise MigrationValidationError([f"SQLite não encontrado: {sqlite_path}"])
     if not workbook_path.is_file():
         raise MigrationValidationError([f"Workbook não encontrado: {workbook_path}"])
-    sqlite_fingerprint = _source_fingerprint(sqlite_path)
     workbook_fingerprint = _source_fingerprint(workbook_path)
-    snapshot_directory = Path(tempfile.mkdtemp(prefix="sabores-d1-source-"))
-    snapshot_path = snapshot_directory / sqlite_path.name
-    shutil.copy2(sqlite_path, snapshot_path)
-    source_wal = Path(f"{sqlite_path}-wal")
-    if source_wal.is_file():
-        shutil.copy2(source_wal, Path(f"{snapshot_path}-wal"))
-    snapshot_fingerprint = _source_fingerprint(snapshot_path)
-    if snapshot_fingerprint["sha256"] != sqlite_fingerprint["sha256"]:
-        shutil.rmtree(snapshot_directory, ignore_errors=True)
-        raise MigrationValidationError(["SQLite de origem mudou durante a cópia; nenhum pacote foi produzido."])
     captured_at = _utc_now()
     errors: list[str] = []
     workbook_config, workbook_counts, workbook_errors = _read_workbook(workbook_path, captured_at)
     errors.extend(workbook_errors)
-    db = sqlite3.connect(f"file:{snapshot_path.resolve().as_posix()}?mode=ro", uri=True)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA foreign_keys=ON")
-    try:
-        db.execute("BEGIN")
-        sqlite_config, sqlite_counts = _sqlite_config(db, captured_at, errors)
-        config = _merge_config(workbook_config, sqlite_config)
-        history = _financial_history(db, captured_at, errors)
-        source_financial_counts = {}
-        for kind in ("Venda", "Compra", "Gasto"):
-            row = db.execute(
-                "SELECT COUNT(*), COALESCE(SUM(amount_cents), 0) FROM entries WHERE kind=?",
-                (kind,),
-            ).fetchone()
-            source_financial_counts[kind] = (int(row[0]), int(row[1]))
-    finally:
-        db.close()
-        shutil.rmtree(snapshot_directory, ignore_errors=True)
+    with _validated_sqlite_snapshot(sqlite_path) as (snapshot_path, sqlite_fingerprint):
+        db = sqlite3.connect(f"file:{snapshot_path.resolve().as_posix()}?mode=ro", uri=True)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys=ON")
+        try:
+            db.execute("BEGIN")
+            sqlite_config, sqlite_counts = _sqlite_config(db, captured_at, errors)
+            config = _merge_config(workbook_config, sqlite_config)
+            history = _financial_history(db, captured_at, errors)
+            source_financial_counts = {}
+            for kind in ("Venda", "Compra", "Gasto"):
+                row = db.execute(
+                    "SELECT COUNT(*), COALESCE(SUM(amount_cents), 0) FROM entries WHERE kind=?",
+                    (kind,),
+                ).fetchone()
+                source_financial_counts[kind] = (int(row[0]), int(row[1]))
+        finally:
+            db.close()
     tables = {**config, **history}
     row_counts = {name: len(rows) for name, rows in tables.items()}
     expected = {**workbook_counts, **sqlite_counts}
@@ -667,5 +675,16 @@ def compare_import_bundles(current: dict, previous: dict) -> dict:
         "current_import_id": current.get("import_id"),
         "same_import": previous.get("import_id") == current.get("import_id"),
         "tables": {name: {"before": len(previous_tables.get(name, [])), "after": len(current_tables.get(name, [])), "delta": len(current_tables.get(name, [])) - len(previous_tables.get(name, []))} for name in table_names},
-        "financial": current.get("reconciliation", {}).get("financial", {}),
+        "financial": {
+            kind: {
+                metric: {
+                    "before": previous.get("reconciliation", {}).get("financial", {}).get(kind, {}).get(metric, 0),
+                    "after": current.get("reconciliation", {}).get("financial", {}).get(kind, {}).get(metric, 0),
+                    "delta": current.get("reconciliation", {}).get("financial", {}).get(kind, {}).get(metric, 0)
+                    - previous.get("reconciliation", {}).get("financial", {}).get(kind, {}).get(metric, 0),
+                }
+                for metric in ("source_cents", "mapped_cents")
+            }
+            for kind in sorted(set(previous.get("reconciliation", {}).get("financial", {})) | set(current.get("reconciliation", {}).get("financial", {})))
+        },
     }

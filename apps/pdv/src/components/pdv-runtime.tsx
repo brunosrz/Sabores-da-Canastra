@@ -1,10 +1,11 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { listQueue, syncQueue } from '../offline/store';
 
 export function PdvRuntime({ children }: { children: ReactNode }) {
 	const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
 	const [pending, setPending] = useState(0);
 	const [updateReady, setUpdateReady] = useState(false);
+	const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
 
 	async function refreshQueue() {
 		const rows = await listQueue().catch(() => []);
@@ -12,6 +13,7 @@ export function PdvRuntime({ children }: { children: ReactNode }) {
 	}
 
 	useEffect(() => {
+		const onControllerChange = () => location.reload();
 		const onlineHandler = () => {
 			setOnline(true);
 			void syncQueue(refreshQueue).then(refreshQueue);
@@ -22,15 +24,17 @@ export function PdvRuntime({ children }: { children: ReactNode }) {
 		}, 20_000);
 		window.addEventListener('online', onlineHandler);
 		window.addEventListener('offline', offlineHandler);
+		if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
 		void syncQueue(refreshQueue).then(refreshQueue);
 		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 			void navigator.serviceWorker
 				.register('/sw.js', { updateViaCache: 'none' })
-				.then((registration) => {
-					if (registration.waiting) setUpdateReady(true);
-					registration.addEventListener('updatefound', () => {
-						registration.installing?.addEventListener('statechange', () => {
-							if (registration.waiting && navigator.serviceWorker.controller) setUpdateReady(true);
+				.then((activeRegistration) => {
+					registrationRef.current = activeRegistration;
+					if (activeRegistration.waiting) setUpdateReady(true);
+					activeRegistration.addEventListener('updatefound', () => {
+						activeRegistration.installing?.addEventListener('statechange', () => {
+							if (activeRegistration.waiting && navigator.serviceWorker.controller) setUpdateReady(true);
 						});
 					});
 				})
@@ -40,13 +44,15 @@ export function PdvRuntime({ children }: { children: ReactNode }) {
 			window.clearInterval(interval);
 			window.removeEventListener('online', onlineHandler);
 			window.removeEventListener('offline', offlineHandler);
+			if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
 		};
 	}, []);
 
 	function acceptUpdate() {
 		if (pending > 0) return;
-		navigator.serviceWorker.controller?.postMessage({ type: 'SKIP_WAITING' });
-		navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
+		void navigator.serviceWorker.getRegistration().then((activeRegistration) => {
+			(activeRegistration?.waiting ?? registrationRef.current?.waiting)?.postMessage({ type: 'SKIP_WAITING' });
+		});
 	}
 
 	return (

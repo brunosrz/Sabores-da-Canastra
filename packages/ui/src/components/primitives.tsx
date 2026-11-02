@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import { useId, type ComponentPropsWithoutRef, type ReactNode } from "react";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
@@ -268,9 +268,10 @@ export function EmptyState({
   description: string;
   action?: ReactNode;
 }) {
+  const titleId = useId();
   return (
-    <section className="ui-state-card" aria-labelledby="empty-state-title">
-      <h2 id="empty-state-title">{title}</h2>
+    <section className="ui-state-card" aria-labelledby={titleId}>
+      <h2 id={titleId}>{title}</h2>
       <p>{description}</p>
       {action}
     </section>
@@ -350,7 +351,7 @@ export function ResponsiveTable<Row extends Record<string, unknown>>({
           </tbody>
         </table>
       </div>
-      <div className="ui-responsive-cards" aria-label={caption}>
+      <div className="ui-responsive-cards" role="group" aria-label={caption}>
         {rows.map((row, index) => (
           <article
             className="ui-card ui-responsive-card"

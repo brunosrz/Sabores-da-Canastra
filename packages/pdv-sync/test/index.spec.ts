@@ -81,7 +81,9 @@ describe("contrato de sincronização do PDV", () => {
     expect(lineTotalCents("1.0001", 101)).toBeNull();
     expect(lineTotalCents("0", 101)).toBeNull();
     expect(lineTotalCents("1", -1)).toBeNull();
+    expect(lineTotalCents(2 as unknown as string, 101)).toBeNull();
     expect(feeCents(100, "1.000001")).toBeNull();
+    expect(feeCents(100, 0.1 as unknown as string)).toBeNull();
     expect(feeCents(Number.MAX_SAFE_INTEGER + 1, "0.1")).toBeNull();
   });
 
@@ -112,6 +114,17 @@ describe("contrato de sincronização do PDV", () => {
     expect(validateOperationPayload(operation)).toBe(true);
     expect(operation.payloadHash).toMatch(/^[0-9a-f]{64}$/);
     expect(await verifyOperationHash(operation)).toBe(true);
+  });
+
+  it("exige quantidade e taxa como strings no payload de venda", () => {
+    const operation = createSaleOperation();
+    const payload = operation.payload as SaleCreatePayload;
+    payload.items[0]!.quantity = 2 as unknown as string;
+    expect(validateOperationPayload(operation)).toBe(false);
+
+    payload.items[0]!.quantity = "2";
+    payload.payments[0]!.feeRate = 0 as unknown as string;
+    expect(validateOperationPayload(operation)).toBe(false);
   });
 
   it("gera hash determinístico independente da ordem das chaves e do horário no mesmo dia", async () => {

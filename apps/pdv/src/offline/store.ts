@@ -291,7 +291,7 @@ export async function syncQueue(onChange?: () => void, actorUserId?: string) {
 	const work = async () => {
 		const rows = await listQueue();
 		for (const row of rows) {
-			if (row.state === 'synced') continue;
+			if (row.state === 'synced' || row.state === 'duplicate') continue;
 			if (!['pending', 'syncing', 'auth_required'].includes(row.state)) break;
 			if (!canSyncOperation(row.operation.actor.userId, authenticatedActor)) break;
 			await updateQueue({ ...row, state: 'syncing', error: undefined });
@@ -357,6 +357,17 @@ export async function syncQueue(onChange?: () => void, actorUserId?: string) {
 					response: body,
 				});
 			onChange?.();
+			const duplicate = body.status === 'rejected_duplicate' || (response.status === 409 && body.code === 'DUPLICATE_SALE');
+			if (
+				(response.status === 409 && !duplicate) ||
+				(!response.ok &&
+					response.status < 500 &&
+					response.status !== 409 &&
+					response.status !== 429 &&
+					response.status !== 401 &&
+					response.status !== 403)
+			)
+				break;
 		}
 	};
 	if (navigator.locks) return navigator.locks.request('sabores-pdv-sync', work);

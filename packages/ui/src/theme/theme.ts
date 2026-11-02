@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Theme = "light" | "dark" | "auto";
 
@@ -13,6 +13,7 @@ function resolvedTheme(
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>("auto");
+  const themeRef = useRef<Theme>("auto");
 
   const apply = useCallback((mode: Theme) => {
     const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -36,11 +37,12 @@ export function useTheme() {
         ? stored
         : "auto";
     setThemeState(initial);
+    themeRef.current = initial;
     apply(initial);
 
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onPreferenceChange = () => {
-      if (initial === "auto") apply("auto");
+      if (themeRef.current === "auto") apply("auto");
     };
     const onStorage = (event: StorageEvent) => {
       if (event.key !== "theme") return;
@@ -51,28 +53,38 @@ export function useTheme() {
           ? event.newValue
           : "auto";
       setThemeState(next);
+      themeRef.current = next;
+      apply(next);
+    };
+    const onLocalThemeChange = (event: Event) => {
+      const next = (event as CustomEvent<Theme>).detail;
+      if (next !== "light" && next !== "dark" && next !== "auto") return;
+      themeRef.current = next;
+      setThemeState(next);
       apply(next);
     };
     media.addEventListener("change", onPreferenceChange);
     window.addEventListener("storage", onStorage);
+    window.addEventListener("sabores:theme-change", onLocalThemeChange);
     return () => {
       media.removeEventListener("change", onPreferenceChange);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("sabores:theme-change", onLocalThemeChange);
     };
   }, [apply]);
 
-  const setTheme = useCallback(
-    (next: Theme) => {
-      setThemeState(next);
-      apply(next);
-      try {
-        window.localStorage.setItem("theme", next);
-      } catch {
-        // Theme preference remains active for this page even when storage is unavailable.
-      }
-    },
-    [apply],
-  );
+  const setTheme = useCallback((next: Theme) => {
+    setThemeState(next);
+    themeRef.current = next;
+    try {
+      window.localStorage.setItem("theme", next);
+    } catch {
+      // Theme preference remains active for this page even when storage is unavailable.
+    }
+    window.dispatchEvent(
+      new CustomEvent<Theme>("sabores:theme-change", { detail: next }),
+    );
+  }, []);
 
   return { theme, setTheme };
 }

@@ -6,6 +6,7 @@ import {
 	operationIdentity,
 	operationPayloadHash,
 	splitEqual,
+	validateOperationPayload,
 	type PaymentMethod,
 	type SaleCreatePayload,
 	type SalePayment,
@@ -232,6 +233,10 @@ function PdvHome() {
 			const salePayload = operation.payload as SaleCreatePayload;
 			salePayload.saleId = operationIdentity('sale.create', operation.operationId).saleId;
 			operation.payloadHash = await operationPayloadHash(operation);
+			if (!validateOperationPayload(operation)) {
+				setMessage('A venda contém dados inválidos e não foi salva. Revise os itens e pagamentos.');
+				return;
+			}
 			await commitSaleAndClearDraft(operation);
 			setBasket([]);
 			setCustomer('');
@@ -246,7 +251,10 @@ function PdvHome() {
 					? 'Venda salva. Sincronizando com o servidor…'
 					: 'Venda salva neste dispositivo para sincronizar quando a internet voltar.',
 			);
-			if (navigator.onLine) void syncQueue().then(() => setMessage('Sincronização concluída; confira o estado na fila.'));
+			if (navigator.onLine)
+				void syncQueue()
+					.then(() => setMessage('Sincronização concluída; confira o estado na fila.'))
+					.catch(() => setMessage('A venda ficou salva; a sincronização será retomada quando possível.'));
 		} catch (error) {
 			setMessage(error instanceof Error ? error.message : 'Não foi possível salvar a venda neste dispositivo.');
 		} finally {

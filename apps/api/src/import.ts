@@ -671,6 +671,36 @@ export async function calculateBundleIntegrity(bundle: D1ImportBundle) {
   };
 }
 
+async function validateImportTarget(db: D1Database, bundle: D1ImportBundle) {
+  const integrity = await calculateBundleIntegrity(bundle);
+  if (
+    integrity.sqlite_data_sha256 !== bundle.source.sqlite_data_sha256 ||
+    integrity.source_digest !== bundle.source.source_digest ||
+    integrity.import_id !== bundle.import_id
+  )
+    throw new Error(
+      "Hash do pacote não confere com os dados; gere novamente o preview.",
+    );
+  const prior = await db
+    .prepare("SELECT import_id FROM data_imports WHERE import_id = ?")
+    .bind(bundle.import_id)
+    .first();
+  if (prior) return { state: "already_imported" as const, existingRows: 0 };
+  const tableCounts = [
+    ...IMPORT_TABLES.map(({ table }) => `(SELECT COUNT(*) FROM ${table})`),
+    "(SELECT COUNT(*) FROM data_imports)",
+    "(SELECT COUNT(*) FROM legacy_import_lock)",
+  ].join(" + ");
+  const target = await db
+    .prepare(`SELECT ${tableCounts} AS existing_rows`)
+    .first<{ existing_rows: number }>();
+  const existingRows = Number(target?.existing_rows ?? 0);
+  return {
+    state: existingRows === 0 ? ("empty" as const) : ("occupied" as const),
+    existingRows,
+  };
+}
+
 export function prepareImportStatements(
   db: D1Database,
   value: unknown,
@@ -721,40 +751,14 @@ export function prepareImportStatements(
 export async function importBundle(db: D1Database, value: unknown) {
   validateBundle(value);
   const bundle = value;
-  const integrity = await calculateBundleIntegrity(bundle);
-  if (
-    integrity.sqlite_data_sha256 !== bundle.source.sqlite_data_sha256 ||
-    integrity.source_digest !== bundle.source.source_digest ||
-    integrity.import_id !== bundle.import_id
-  )
-    throw new Error(
-      "Hash do pacote não confere com os dados; gere novamente o preview.",
-    );
-  const prior = await db
-    .prepare("SELECT import_id FROM data_imports WHERE import_id = ?")
-    .bind(bundle.import_id)
-    .first();
-  if (prior)
+  const targetState = await validateImportTarget(db, bundle);
+  if (targetState.state === "already_imported")
     return {
       importId: bundle.import_id,
       alreadyImported: true,
       rowCounts: bundle.row_counts,
     };
-  const target = await db
-    .prepare(
-      `SELECT
-		(SELECT COUNT(*) FROM categories) + (SELECT COUNT(*) FROM products) +
-		(SELECT COUNT(*) FROM ingredients) + (SELECT COUNT(*) FROM ingredient_quotes) +
-		(SELECT COUNT(*) FROM recipes) + (SELECT COUNT(*) FROM recipe_lines) +
-		(SELECT COUNT(*) FROM parameters) + (SELECT COUNT(*) FROM daily_mix) +
-		(SELECT COUNT(*) FROM ledger_entries) + (SELECT COUNT(*) FROM sales) +
-		(SELECT COUNT(*) FROM sale_items) + (SELECT COUNT(*) FROM sale_payments) +
-		(SELECT COUNT(*) FROM purchases) + (SELECT COUNT(*) FROM purchase_items) +
-		(SELECT COUNT(*) FROM expenses) + (SELECT COUNT(*) FROM data_imports) +
-		(SELECT COUNT(*) FROM legacy_import_lock) AS existing_rows`,
-    )
-    .first<{ existing_rows: number }>();
-  if (Number(target?.existing_rows ?? 0) > 0)
+  if (targetState.state === "occupied")
     throw new Error(
       "D1 já contém dados sem o mesmo import_id; interrompido para evitar sobrescrita ou mescla ambígua.",
     );
@@ -773,44 +777,17 @@ export async function importBundle(db: D1Database, value: unknown) {
 export async function previewImport(db: D1Database, value: unknown) {
   validateBundle(value);
   const bundle = value;
-  const integrity = await calculateBundleIntegrity(bundle);
-  if (
-    integrity.sqlite_data_sha256 !== bundle.source.sqlite_data_sha256 ||
-    integrity.source_digest !== bundle.source.source_digest ||
-    integrity.import_id !== bundle.import_id
-  )
-    throw new Error(
-      "Hash do pacote não confere com os dados; gere novamente o preview.",
-    );
-  const prior = await db
-    .prepare("SELECT import_id FROM data_imports WHERE import_id = ?")
-    .bind(bundle.import_id)
-    .first();
-  if (prior)
+  const targetState = await validateImportTarget(db, bundle);
+  if (targetState.state === "already_imported")
     return {
       state: "already_imported" as const,
       importId: bundle.import_id,
       rowCounts: bundle.row_counts,
     };
-  const target = await db
-    .prepare(
-      `SELECT
-        (SELECT COUNT(*) FROM categories) + (SELECT COUNT(*) FROM products) +
-        (SELECT COUNT(*) FROM ingredients) + (SELECT COUNT(*) FROM ingredient_quotes) +
-        (SELECT COUNT(*) FROM recipes) + (SELECT COUNT(*) FROM recipe_lines) +
-        (SELECT COUNT(*) FROM parameters) + (SELECT COUNT(*) FROM daily_mix) +
-        (SELECT COUNT(*) FROM ledger_entries) + (SELECT COUNT(*) FROM sales) +
-        (SELECT COUNT(*) FROM sale_items) + (SELECT COUNT(*) FROM sale_payments) +
-        (SELECT COUNT(*) FROM purchases) + (SELECT COUNT(*) FROM purchase_items) +
-        (SELECT COUNT(*) FROM expenses) + (SELECT COUNT(*) FROM data_imports) +
-        (SELECT COUNT(*) FROM legacy_import_lock) AS existing_rows`,
-    )
-    .first<{ existing_rows: number }>();
-  const existingRows = Number(target?.existing_rows ?? 0);
   return {
-    state: existingRows === 0 ? ("empty" as const) : ("occupied" as const),
+    state: targetState.state,
     importId: bundle.import_id,
-    existingRows,
+    existingRows: targetState.existingRows,
     rowCounts: bundle.row_counts,
     reconciliation: bundle.reconciliation,
   };

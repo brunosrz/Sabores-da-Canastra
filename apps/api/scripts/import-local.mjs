@@ -37,8 +37,12 @@ const previewResponse = await fetch(`${endpoint}?mode=preview`, {
 });
 const preview = await previewResponse.json().catch(() => ({}));
 console.log(JSON.stringify({ etapa: "preview", ...preview }, null, 2));
-if (!previewResponse.ok || preview.valid === false) {
+if (!previewResponse.ok || preview.state === "occupied") {
   process.exit(1);
+}
+if (preview.state === "already_imported") {
+  console.log("Este pacote já foi importado; nenhuma nova gravação foi enviada.");
+  process.exit(0);
 }
 if (!apply) {
   console.log(

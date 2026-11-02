@@ -33,6 +33,22 @@ describe("componentes compartilhados", () => {
     expect(screen.getByRole("button")).toBeDisabled();
   });
 
+  it("associa cada estado vazio ao próprio título quando há várias instâncias", () => {
+    render(
+      <>
+        <EmptyState title="Sem vendas" description="Hoje" />
+        <EmptyState title="Sem compras" description="Hoje" />
+      </>,
+    );
+    const sections = screen.getAllByRole("region");
+    const ids = sections.map((section) =>
+      section.getAttribute("aria-labelledby"),
+    );
+    expect(new Set(ids).size).toBe(2);
+    expect(sections[0]).toHaveAccessibleName("Sem vendas");
+    expect(sections[1]).toHaveAccessibleName("Sem compras");
+  });
+
   it("associa rótulo, dica e erro ao campo numérico", () => {
     render(
       <NumberField

@@ -34,17 +34,23 @@ def main(argv: list[str] | None = None) -> int:
             write_import_bundle,
         )
 
+        source_paths = {
+            Path(args.sqlite).expanduser().resolve(),
+            path.expanduser().resolve(),
+        }
+        output_paths = []
+        for argument in (args.saida, args.relatorio):
+            if argument:
+                output_paths.append(Path(argument).expanduser().resolve())
+        if len(set(output_paths)) != len(output_paths):
+            parser.error("Os caminhos de --saida e --relatorio precisam ser diferentes.")
+        if set(output_paths) & source_paths:
+            parser.error("Arquivos de saída não podem sobrescrever os arquivos de origem.")
+        if args.comparar_com and output_paths and Path(args.comparar_com).expanduser().resolve() in output_paths:
+            parser.error("Um arquivo usado em --comparar-com não pode ser sobrescrito nesta execução.")
         try:
             if args.command == "exportar-migracao-d1" and not args.saida:
                 parser.error("exportar-migracao-d1 exige --saida <arquivo.json>")
-            if args.saida:
-                output_path = Path(args.saida).expanduser().resolve()
-                source_paths = {
-                    Path(args.sqlite).expanduser().resolve(),
-                    path.expanduser().resolve(),
-                }
-                if output_path in source_paths:
-                    parser.error("O pacote de saída não pode sobrescrever os arquivos de origem.")
             bundle = build_import_bundle(args.sqlite, path)
         except MigrationValidationError as exc:
             report = {"valid": False, "errors": exc.errors, **exc.report}
@@ -63,7 +69,11 @@ def main(argv: list[str] | None = None) -> int:
             "reconciliation": bundle["reconciliation"],
         }
         if args.comparar_com:
-            previous = json.loads(Path(args.comparar_com).read_text(encoding="utf-8"))
+            try:
+                previous = _load_comparison_bundle(Path(args.comparar_com), bundle)
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                print(f"Não foi possível comparar os pacotes: {exc}", file=sys.stderr)
+                return 1
             summary["comparison"] = compare_import_bundles(bundle, previous)
         if args.command == "exportar-migracao-d1":
             summary["file"] = str(write_import_bundle(bundle, args.saida).resolve())
@@ -93,6 +103,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.command}: use a integração pela planilha; consulte README para campos e fluxo.")
         return 0
     return 2
+
+
+def _load_comparison_bundle(path: Path, current: dict) -> dict:
+    value = json.loads(path.expanduser().read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("contract") != current.get("contract"):
+        raise ValueError("o JSON precisa ser um pacote do mesmo contrato de migração")
+    if value.get("contract_version") != current.get("contract_version"):
+        raise ValueError("versão de contrato incompatível")
+    tables = value.get("tables")
+    financial = value.get("reconciliation", {}).get("financial") if isinstance(value.get("reconciliation"), dict) else None
+    if not isinstance(tables, dict) or any(not isinstance(rows, list) for rows in tables.values()):
+        raise ValueError("estrutura tables inválida")
+    if not isinstance(financial, dict):
+        raise TypeError("estrutura reconciliation.financial inválida")
+    return value
 
 
 def _write_json_report(value: dict, destination: str | Path) -> Path:

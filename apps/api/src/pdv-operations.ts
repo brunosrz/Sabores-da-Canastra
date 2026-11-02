@@ -24,13 +24,29 @@ const ledgerKey = (operation: OperationEnvelope) =>
   `pdv:${operation.operationType}:${operation.operationId}`;
 const makeLedgerId = (operationId: string) => `ledger_pdv_${operationId}`;
 
-async function validateProducts(db: D1Database, payload: SaleCreatePayload) {
+type CatalogDiscrepancy = {
+  productId: string;
+  snapshot: SaleCreatePayload["items"][number];
+  current: {
+    name: string;
+    category: string;
+    sale_price_cents: number;
+    unit_cost_cents: number | null;
+    updated_at: string;
+  };
+};
+
+async function validateProducts(
+  db: D1Database,
+  payload: SaleCreatePayload,
+  occurredAt: string,
+): Promise<CatalogDiscrepancy[] | null> {
   const ids = [...new Set(payload.items.map((item) => item.productId))];
-  if (!ids.length) return false;
+  if (!ids.length) return null;
   const placeholders = ids.map(() => "?").join(",");
   const { results } = await db
     .prepare(
-      `SELECT p.product_id, p.name, c.name AS category, p.sale_price_cents, p.unit_cost_cents FROM products p JOIN categories c ON c.category_id = p.category_id WHERE p.active = 1 AND p.product_id IN (${placeholders})`,
+      `SELECT p.product_id, p.name, c.name AS category, p.sale_price_cents, p.unit_cost_cents, p.updated_at FROM products p JOIN categories c ON c.category_id = p.category_id WHERE p.product_id IN (${placeholders})`,
     )
     .bind(...ids)
     .all<{
@@ -39,21 +55,36 @@ async function validateProducts(db: D1Database, payload: SaleCreatePayload) {
       category: string;
       sale_price_cents: number;
       unit_cost_cents: number | null;
+      updated_at: string;
     }>();
-  if (results.length !== ids.length) return false;
+  if (results.length !== ids.length) return null;
   const products = new Map(
     results.map((product) => [product.product_id, product]),
   );
-  return payload.items.every((item) => {
+  const discrepancies: CatalogDiscrepancy[] = [];
+  for (const item of payload.items) {
     const product = products.get(item.productId);
-    return (
-      product &&
+    if (!product) return null;
+    const matches =
       item.name === product.name &&
       item.category === product.category &&
       item.unitPriceCents === product.sale_price_cents &&
-      item.unitCostCents === product.unit_cost_cents
-    );
-  });
+      item.unitCostCents === product.unit_cost_cents;
+    if (!matches) {
+      const productUpdatedAt = Date.parse(product.updated_at);
+      if (
+        !Number.isFinite(productUpdatedAt) ||
+        productUpdatedAt <= Date.parse(occurredAt)
+      )
+        return null;
+      discrepancies.push({
+        productId: item.productId,
+        snapshot: item,
+        current: product,
+      });
+    }
+  }
+  return discrepancies;
 }
 
 function sumPayments(payments: SalePayment[]) {
@@ -200,6 +231,7 @@ async function createSaleStatements(
   op: OperationEnvelope,
   actorUserId: string,
   recordedAt: string,
+  discrepancies: CatalogDiscrepancy[],
 ) {
   const payload = op.payload as SaleCreatePayload;
   const { saleId } = operationIdentity(op.operationType, op.operationId);
@@ -292,6 +324,24 @@ async function createSaleStatements(
         .bind(saleId, part.partNumber, part.dueCents),
     ),
     addOperationRecord(db, op, actorUserId, "accepted", result, recordedAt),
+    ...discrepancies.map((discrepancy, index) =>
+      db
+        .prepare(
+          `INSERT INTO sale_catalog_discrepancies
+        (discrepancy_id, operation_id, sale_id, product_id, occurred_at, snapshot_json, current_json, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          `${op.operationId}:catalog:${index}`,
+          op.operationId,
+          saleId,
+          discrepancy.productId,
+          iso(op.occurredAt),
+          JSON.stringify(discrepancy.snapshot),
+          JSON.stringify(discrepancy.current),
+          recordedAt,
+        ),
+    ),
   ];
   return { statements, result };
 }
@@ -388,6 +438,11 @@ async function adjustPaymentStatements(
     .bind(payload.saleId)
     .first<{ sale_id: string; ledger_id: string; gross_cents: number }>();
   if (!sale) throw new Error("SALE_NOT_FOUND");
+  const cancellation = await db
+    .prepare("SELECT cancellation_id FROM sale_cancellations WHERE sale_id = ?")
+    .bind(payload.saleId)
+    .first();
+  if (cancellation) throw new Error("SALE_ALREADY_CANCELLED");
   const latest = await db
     .prepare(
       `SELECT COALESCE(MAX(payment_version), 1) AS version
@@ -511,21 +566,6 @@ export async function applyPdvOperation(
     .first<{ username: string }>();
   if (!authenticatedActor) throw new Error("ACTOR_MISMATCH");
   op.actor.label = authenticatedActor.username;
-  if (op.operationType === "sale.create") {
-    const payload = op.payload as SaleCreatePayload;
-    if (!(await validateProducts(db, payload)))
-      throw new Error("PRODUCT_SNAPSHOT_MISMATCH");
-    if (!(await validatePaymentRates(db, payload.payments)))
-      throw new Error("PAYMENT_RATE_INVALID");
-  }
-  if (
-    op.operationType === "sale.adjust_payments" &&
-    !(await validatePaymentRates(
-      db,
-      (op.payload as SaleAdjustPaymentsPayload).payments,
-    ))
-  )
-    throw new Error("PAYMENT_RATE_INVALID");
   const previous = await db
     .prepare(
       "SELECT operation_id, device_id, actor_user_id, operation_type, payload_hash, result_json, status FROM sync_operations WHERE operation_id = ?",
@@ -546,6 +586,24 @@ export async function applyPdvOperation(
       status: previous.status,
     };
   }
+
+  let catalogDiscrepancies: CatalogDiscrepancy[] = [];
+  if (op.operationType === "sale.create") {
+    const payload = op.payload as SaleCreatePayload;
+    const validated = await validateProducts(db, payload, op.occurredAt);
+    if (!validated) throw new Error("PRODUCT_SNAPSHOT_MISMATCH");
+    catalogDiscrepancies = validated;
+    if (!(await validatePaymentRates(db, payload.payments)))
+      throw new Error("PAYMENT_RATE_INVALID");
+  }
+  if (
+    op.operationType === "sale.adjust_payments" &&
+    !(await validatePaymentRates(
+      db,
+      (op.payload as SaleAdjustPaymentsPayload).payments,
+    ))
+  )
+    throw new Error("PAYMENT_RATE_INVALID");
 
   const occurredAt = Date.parse(op.occurredAt);
   const recentSince = new Date(occurredAt - 15_000).toISOString();
@@ -599,7 +657,13 @@ export async function applyPdvOperation(
   let prepared: { result: unknown; statements: D1PreparedStatement[] };
   switch (op.operationType) {
     case "sale.create":
-      prepared = await createSaleStatements(db, op, actorUserId, recordedAt);
+      prepared = await createSaleStatements(
+        db,
+        op,
+        actorUserId,
+        recordedAt,
+        catalogDiscrepancies,
+      );
       break;
     case "sale.cancel":
       prepared = await cancelSaleStatements(db, op, actorUserId, recordedAt);

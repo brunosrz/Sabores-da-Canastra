@@ -1,4 +1,6 @@
 import json
+import hashlib
+import gc
 import sqlite3
 from pathlib import Path
 
@@ -82,18 +84,13 @@ def test_bundle_merges_workbook_and_sqlite_and_reconciles_financial_history(tmp_
 	assert (legacy_report["gross_cents"], legacy_report["fees_cents"], legacy_report["net_cents"],
 			legacy_report["known_cost_cents"], legacy_report["profit_cents"]) == (1000, 12, 988, 400, 588)
 
-	def logical_snapshot():
-		with sqlite3.connect(database) as source:
-			tables = [row[0] for row in source.execute(
-				"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-			)]
-			return {
-				name: source.execute(f'SELECT * FROM "{name}" ORDER BY 1').fetchall()
-				for name in tables
-			}
-
-	source_snapshot = logical_snapshot()
+	def byte_hashes():
+		paths = [database, workbook, Path(f"{database}-wal")]
+		return {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths if path.is_file()}
+	gc.collect()
+	bytes_before = byte_hashes()
 	bundle = build_import_bundle(database, workbook)
+	assert byte_hashes() == bytes_before
 	second = build_import_bundle(database, workbook)
 	assert bundle["import_id"] == second["import_id"]
 	assert bundle["row_counts"]["ingredients"] == 3
@@ -115,10 +112,9 @@ def test_bundle_merges_workbook_and_sqlite_and_reconciles_financial_history(tmp_
 	assert bundle["tables"]["ledgerEntries"][0]["occurredAt"].endswith("Z")
 	assert bundle["provenance"]["timezone"] == "America/Sao_Paulo"
 	assert bundle["provenance"]["source_files"]["sqlite"]["sha256"] == bundle["source"]["sqlite_file_sha256"]
-	assert logical_snapshot() == source_snapshot
 
 
-def test_migration_bundle_is_written_atomically_and_can_be_compared(tmp_path, workbook):
+def test_migration_bundle_is_written_atomically_and_can_be_compared(tmp_path, workbook, monkeypatch):
 	database = tmp_path / "ledger.db"
 	Ledger(database)
 	bundle = build_import_bundle(database, workbook)
@@ -129,6 +125,16 @@ def test_migration_bundle_is_written_atomically_and_can_be_compared(tmp_path, wo
 	comparison = compare_import_bundles(bundle, loaded)
 	assert comparison["same_import"] is True
 	assert all(line["delta"] == 0 for line in comparison["tables"].values())
+	assert comparison["financial"]["Venda"]["source_cents"]["delta"] == 0
+
+	destination.write_text("preexistente", encoding="utf-8")
+	def fail_replace(source, target):
+		raise OSError("falha simulada ao substituir")
+	monkeypatch.setattr("sabores.d1_migration.os.replace", fail_replace)
+	with pytest.raises(OSError, match="falha simulada"):
+		write_import_bundle(bundle, destination)
+	assert destination.read_text(encoding="utf-8") == "preexistente"
+	assert list(destination.parent.glob(f".{destination.name}.*.tmp")) == []
 
 
 def test_cli_writes_reviewable_dry_run_report(tmp_path, workbook, capsys):
@@ -148,6 +154,57 @@ def test_cli_writes_reviewable_dry_run_report(tmp_path, workbook, capsys):
 	assert output["mode"] == "dry-run"
 	assert output["report_file"] == str(report.resolve())
 	assert json.loads(report.read_text(encoding="utf-8"))["valid"] is True
+
+
+def test_cli_rejects_output_path_collisions_before_writing(tmp_path, workbook):
+	from sabores.cli import main
+
+	database = tmp_path / "ledger.db"
+	Ledger(database)
+	with pytest.raises(SystemExit) as error:
+		main(["exportar-migracao-d1", "--excel", str(workbook), "--sqlite", str(database), "--saida", str(database)])
+	assert error.value.code == 2
+
+
+def test_cli_reports_invalid_migration_with_exit_code_one(tmp_path, workbook, capsys, monkeypatch):
+	from sabores.cli import main
+	from sabores import d1_migration
+
+	database = tmp_path / "ledger.db"
+	Ledger(database)
+	def invalid_bundle(*_args, **_kwargs):
+		raise MigrationValidationError(["dados inválidos"])
+	monkeypatch.setattr(d1_migration, "build_import_bundle", invalid_bundle)
+	assert main(["prever-migracao-d1", "--excel", str(workbook), "--sqlite", str(database)]) == 1
+	assert json.loads(capsys.readouterr().out)["valid"] is False
+
+
+def test_cli_rejects_bad_comparison_before_export_artifacts(tmp_path, workbook, capsys):
+	from sabores.cli import main
+
+	database = tmp_path / "ledger.db"
+	Ledger(database)
+	comparison = tmp_path / "previous.json"
+	comparison.write_text("{broken", encoding="utf-8")
+	destination = tmp_path / "bundle.json"
+	assert main([
+		"exportar-migracao-d1", "--excel", str(workbook), "--sqlite", str(database),
+		"--saida", str(destination), "--comparar-com", str(comparison),
+	]) == 1
+	assert not destination.exists()
+	assert "Não foi possível comparar" in capsys.readouterr().err
+
+
+def test_source_fingerprint_includes_wal_for_any_suffix(tmp_path):
+	from sabores.d1_migration import _source_fingerprint
+
+	source = tmp_path / "legacy.data"
+	source.write_bytes(b"database")
+	Path(f"{source}-wal").write_bytes(b"wal")
+	fingerprint = _source_fingerprint(source)
+	assert [component["name"] for component in fingerprint["components"]] == [
+		"legacy.data", "legacy.data-wal",
+	]
 
 
 def test_rejects_unbalanced_legacy_sale_without_producing_partial_bundle(tmp_path, workbook):

@@ -19,6 +19,7 @@ type User = { id: string; username: string; role: string };
 const NAV_ITEMS = [
 	{ to: '/', label: 'Início', icon: '⌂' },
 	{ to: '/produtos', label: 'Produtos', icon: '▦' },
+	{ to: '/receitas', label: 'Receitas', icon: '☷' },
 	{ to: '/estoque', label: 'Estoque', icon: '▤' },
 	{ to: '/financeiro', label: 'Financeiro', icon: 'R$' },
 	{ to: '/ajustes', label: 'Ajustes', icon: '⚙' },

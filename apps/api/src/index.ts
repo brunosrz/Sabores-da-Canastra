@@ -3,6 +3,7 @@ import { importBundle, previewImport } from "./import";
 import type { OperationEnvelope } from "@sabores/pdv-sync";
 import { invalidateCatalogCache, listProducts } from "./catalog-cache";
 import { verifyBackupStream } from "./backup";
+import { calculateRecipeCost, type RecipeCostLine } from "./recipe-cost";
 import {
   currentUser,
   hasTrustedOrigin,
@@ -244,6 +245,46 @@ app.get("/api/finance/entries", async (context) => {
   } catch (error) {
     console.error("Falha ao consultar lançamentos.", error);
     return context.json({ error: "Lançamentos indisponíveis." }, 503);
+  }
+});
+
+app.get("/api/erp/recipes", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Acesso negado." }, 403);
+  try {
+    const { results: recipes } = await context.env.DB.prepare(
+      "SELECT recipe_id, product_name, version, yield_units, source, instructions FROM recipes ORDER BY product_name COLLATE NOCASE, version",
+    ).all<{ recipe_id: string; yield_units: number }>();
+    const { results: lines } = await context.env.DB.prepare(
+      `SELECT rl.recipe_id, rl.line_id, rl.ingredient_id, i.name AS ingredient_name,
+              rl.quantity, rl.unit, rl.stage, i.base_unit, q.base_unit AS quote_unit,
+              q.pack_quantity, q.pack_price_cents
+       FROM recipe_lines rl JOIN ingredients i ON i.ingredient_id = rl.ingredient_id
+       LEFT JOIN ingredient_quotes q ON q.ingredient_id = i.ingredient_id AND q.is_current = 1
+       ORDER BY rl.recipe_id, i.name COLLATE NOCASE, rl.line_id`,
+    ).all<RecipeCostLine & { recipe_id: string }>();
+    const grouped = new Map<string, RecipeCostLine[]>();
+    for (const line of lines)
+      grouped.set(line.recipe_id, [
+        ...(grouped.get(line.recipe_id) ?? []),
+        line,
+      ]);
+    return context.json(
+      {
+        data: recipes.map((recipe) => ({
+          ...recipe,
+          ...calculateRecipeCost(
+            grouped.get(recipe.recipe_id) ?? [],
+            recipe.yield_units,
+          ),
+        })),
+      },
+      200,
+      { "cache-control": "private, no-store" },
+    );
+  } catch (error) {
+    console.error("Falha ao consultar receitas.", error);
+    return context.json({ error: "Receitas indisponíveis." }, 503);
   }
 });
 

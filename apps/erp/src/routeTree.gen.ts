@@ -14,12 +14,14 @@ import { Route as AjustesRouteImport } from './routes/ajustes'
 import { Route as EstoqueRouteImport } from './routes/estoque'
 import { Route as FinanceiroRouteImport } from './routes/financeiro'
 import { Route as ProdutosRouteImport } from './routes/produtos'
+import { Route as ReceitasRouteImport } from './routes/receitas'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthSessionRouteImport } from './routes/api.auth.session'
 import { Route as ApiErpFinanceRouteImport } from './routes/api.erp.finance'
 import { Route as ApiErpIngredientsRouteImport } from './routes/api.erp.ingredients'
+import { Route as ApiErpRecipesRouteImport } from './routes/api.erp.recipes'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -44,6 +46,11 @@ const FinanceiroRoute = FinanceiroRouteImport.update({
 const ProdutosRoute = ProdutosRouteImport.update({
   id: '/produtos',
   path: '/produtos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReceitasRoute = ReceitasRouteImport.update({
+  id: '/receitas',
+  path: '/receitas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -76,6 +83,11 @@ const ApiErpIngredientsRoute = ApiErpIngredientsRouteImport.update({
   path: '/api/erp/ingredients',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiErpRecipesRoute = ApiErpRecipesRouteImport.update({
+  id: '/api/erp/recipes',
+  path: '/api/erp/recipes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -83,12 +95,14 @@ export interface FileRoutesByFullPath {
   '/estoque': typeof EstoqueRoute
   '/financeiro': typeof FinanceiroRoute
   '/produtos': typeof ProdutosRoute
+  '/receitas': typeof ReceitasRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
   '/api/erp/finance': typeof ApiErpFinanceRoute
   '/api/erp/ingredients': typeof ApiErpIngredientsRoute
+  '/api/erp/recipes': typeof ApiErpRecipesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -96,12 +110,14 @@ export interface FileRoutesByTo {
   '/estoque': typeof EstoqueRoute
   '/financeiro': typeof FinanceiroRoute
   '/produtos': typeof ProdutosRoute
+  '/receitas': typeof ReceitasRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
   '/api/erp/finance': typeof ApiErpFinanceRoute
   '/api/erp/ingredients': typeof ApiErpIngredientsRoute
+  '/api/erp/recipes': typeof ApiErpRecipesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -110,12 +126,14 @@ export interface FileRoutesById {
   '/estoque': typeof EstoqueRoute
   '/financeiro': typeof FinanceiroRoute
   '/produtos': typeof ProdutosRoute
+  '/receitas': typeof ReceitasRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
   '/api/erp/finance': typeof ApiErpFinanceRoute
   '/api/erp/ingredients': typeof ApiErpIngredientsRoute
+  '/api/erp/recipes': typeof ApiErpRecipesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -125,12 +143,14 @@ export interface FileRouteTypes {
     | '/estoque'
     | '/financeiro'
     | '/produtos'
+    | '/receitas'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
     | '/api/erp/finance'
     | '/api/erp/ingredients'
+    | '/api/erp/recipes'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -138,12 +158,14 @@ export interface FileRouteTypes {
     | '/estoque'
     | '/financeiro'
     | '/produtos'
+    | '/receitas'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
     | '/api/erp/finance'
     | '/api/erp/ingredients'
+    | '/api/erp/recipes'
   id:
     | '__root__'
     | '/'
@@ -151,12 +173,14 @@ export interface FileRouteTypes {
     | '/estoque'
     | '/financeiro'
     | '/produtos'
+    | '/receitas'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
     | '/api/erp/finance'
     | '/api/erp/ingredients'
+    | '/api/erp/recipes'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -165,12 +189,14 @@ export interface RootRouteChildren {
   EstoqueRoute: typeof EstoqueRoute
   FinanceiroRoute: typeof FinanceiroRoute
   ProdutosRoute: typeof ProdutosRoute
+  ReceitasRoute: typeof ReceitasRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSessionRoute: typeof ApiAuthSessionRoute
   ApiErpFinanceRoute: typeof ApiErpFinanceRoute
   ApiErpIngredientsRoute: typeof ApiErpIngredientsRoute
+  ApiErpRecipesRoute: typeof ApiErpRecipesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -208,6 +234,13 @@ declare module '@tanstack/react-router' {
       path: '/produtos'
       fullPath: '/produtos'
       preLoaderRoute: typeof ProdutosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/receitas': {
+      id: '/receitas'
+      path: '/receitas'
+      fullPath: '/receitas'
+      preLoaderRoute: typeof ReceitasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/health': {
@@ -252,6 +285,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiErpIngredientsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/erp/recipes': {
+      id: '/api/erp/recipes'
+      path: '/api/erp/recipes'
+      fullPath: '/api/erp/recipes'
+      preLoaderRoute: typeof ApiErpRecipesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -261,23 +301,15 @@ const rootRouteChildren: RootRouteChildren = {
   EstoqueRoute: EstoqueRoute,
   FinanceiroRoute: FinanceiroRoute,
   ProdutosRoute: ProdutosRoute,
+  ReceitasRoute: ReceitasRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSessionRoute: ApiAuthSessionRoute,
   ApiErpFinanceRoute: ApiErpFinanceRoute,
   ApiErpIngredientsRoute: ApiErpIngredientsRoute,
+  ApiErpRecipesRoute: ApiErpRecipesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

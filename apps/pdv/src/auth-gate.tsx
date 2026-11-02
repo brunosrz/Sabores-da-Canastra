@@ -1,21 +1,42 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { createContext, useContext, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 type User = { id: string; username: string; role: string };
+const AuthUserContext = createContext<User | null>(null);
+
+export function useAuthUser() {
+	return useContext(AuthUserContext);
+}
 
 export function AuthGate({ children }: { children: ReactNode }) {
 	const queryClient = useQueryClient();
 	const session = useQuery({
 		queryKey: ['auth', 'session'],
 		queryFn: async (): Promise<User | null> => {
-			const response = await fetch('/api/auth/session', {
-				credentials: 'same-origin',
-				cache: 'no-store',
-			});
-			if (response.status === 401) return null;
-			if (!response.ok) throw new Error('session unavailable');
-			const body = (await response.json()) as { user?: User };
-			return body.user ?? null;
+			try {
+				const response = await fetch('/api/auth/session', {
+					credentials: 'same-origin',
+					cache: 'no-store',
+				});
+				if (response.status === 401) {
+					if (typeof localStorage !== 'undefined') localStorage.removeItem('pdv-last-user');
+					return null;
+				}
+				if (!response.ok) throw new Error('session unavailable');
+				const body = (await response.json()) as { user?: User };
+				if (body.user && typeof localStorage !== 'undefined') localStorage.setItem('pdv-last-user', JSON.stringify(body.user));
+				return body.user ?? null;
+			} catch {
+				const cached = typeof localStorage !== 'undefined' ? localStorage.getItem('pdv-last-user') : null;
+				if (cached) {
+					try {
+						return JSON.parse(cached) as User;
+					} catch {
+						localStorage.removeItem('pdv-last-user');
+					}
+				}
+				throw new Error('session unavailable');
+			}
 		},
 		retry: false,
 		staleTime: 0,
@@ -60,13 +81,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 	async function signOut() {
 		setBusy(true);
+		localStorage.removeItem('pdv-last-user');
+		queryClient.setQueryData(['auth', 'session'], null);
 		try {
 			const response = await fetch('/api/auth/logout', {
 				method: 'POST',
 				credentials: 'same-origin',
 			});
-			if (response.ok) queryClient.setQueryData(['auth', 'session'], null);
-			else setError('Não foi possível encerrar a sessão. Tente novamente.');
+			if (!response.ok) setError('Não foi possível encerrar a sessão no servidor. Tente novamente.');
 		} catch {
 			setError('Não foi possível encerrar a sessão. Tente novamente.');
 		} finally {
@@ -160,7 +182,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		);
 
 	return (
-		<>
+		<AuthUserContext.Provider value={user}>
 			<div className="flex justify-end gap-3 px-5 py-3 text-sm">
 				<span>
 					Conectado como <strong>{user.username}</strong>
@@ -175,6 +197,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
 				</button>
 			</div>
 			{children}
-		</>
+		</AuthUserContext.Provider>
 	);
 }

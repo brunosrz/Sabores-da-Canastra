@@ -2,7 +2,7 @@
 
 Worker Hono interno compartilhado por ERP e PDV. O D1 é a fonte de verdade
 para catálogo, vendas e ledger; KV é somente cache descartável; R2 guarda
-artefatos privados; Durable Objects coordenam retries de venda; Workflows
+artefatos privados; Durable Objects serializam operações do PDV por dispositivo; Workflows
 produzem e retêm backups D1.
 
 ## Execução local
@@ -38,13 +38,14 @@ do serviço.
 
 ## Responsabilidade de cada binding
 
-- **D1 (`DB`)**: catálogo financeiro e ledger. Uma venda grava ledger, snapshot,
-  itens, pagamentos e recibo de idempotência em um único `batch`.
+- **D1 (`DB`)**: catálogo financeiro e ledger. Uma operação aceita grava
+  ledger, venda, snapshots, itens, pagamentos e recibo de idempotência em um
+  único `batch`.
 - **KV (`CATALOG_CACHE`)**: somente `catalog:v1:products:active`, TTL de 60 s.
-  Guarda apenas identificadores, nomes, categorias, unidades e preço de venda;
-  não armazena custos unitários nem dados do ledger. Leitura/escrita/invalidação
-  KV são tolerantes a falha; lista cai para D1. Cálculos e leituras financeiras
-  consultam sempre D1.
+  Guarda identificadores, nomes, categorias, unidades e preço de venda; não
+  armazena custos unitários nem dados do ledger. O endpoint autenticado do PDV
+  consulta custos e taxas diretamente no D1, sem cache. Falhas de KV retornam
+  à leitura D1.
 - **R2 (`PRIVATE_FILES`)**: SQL de backup e manifesto JSON. Bucket privado, sem
   domínio público ou `r2.dev`. A lista e o download exigem uma sessão de usuário;
   respostas são `private, no-store`. Escritas são
@@ -52,10 +53,10 @@ do serviço.
   valida contrato, tamanho e SHA-256 em streaming antes de entregar o arquivo;
   o SQL é lido duas vezes no R2 para validar primeiro e então responder sem
   carregá-lo inteiro na memória.
-- **Durable Object (`SALE_COORDINATOR`)**: serializa tentativas para a mesma
-  chave e encaminha a gravação ao D1. A chave única e o hash do corpo no D1 são
-  a garantia final; reenvio idêntico retorna o recibo existente e conteúdo
-  diferente com a mesma chave retorna HTTP 409.
+- **Durable Object (`SALE_COORDINATOR`)**: serializa operações de um dispositivo
+  e encaminha a gravação ao D1. O mesmo `operationId` e hash retorna o recibo;
+  reuso com conteúdo diferente retorna HTTP 409. Vendas idênticas do mesmo
+  dispositivo em janela estritamente menor que 15 segundos são recusadas.
 - **Workflow (`D1_BACKUP`)**: exporta D1 pela API oficial, aguarda com etapas
   retomáveis, verifica SHA-256, salva SQL e manifesto no R2 e remove objetos
   antigos conforme a retenção do ambiente. Produção agenda execução diária às
@@ -119,10 +120,13 @@ conferido sem credenciais com `pnpm build:api` e `wrangler deploy --env preview
   opaca, persistida somente como hash no D1.
 - `GET /api/catalog/products`: exige sessão autenticada; KV é acelerador
   descartável.
-- `POST /api/sales`: exige sessão, origem confiável e `Idempotency-Key`.
-  Entrada inclui data, itens congelados e pagamentos; valores são centavos
-  inteiros e a soma dos itens precisa reconciliar com a soma dos pagamentos. O
-  usuário autenticado é gravado em `ledger_entries.actor_user_id`.
+- `GET /api/pdv/catalog`: exige sessão; entrega snapshot do catálogo e taxas
+  para armazenamento local do PDV.
+- `POST /api/pdv/operations`: exige sessão e origem confiável; aceita criação de
+  venda, cancelamento e correção de pagamentos no contrato versionado. Grava
+  `actor_user_id` no ledger e eventos compensatórios sem reescrever registros.
+- `GET /api/pdv/sales?from=AAAA-MM-DD&to=AAAA-MM-DD`: histórico autenticado,
+  com pagamentos vigentes e estado de cancelamento.
 - `GET /api/backups`: lista manifestos, exige sessão autenticada.
 - `GET /api/backups/file/{chave R2}`: baixa artefato autenticado.
 - `POST /api/backups/run`: inicia backup manual autenticado e idempotente.

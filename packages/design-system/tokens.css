@@ -1,0 +1,71 @@
+@font-face {
+  font-family: "Canastra Display";
+  src: url("/fonts/Oswald-SemiBold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Canastra Accent";
+  src: url("/fonts/Lobster-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: "Josefin Sans", "Mulish", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Canastra Display", Impact, sans-serif;
+  --font-accent: "Canastra Accent", Georgia, serif;
+}
+
+:root {
+  color-scheme: light;
+  --sea-ink: #181818;
+  --sea-ink-soft: #404040;
+  --lagoon: #fca336;
+  --lagoon-deep: #fe8800;
+  --palm: #fe8800;
+  --sand: #fff3e5;
+  --foam: #fff9f1;
+  --surface: rgba(255, 255, 255, 0.94);
+  --surface-strong: #ffffff;
+  --line: rgba(24, 24, 24, 0.18);
+  --inset-glint: rgba(255, 255, 255, 0.9);
+  --kicker: #9f370d;
+  --bg-base: #fff9f1;
+  --header-bg: rgba(255, 249, 241, 0.96);
+  --chip-bg: #ffffff;
+  --chip-line: rgba(24, 24, 24, 0.2);
+  --link-bg-hover: #fff3e5;
+  --hero-a: rgba(254, 136, 0, 0.16);
+  --hero-b: rgba(24, 24, 24, 0.07);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --sea-ink: #ffffff;
+  --sea-ink-soft: #eeeeee;
+  --lagoon: #fca336;
+  --lagoon-deep: #ffc16e;
+  --palm: #fca336;
+  --sand: #1d1d1d;
+  --foam: #181818;
+  --surface: #242424;
+  --surface-strong: #1d1d1d;
+  --line: rgba(238, 238, 238, 0.2);
+  --inset-glint: rgba(255, 255, 255, 0.06);
+  --kicker: #fca336;
+  --bg-base: #181818;
+  --header-bg: rgba(24, 24, 24, 0.97);
+  --chip-bg: #1d1d1d;
+  --chip-line: rgba(238, 238, 238, 0.2);
+  --link-bg-hover: #292929;
+  --hero-a: rgba(254, 136, 0, 0.12);
+  --hero-b: rgba(238, 238, 238, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+}

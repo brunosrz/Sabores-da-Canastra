@@ -26,8 +26,7 @@ export async function listProducts(db: D1Database, cache: KVNamespace) {
   const { results } = await db
     .prepare(
       `SELECT p.product_id, p.barcode, p.auxiliary_code, p.name,
-              c.name AS category, p.unit, p.sale_price_cents,
-              p.active
+              c.name AS category, p.unit, p.sale_price_cents, p.active
        FROM products p JOIN categories c ON c.category_id = p.category_id
        WHERE p.active = 1 ORDER BY p.name COLLATE NOCASE`,
     )

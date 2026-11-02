@@ -1,9 +1,15 @@
+import json
 import sqlite3
 from pathlib import Path
 
 import pytest
 
-from sabores.d1_migration import MigrationValidationError, build_import_bundle
+from sabores.d1_migration import (
+    MigrationValidationError,
+    build_import_bundle,
+    compare_import_bundles,
+    write_import_bundle,
+)
 from sabores.database import Ledger
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +82,17 @@ def test_bundle_merges_workbook_and_sqlite_and_reconciles_financial_history(tmp_
 	assert (legacy_report["gross_cents"], legacy_report["fees_cents"], legacy_report["net_cents"],
 			legacy_report["known_cost_cents"], legacy_report["profit_cents"]) == (1000, 12, 988, 400, 588)
 
+	def logical_snapshot():
+		with sqlite3.connect(database) as source:
+			tables = [row[0] for row in source.execute(
+				"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+			)]
+			return {
+				name: source.execute(f'SELECT * FROM "{name}" ORDER BY 1').fetchall()
+				for name in tables
+			}
+
+	source_snapshot = logical_snapshot()
 	bundle = build_import_bundle(database, workbook)
 	second = build_import_bundle(database, workbook)
 	assert bundle["import_id"] == second["import_id"]
@@ -96,6 +113,41 @@ def test_bundle_merges_workbook_and_sqlite_and_reconciles_financial_history(tmp_
 	assert bundle["tables"]["saleItems"][0]["productId"] == "suco"
 	assert bundle["tables"]["ledgerEntries"][0]["occurredOn"] == "2026-11-01"
 	assert bundle["tables"]["ledgerEntries"][0]["occurredAt"].endswith("Z")
+	assert bundle["provenance"]["timezone"] == "America/Sao_Paulo"
+	assert bundle["provenance"]["source_files"]["sqlite"]["sha256"] == bundle["source"]["sqlite_file_sha256"]
+	assert logical_snapshot() == source_snapshot
+
+
+def test_migration_bundle_is_written_atomically_and_can_be_compared(tmp_path, workbook):
+	database = tmp_path / "ledger.db"
+	Ledger(database)
+	bundle = build_import_bundle(database, workbook)
+	destination = tmp_path / "reports" / "bundle.json"
+	assert write_import_bundle(bundle, destination) == destination
+	assert destination.exists()
+	loaded = json.loads(destination.read_text(encoding="utf-8"))
+	comparison = compare_import_bundles(bundle, loaded)
+	assert comparison["same_import"] is True
+	assert all(line["delta"] == 0 for line in comparison["tables"].values())
+
+
+def test_cli_writes_reviewable_dry_run_report(tmp_path, workbook, capsys):
+	from sabores.cli import main
+
+	database = tmp_path / "ledger.db"
+	Ledger(database)
+	report = tmp_path / "review" / "dry-run.json"
+	assert main([
+		"prever-migracao-d1",
+		"--excel", str(workbook),
+		"--sqlite", str(database),
+		"--relatorio", str(report),
+	]) == 0
+	assert report.exists()
+	output = json.loads(capsys.readouterr().out)
+	assert output["mode"] == "dry-run"
+	assert output["report_file"] == str(report.resolve())
+	assert json.loads(report.read_text(encoding="utf-8"))["valid"] is True
 
 
 def test_rejects_unbalanced_legacy_sale_without_producing_partial_bundle(tmp_path, workbook):

@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 type User = { id: string; username: string; role: string };
@@ -24,6 +24,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [showPassword, setShowPassword] = useState(false);
+	const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+		if (typeof window === 'undefined') return 'light';
+		const stored = window.localStorage.getItem('theme');
+		return stored === 'light' || stored === 'dark' ? stored : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+	});
+
+	useEffect(() => {
+		document.documentElement.dataset.theme = theme;
+	}, [theme]);
 
 	async function submit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -159,22 +168,46 @@ export function AuthGate({ children }: { children: ReactNode }) {
 			</main>
 		);
 
+	function toggleTheme() {
+		const next = theme === 'dark' ? 'light' : 'dark';
+		setTheme(next);
+		document.documentElement.dataset.theme = next;
+		window.localStorage.setItem('theme', next);
+	}
+
 	return (
 		<>
-			<div className="flex justify-end gap-3 px-5 py-3 text-sm">
-				<span>
-					Conectado como <strong>{user.username}</strong>
-				</span>
-				{error ? (
-					<span role="alert" className="text-red-700 dark:text-red-300">
-						{error}
+			<div className="erp-topbar">
+				<strong>ERP · Sabores da Canastra</strong>
+				<div>
+					<span>
+						Conectado como <strong>{user.username}</strong>
 					</span>
-				) : null}
-				<button type="button" disabled={busy} onClick={() => void signOut()} className="font-semibold text-[#cf4712] underline">
-					Sair
-				</button>
+					{error ? (
+						<span role="alert" className="text-red-700 dark:text-red-300">
+							{error}
+						</span>
+					) : null}
+					<button
+						type="button"
+						onClick={toggleTheme}
+						className="demo-button demo-button-secondary"
+						aria-label={`Ativar tema ${theme === 'dark' ? 'claro' : 'escuro'}`}
+					>
+						{theme === 'dark' ? '☀' : '☾'}
+					</button>
+					<button type="button" disabled={busy} onClick={() => void signOut()} className="font-semibold text-[#cf4712] underline">
+						Sair
+					</button>
+				</div>
 			</div>
 			{children}
+			<nav className="erp-bottom-nav" aria-label="Navegação principal">
+				<a href="#inicio">Início</a>
+				<a href="#cadastros">Cadastros</a>
+				<a href="#operacao">Operação</a>
+				<a href="#financeiro">Financeiro</a>
+			</nav>
 		</>
 	);
 }

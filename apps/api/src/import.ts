@@ -5,6 +5,22 @@ export interface D1ImportBundle {
   source: Record<string, unknown>;
   row_counts: Record<string, number>;
   reconciliation: Record<string, unknown>;
+  provenance?: {
+    timezone: string;
+    captured_at: string;
+    source_files: Record<
+      string,
+      {
+        sha256: string;
+        size_bytes: number;
+        components: { name: string; sha256: string; size_bytes: number }[];
+      }
+    >;
+    totals: Record<
+      string,
+      { source_cents: number; mapped_cents: number; matches: boolean }
+    >;
+  };
   tables: Record<string, Record<string, unknown>[]>;
 }
 
@@ -411,6 +427,90 @@ function validateBundle(value: unknown): asserts value is D1ImportBundle {
   }
   if (!bundle.row_counts || !bundle.reconciliation || !bundle.source)
     throw new Error("Resumo, origem ou conciliação ausentes.");
+  const provenance = (value as { provenance?: unknown }).provenance;
+  if (provenance !== undefined) {
+    if (
+      !provenance ||
+      typeof provenance !== "object" ||
+      Array.isArray(provenance)
+    )
+      throw new Error("Proveniência inválida.");
+    const details = provenance as {
+      timezone?: unknown;
+      captured_at?: unknown;
+      source_files?: Record<string, unknown>;
+      totals?: Record<string, unknown>;
+    };
+    if (
+      details.timezone !== "America/Sao_Paulo" ||
+      typeof details.captured_at !== "string" ||
+      !Number.isFinite(Date.parse(details.captured_at)) ||
+      !details.source_files ||
+      typeof details.source_files !== "object" ||
+      !details.totals ||
+      typeof details.totals !== "object"
+    )
+      throw new Error("Proveniência incompleta ou incompatível.");
+    for (const [name, sourceField] of [
+      ["sqlite", "sqlite_file_sha256"],
+      ["workbook", "workbook_sha256"],
+    ] as const) {
+      const file = details.source_files[name] as
+        | { sha256?: unknown; size_bytes?: unknown; components?: unknown }
+        | undefined;
+      if (
+        !file ||
+        typeof file.sha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(file.sha256) ||
+        !Number.isSafeInteger(file.size_bytes) ||
+        Number(file.size_bytes) < 0 ||
+        !Array.isArray(file.components) ||
+        file.components.some(
+          (component) =>
+            !component ||
+            typeof component !== "object" ||
+            typeof (component as { name?: unknown }).name !== "string" ||
+            !/^[a-f0-9]{64}$/.test(
+              String((component as { sha256?: unknown }).sha256 ?? ""),
+            ),
+        )
+      )
+        throw new Error(`Proveniência inválida para o arquivo ${name}.`);
+      if (bundle.source[sourceField] !== file.sha256)
+        throw new Error(`Hash de proveniência não confere para ${name}.`);
+    }
+    const financial =
+      (
+        bundle.reconciliation as {
+          financial?: Record<
+            string,
+            {
+              source_cents?: unknown;
+              mapped_cents?: unknown;
+              matches?: unknown;
+            }
+          >;
+        }
+      ).financial ?? {};
+    for (const kind of ["Venda", "Compra", "Gasto"]) {
+      const reported = details.totals[kind] as
+        | {
+            source_cents?: unknown;
+            mapped_cents?: unknown;
+            matches?: unknown;
+          }
+        | undefined;
+      const reconciled = financial[kind];
+      if (
+        !reported ||
+        !reconciled ||
+        reported.source_cents !== reconciled.source_cents ||
+        reported.mapped_cents !== reconciled.mapped_cents ||
+        reported.matches !== reconciled.matches
+      )
+        throw new Error(`Totais de proveniência não conciliam para ${kind}.`);
+    }
+  }
   for (const field of [
     "sqlite_data_sha256",
     "workbook_sha256",
@@ -667,5 +767,51 @@ export async function importBundle(db: D1Database, value: unknown) {
     importId: bundle.import_id,
     alreadyImported: false,
     rowCounts: bundle.row_counts,
+  };
+}
+
+export async function previewImport(db: D1Database, value: unknown) {
+  validateBundle(value);
+  const bundle = value;
+  const integrity = await calculateBundleIntegrity(bundle);
+  if (
+    integrity.sqlite_data_sha256 !== bundle.source.sqlite_data_sha256 ||
+    integrity.source_digest !== bundle.source.source_digest ||
+    integrity.import_id !== bundle.import_id
+  )
+    throw new Error(
+      "Hash do pacote não confere com os dados; gere novamente o preview.",
+    );
+  const prior = await db
+    .prepare("SELECT import_id FROM data_imports WHERE import_id = ?")
+    .bind(bundle.import_id)
+    .first();
+  if (prior)
+    return {
+      state: "already_imported" as const,
+      importId: bundle.import_id,
+      rowCounts: bundle.row_counts,
+    };
+  const target = await db
+    .prepare(
+      `SELECT
+        (SELECT COUNT(*) FROM categories) + (SELECT COUNT(*) FROM products) +
+        (SELECT COUNT(*) FROM ingredients) + (SELECT COUNT(*) FROM ingredient_quotes) +
+        (SELECT COUNT(*) FROM recipes) + (SELECT COUNT(*) FROM recipe_lines) +
+        (SELECT COUNT(*) FROM parameters) + (SELECT COUNT(*) FROM daily_mix) +
+        (SELECT COUNT(*) FROM ledger_entries) + (SELECT COUNT(*) FROM sales) +
+        (SELECT COUNT(*) FROM sale_items) + (SELECT COUNT(*) FROM sale_payments) +
+        (SELECT COUNT(*) FROM purchases) + (SELECT COUNT(*) FROM purchase_items) +
+        (SELECT COUNT(*) FROM expenses) + (SELECT COUNT(*) FROM data_imports) +
+        (SELECT COUNT(*) FROM legacy_import_lock) AS existing_rows`,
+    )
+    .first<{ existing_rows: number }>();
+  const existingRows = Number(target?.existing_rows ?? 0);
+  return {
+    state: existingRows === 0 ? ("empty" as const) : ("occupied" as const),
+    importId: bundle.import_id,
+    existingRows,
+    rowCounts: bundle.row_counts,
+    reconciliation: bundle.reconciliation,
   };
 }

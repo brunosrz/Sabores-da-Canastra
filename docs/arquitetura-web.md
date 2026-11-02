@@ -2,20 +2,21 @@
 
 ## Estado deste documento
 
-Esta página descreve o bootstrap e as decisões das etapas seguintes. ERP e PDV
-têm telas iniciais e autenticação; os módulos de negócio serão entregues em
-etapas posteriores. Os recursos remotos de preview permanecem separados dos de
-produção.
+ERP e PDV têm autenticação compartilhada, tema claro/escuro e navegação
+mobile-first. O PDV implementa vendas offline com sincronização, histórico,
+cancelamentos e correção auditável de pagamentos. O ERP mantém o espaço
+administrativo para os módulos de cadastro, receitas, estoque e finanças.
+Preview e produção usam recursos separados.
 
 ## Aplicações
 
 - `apps/erp`: ERP em `erp.brunosrz.com`, para produtos, ingredientes, receitas,
   estoque, custos, compras, despesas e relatórios.
 - `apps/pdv`: ponto de venda em `pdv.brunosrz.com`, para registrar pedidos e
-  pagamentos.
+  pagamentos online ou offline.
 - `apps/api`: Worker Hono interno, dono do schema D1 e da lógica de negócio
-  compartilhada. Expõe saúde, autenticação, catálogo com cache, registro
-  idempotente de venda com autoria no ledger e acesso autenticado a backups.
+  compartilhada. Expõe saúde, autenticação, catálogo com cache, operações
+  idempotentes do PDV com autoria no ledger e acesso autenticado a backups.
 
 ERP e PDV são interfaces independentes, implantáveis e versionadas
 separadamente. ERP e PDV executam localmente como Workers independentes e ainda
@@ -28,10 +29,11 @@ não os backends dos novos apps.
 ## Backend e banco compartilhados
 
 O backend de negócio é um único serviço interno em `apps/api`. Esse Worker é o
-único com binding direto ao D1 e será responsável por autenticação, regras de
-negócio, validação, catálogo/receitas, estoque, vendas, compras, despesas e
-ledger. O schema, bindings e rotas iniciais de catálogo, venda, backup e
-autenticação estão implementados.
+único com binding direto ao D1 e centraliza autenticação, regras de negócio,
+validação, catálogo, vendas, compras, despesas e ledger. O schema, bindings e
+rotas de catálogo, sincronização offline, ledger, backup e autenticação estão
+implementados; rotas administrativas ainda serão adicionadas junto aos módulos
+do ERP.
 
 ERP e PDV continuarão sendo dois apps. Suas rotas e server functions do TanStack
 Start atuarão como camada de interface/BFF: recebem a sessão da requisição,

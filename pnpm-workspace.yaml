@@ -2,6 +2,7 @@ packages:
   - apps/erp
   - apps/pdv
   - apps/api
+  - packages/*
 
 allowBuilds:
   esbuild: true

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { importBundle } from "./import";
+import { importBundle, previewImport } from "./import";
+import type { OperationEnvelope } from "@sabores/pdv-sync";
 import { invalidateCatalogCache, listProducts } from "./catalog-cache";
 import { verifyBackupStream } from "./backup";
 import {
@@ -32,7 +33,6 @@ const app = new Hono<{
   Bindings: Bindings;
   Variables: { authUser: AuthUser };
 }>();
-const MAX_SALE_BODY_BYTES = 1_000_000;
 const MAX_LOGIN_BODY_BYTES = 16_384;
 const PUBLIC_AUTH_ROUTES = new Set([
   "POST /api/auth/login",
@@ -163,55 +163,197 @@ app.get("/api/catalog/products", async (context) => {
   }
 });
 
-app.post("/api/sales", async (context) => {
+app.get("/api/pdv/catalog", async (context) => {
+  try {
+    const { results: products } = await context.env.DB.prepare(
+      `SELECT p.product_id, p.barcode, p.auxiliary_code, p.name,
+              c.name AS category, p.unit, p.sale_price_cents, p.unit_cost_cents,
+              p.active
+         FROM products p JOIN categories c ON c.category_id = p.category_id
+        WHERE p.active = 1 ORDER BY p.name COLLATE NOCASE`,
+    ).all();
+    const { results: parameterRows } = await context.env.DB.prepare(
+      "SELECT name, value FROM parameters WHERE name IN ('pos_debit_rate', 'pos_credit_rate')",
+    ).all<{ name: string; value: string }>();
+    const parameters = new Map(
+      parameterRows.map((row) => [row.name, row.value]),
+    );
+    const paymentFees = {
+      Dinheiro: "0",
+      Débito: parameters.get("pos_debit_rate") ?? "0.0139",
+      Crédito: parameters.get("pos_credit_rate") ?? "0.0334",
+      Pix: "0",
+    };
+    const serialized = JSON.stringify({ products, paymentFees });
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(serialized),
+    );
+    const catalogVersion = [...new Uint8Array(digest)]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    const headers = new Headers({
+      "cache-control": "private, no-cache",
+      etag: `"${catalogVersion}"`,
+    });
+    if (context.req.header("if-none-match") === headers.get("etag"))
+      return new Response(null, { status: 304, headers });
+    return context.json(
+      {
+        catalogVersion,
+        fetchedAt: new Date().toISOString(),
+        paymentFees,
+        data: products,
+      },
+      200,
+      Object.fromEntries(headers.entries()),
+    );
+  } catch (error) {
+    console.error("Falha ao consultar catálogo offline do PDV.", error);
+    return context.json({ error: "Catálogo indisponível." }, 503);
+  }
+});
+
+app.post("/api/pdv/operations", async (context) => {
   const user = context.get("authUser");
   if (!hasTrustedOrigin(context.req.raw, context.env as AuthBindings))
     return context.json({ error: "Solicitação inválida." }, 403);
-  const idempotencyKey = context.req.header("idempotency-key") ?? "";
-  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
-    return context.json(
-      { error: "Informe uma chave de idempotência válida." },
-      400,
-    );
-  }
   const contentLength = Number(context.req.header("content-length") ?? "0");
-  if (contentLength > MAX_SALE_BODY_BYTES) {
-    try {
-      await context.req.raw.body?.cancel();
-    } catch {
-      // A runtime may already have consumed or locked the request stream.
-    }
-    return context.json({ error: "Corpo da venda excede 1 MB." }, 413);
-  }
-  let requestBytes: Uint8Array | null;
+  if (contentLength > 5_000_000)
+    return context.json({ error: "Lote excede 5 MB." }, 413);
+  let bytes: Uint8Array | null;
   try {
-    requestBytes = await readBodyWithinLimit(
-      context.req.raw.body,
-      MAX_SALE_BODY_BYTES,
-    );
+    bytes = await readBodyWithinLimit(context.req.raw.body, 5_000_000);
   } catch {
-    return context.json(
-      { error: "Não foi possível ler o corpo da venda." },
-      400,
-    );
+    return context.json({ error: "Não foi possível ler o lote." }, 400);
   }
-  if (!requestBytes) {
-    return context.json({ error: "Corpo da venda excede 1 MB." }, 413);
+  if (!bytes) return context.json({ error: "Lote excede 5 MB." }, 413);
+  let operation: OperationEnvelope;
+  try {
+    operation = JSON.parse(
+      new TextDecoder().decode(bytes),
+    ) as OperationEnvelope;
+  } catch {
+    return context.json({ error: "Corpo JSON inválido." }, 400);
   }
-  const requestBody = new TextDecoder().decode(requestBytes);
-  const coordinator = context.env.SALE_COORDINATOR.getByName(idempotencyKey);
+  if (
+    !operation ||
+    typeof operation.deviceId !== "string" ||
+    !/^[0-9a-f-]{36}$/i.test(operation.deviceId)
+  )
+    return context.json({ error: "Dispositivo inválido." }, 422);
+  const coordinator = context.env.SALE_COORDINATOR.getByName(
+    `pdv-device:${operation.deviceId}`,
+  );
   const response = await coordinator.fetch(
-    new Request("https://sale-coordinator.local/", {
+    new Request("https://sale-coordinator.local/operations", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "idempotency-key": idempotencyKey,
         "x-actor-user-id": user.id,
       },
-      body: requestBody,
+      body: JSON.stringify(operation),
     }),
   );
-  return new Response(response.body, response);
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "private, no-store");
+  return new Response(response.body, { status: response.status, headers });
+});
+
+app.get("/api/pdv/sales", async (context) => {
+  const from = context.req.query("from") ?? "";
+  const to = context.req.query("to") ?? "";
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(from) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(to) ||
+    from > to ||
+    Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`) >
+      366 * 86400000
+  )
+    return context.json(
+      { error: "Informe um período válido de até 366 dias." },
+      400,
+    );
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT s.sale_id, s.gross_cents, s.fee_cents, s.net_cents, s.customer, s.notes,
+              s.created_at, s.client_created_at, s.device_id, l.occurred_on,
+              l.actor_user_id, c.reason AS cancellation_reason,
+              (SELECT MAX(payment_version) FROM sale_payment_adjustments a WHERE a.sale_id = s.sale_id) AS payment_version
+       FROM sales s JOIN ledger_entries l ON l.ledger_id = s.ledger_id
+       LEFT JOIN sale_cancellations c ON c.sale_id = s.sale_id
+       WHERE l.occurred_on BETWEEN ? AND ? ORDER BY l.occurred_at DESC LIMIT 500`,
+    )
+      .bind(from, to)
+      .all();
+    const sales = await Promise.all(
+      results.map(async (row) => {
+        const sale = row as {
+          sale_id: string;
+          [key: string]: unknown;
+          payment_version: number | null;
+        };
+        const version = sale.payment_version ?? 1;
+        const payments =
+          version === 1
+            ? await context.env.DB.prepare(
+                "SELECT method, method_label, amount_cents, fee_rate, fee_cents, part_number FROM sale_payments WHERE sale_id = ? ORDER BY position",
+              )
+                .bind(sale.sale_id)
+                .all()
+            : await context.env.DB.prepare(
+                "SELECT method, method_label, amount_cents, fee_rate, fee_cents, part_number FROM sale_payment_adjustment_lines WHERE adjustment_id = (SELECT adjustment_id FROM sale_payment_adjustments WHERE sale_id = ? AND payment_version = ?) ORDER BY position",
+              )
+                .bind(sale.sale_id, version)
+                .all();
+        const items = await context.env.DB.prepare(
+          "SELECT product_name_snapshot, category_snapshot, quantity, unit_price_cents, unit_cost_cents, line_total_cents FROM sale_items WHERE sale_id = ? ORDER BY position",
+        )
+          .bind(sale.sale_id)
+          .all();
+        const currentFees = payments.results.reduce(
+          (sum, payment) =>
+            sum + Number((payment as { fee_cents: number }).fee_cents),
+          0,
+        );
+        return {
+          ...sale,
+          fee_cents: currentFees,
+          net_cents: Number(sale.gross_cents) - currentFees,
+          payments: payments.results,
+          items: items.results,
+        };
+      }),
+    );
+    const { results: rateRows } = await context.env.DB.prepare(
+      "SELECT name, value FROM parameters WHERE name IN ('pos_debit_rate', 'pos_credit_rate')",
+    ).all<{ name: string; value: string }>();
+    const rates = new Map(rateRows.map((row) => [row.name, row.value]));
+    const paymentFees = {
+      Dinheiro: "0",
+      Débito: rates.get("pos_debit_rate") ?? "0.0139",
+      Crédito: rates.get("pos_credit_rate") ?? "0.0334",
+      Pix: "0",
+    };
+    return context.json({ sales, paymentFees }, 200, {
+      "cache-control": "private, no-store",
+    });
+  } catch (error) {
+    console.error("Falha ao consultar histórico de vendas.", error);
+    return context.json({ error: "Histórico indisponível." }, 503);
+  }
+});
+
+app.post("/api/sales", async (context) => {
+  if (!hasTrustedOrigin(context.req.raw, context.env as AuthBindings))
+    return context.json({ error: "Solicitação inválida." }, 403);
+  return context.json(
+    {
+      error:
+        "Este endpoint foi substituído pelo protocolo de operações offline do PDV.",
+    },
+    410,
+  );
 });
 
 app.get("/api/backups", async (context) => {
@@ -353,6 +495,9 @@ app.post("/__local/import", async (context) => {
     return context.json({ error: "Corpo não é JSON válido." }, 400);
   }
   try {
+    if (context.req.query("mode") === "preview") {
+      return context.json(await previewImport(context.env.DB, payload));
+    }
     const result = await importBundle(context.env.DB, payload);
     await invalidateCatalogCache(context.env.CATALOG_CACHE);
     return context.json(result);

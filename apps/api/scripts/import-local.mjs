@@ -5,9 +5,11 @@ import { fileURLToPath } from "node:url";
 const apiRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repositoryRoot = resolve(apiRoot, "../..");
 const args = process.argv.slice(2).filter((value) => value !== "--");
-const bundlePath = resolve(repositoryRoot, args[0] ?? "");
-if (!args[0]) {
-  console.error("Uso: pnpm db:import:local -- <pacote-json>");
+const apply = args.includes("--aplicar");
+const bundleArgument = args.find((value) => value !== "--aplicar");
+const bundlePath = resolve(repositoryRoot, bundleArgument ?? "");
+if (!bundleArgument) {
+  console.error("Uso: pnpm db:import:local -- <pacote-json> [--aplicar]");
   process.exit(2);
 }
 
@@ -23,17 +25,36 @@ if (!token || token.length < 32) {
 }
 
 const bundle = await readFile(bundlePath, "utf8");
-const response = await fetch("http://127.0.0.1:3000/__local/import", {
+const endpoint = "http://127.0.0.1:3000/__local/import";
+const headers = {
+  authorization: `Bearer ${token}`,
+  "content-type": "application/json",
+};
+const previewResponse = await fetch(`${endpoint}?mode=preview`, {
   method: "POST",
-  headers: {
-    authorization: `Bearer ${token}`,
-    "content-type": "application/json",
-  },
+  headers,
   body: bundle,
 });
-const body = await response.json().catch(() => ({}));
-if (!response.ok) {
-  console.error(JSON.stringify(body, null, 2));
+const preview = await previewResponse.json().catch(() => ({}));
+console.log(JSON.stringify({ etapa: "preview", ...preview }, null, 2));
+if (!previewResponse.ok || preview.valid === false) {
   process.exit(1);
 }
-console.log(JSON.stringify(body, null, 2));
+if (!apply) {
+  console.log(
+    "Preview concluído sem gravação. Revise o relatório e use --aplicar para confirmar.",
+  );
+  process.exit(0);
+}
+
+const response = await fetch(endpoint, {
+  method: "POST",
+  headers,
+  body: bundle,
+});
+const result = await response.json().catch(() => ({}));
+if (!response.ok) {
+  console.error(JSON.stringify(result, null, 2));
+  process.exit(1);
+}
+console.log(JSON.stringify({ etapa: "importação", ...result }, null, 2));

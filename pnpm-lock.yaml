@@ -178,6 +178,9 @@ importers:
       '@noble/hashes':
         specifier: ^2.4.0
         version: 2.4.0
+      '@sabores/pdv-sync':
+        specifier: workspace:*
+        version: link:../../packages/pdv-sync
       hono:
         specifier: ^4.10.6
         version: 4.13.14
@@ -318,6 +321,9 @@ importers:
 
   apps/pdv:
     dependencies:
+      '@sabores/pdv-sync':
+        specifier: workspace:*
+        version: link:../../packages/pdv-sync
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.3.3(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0))
@@ -412,6 +418,21 @@ importers:
       wrangler:
         specifier: 4.156.0
         version: 4.156.0(@cloudflare/workers-types@5.20261101.1)(@types/node@22.20.5)
+
+  packages/pdv-sync:
+    devDependencies:
+      eslint:
+        specifier: ^10.14.0
+        version: 10.14.0(jiti@2.7.0)(supports-color@10.2.2)
+      prettier:
+        specifier: 3.9.10
+        version: 3.9.10
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.5
+        version: 5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0))
 
 packages:
 

@@ -5,6 +5,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import appCss from '../styles.css?url';
 import { AuthGate } from '../auth-gate';
+import { PdvRuntime } from '../components/pdv-runtime';
 
 export const Route = createRootRoute({
 	head: () => ({
@@ -92,7 +93,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<HeadContent />
 			</head>
 			<body className="min-h-screen font-sans antialiased">
-				<AuthGate>{children}</AuthGate>
+				<AuthGate>
+					<PdvRuntime>{children}</PdvRuntime>
+				</AuthGate>
 				{import.meta.env.DEV ? (
 					<TanStackDevtools
 						config={{ position: 'bottom-right' }}

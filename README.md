@@ -4,8 +4,10 @@ Repositório dos sistemas operacionais do Bar Sabores da Canastra. A evolução
 principal é uma plataforma web mobile first, composta por dois aplicativos
 independentes: **ERP** (`erp.brunosrz.com`) e **PDV** (`pdv.brunosrz.com`). Os
 aplicativos Python e a planilha Excel permanecem no repositório como legado
-funcional, utilitários e referência para a migração. A API de preview já está
-publicada sem rota pública; falta concluir Access e publicar ERP/PDV.
+funcional, utilitários e referência para a migração. A API e os dois apps têm
+estrutura de preview protegida por Cloudflare Access. O PDV já oferece fluxo de
+vendas mobile-first com fila local e sincronização; o ERP segue evoluindo seus
+módulos administrativos.
 
 ## Aplicativos web
 
@@ -19,9 +21,10 @@ publicada sem rota pública; falta concluir Access e publicar ERP/PDV.
 
 ERP e PDV usam TanStack Start, Router, Query e Form. A API compartilhada usa
 Hono; seus bindings D1, KV, R2, Durable Objects e Workflows têm simuladores
-locais. A API já oferece cache de catálogo com fallback D1, registro de venda
-idempotente e backup privado. A conexão dos frontends e a autenticação de
-usuários são etapas posteriores. Cada app possui checks independentes.
+locais. D1 é a fonte de verdade do catálogo, vendas e ledger; o PDV mantém
+rascunhos, catálogo e fila de sincronização no IndexedDB para continuar lançando
+vendas sem internet. Cancelamentos e correções são eventos auditáveis. A
+migração do legado Python/Excel é revisável e não modifica a origem.
 
 ### Desenvolvimento web
 
@@ -34,8 +37,8 @@ pnpm dev:erp
 
 Em outros terminais, `pnpm dev:pdv` inicia o PDV e `pnpm dev:api` inicia a API.
 O ERP fica em `http://127.0.0.1:3001`, o PDV em `http://127.0.0.1:3002` e a API
-em `http://127.0.0.1:3000`. `/api/health` nos frontends e `/health` na API só
-verificam disponibilidade; as telas ainda não usam o backend.
+em `http://127.0.0.1:3000`. `/api/health` nos frontends e `/health` na API
+verificam disponibilidade. Migrações e importações usam apenas o D1 local.
 
 Comandos de validação separados:
 
@@ -95,12 +98,11 @@ separados e não deve ser executado até provisionar e revisar produção.
 
 ERP e PDV usam **um único backend de negócio compartilhado** e um D1 por
 ambiente. O Worker Hono em `apps/api` contém schema e bindings. KV mantém
-apenas cache descartável; R2 guarda backups privados; Durable Objects coordenam
-retries; Workflows exportam D1 diariamente em produção. A autenticação de
-usuários ainda será implementada; os Service Bindings entre os frontends e a
-API estão declarados por ambiente. O SQLite do Python permanece
+apenas cache descartável; R2 guarda backups privados; Durable Objects
+serializam operações de venda por dispositivo; Workflows exportam D1. A
+autenticação é compartilhada, sem cadastro aberto. O SQLite do Python permanece
 independente, sem sincronização automática com D1; a migração é uma cópia
-inicial validada.
+inicial validada e reconciliada.
 
 ## Legado Python e planilha
 

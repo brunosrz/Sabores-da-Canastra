@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   calculateBundleIntegrity,
   importBundle,
+  previewImport,
   type D1ImportBundle,
 } from "../src/import";
 
@@ -97,6 +98,54 @@ describe("importação do pacote D1", () => {
     const result = await importBundle(fake.db, bundle);
 
     expect(result.alreadyImported).toBe(true);
+    expect(fake.batch).not.toHaveBeenCalled();
+  });
+
+  it("faz preview sem escrita e classifica banco vazio e importação repetida", async () => {
+    const bundle = await baseBundle();
+    const empty = fakeDatabase(null, undefined, 0);
+    const preview = await previewImport(empty.db, bundle);
+    expect(preview.state).toBe("empty");
+    expect(empty.batch).not.toHaveBeenCalled();
+
+    const imported = fakeDatabase({ import_id: bundle.import_id });
+    expect((await previewImport(imported.db, bundle)).state).toBe(
+      "already_imported",
+    );
+    expect(imported.batch).not.toHaveBeenCalled();
+  });
+
+  it("marca destino ocupado sem tentar mesclar os dados", async () => {
+    const fake = fakeDatabase(null, undefined, 1);
+    expect((await previewImport(fake.db, await baseBundle())).state).toBe(
+      "occupied",
+    );
+    expect(fake.batch).not.toHaveBeenCalled();
+  });
+
+  it("rejeita hashes de proveniência inconsistentes", async () => {
+    const fake = fakeDatabase();
+    const bundle = await baseBundle();
+    bundle.provenance = {
+      timezone: "America/Sao_Paulo",
+      captured_at: new Date().toISOString(),
+      source_files: {
+        sqlite: {
+          sha256: "c".repeat(64),
+          size_bytes: 1,
+          components: [],
+        },
+        workbook: {
+          sha256: "b".repeat(64),
+          size_bytes: 1,
+          components: [],
+        },
+      },
+      totals: {},
+    };
+    await expect(previewImport(fake.db, bundle)).rejects.toThrow(
+      "Hash de proveniência não confere",
+    );
     expect(fake.batch).not.toHaveBeenCalled();
   });
 

@@ -177,7 +177,7 @@ describe("rotas locais da API", () => {
     });
   });
 
-  it("limita o corpo da venda lendo o stream e cancela acima de 1 MB", async () => {
+  it("desativa o endpoint legado de venda antes de aceitar payload", async () => {
     const getByName = vi.fn();
     const response = await app.request(
       "https://api.example.test/api/sales",
@@ -196,7 +196,7 @@ describe("rotas locais da API", () => {
         AUTH_ALLOWED_ORIGINS: "http://localhost:5174",
       },
     );
-    expect(response.status).toBe(413);
+    expect(response.status).toBe(410);
     expect(getByName).not.toHaveBeenCalled();
   });
 

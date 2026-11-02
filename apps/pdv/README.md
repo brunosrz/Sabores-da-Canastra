@@ -1,9 +1,9 @@
 # Sabores da Canastra PDV
 
-Aplicação web independente para registrar vendas no caixa, planejada para
-`pdv.brunosrz.com`. O bootstrap configura a base técnica; busca de produtos,
-montagem de pedidos e pagamentos serão entregues em etapas posteriores. O
-domínio ainda não está publicado e o app não está ligado a dados de produção.
+Aplicação web independente para registrar vendas no caixa em
+`pdv.brunosrz.com`. O fluxo permite localizar produtos, montar vendas,
+distribuir pagamentos mistos e dividir a conta. O app é mobile-first e pode ser
+instalado como PWA.
 
 ## Desenvolvimento local
 
@@ -17,6 +17,21 @@ pnpm dev:pdv
 O servidor local usa `http://127.0.0.1:3002`. `GET /api/health` verifica se
 este app está ativo. O app exige login compartilhado com o ERP e encaminha as
 rotas de autenticação ao backend pelo Service Binding.
+
+## Operação offline
+
+Depois de carregar o catálogo online, o PDV conserva catálogo, rascunho e fila
+no IndexedDB. Uma venda confirmada entra na fila local antes de o rascunho ser
+limpo. A sincronização envia operações em ordem quando a conexão retorna e
+mostra pendências, duplicatas e conflitos em **Histórico**. O service worker
+guarda apenas o shell e ativos públicos; respostas de API não são cacheadas.
+
+Cada operação inclui usuário, dispositivo, instantes, versão do catálogo e hash
+canônico. A API valida catálogo, pagamentos e taxas, e grava venda, itens,
+pagamentos e ledger atomicamente. Reenvios usam o mesmo identificador; vendas
+iguais no mesmo dispositivo em intervalo menor que 15 segundos são rejeitadas.
+Cancelamentos e correções de pagamentos acrescentam registros de auditoria sem
+alterar a venda original. Consulte o [protocolo de sincronização](../../docs/protocolo-sincronizacao-pdv.md).
 
 ## Stack
 

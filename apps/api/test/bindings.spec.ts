@@ -11,6 +11,11 @@ import {
   putImmutableBackupObject,
 } from "../src/backup";
 import { validateSale } from "../src/sales";
+import {
+  operationPayloadHash,
+  type OperationEnvelope,
+  type SaleCreatePayload,
+} from "@sabores/pdv-sync";
 
 const bindings = env as unknown as Cloudflare.Env;
 const payload = {
@@ -61,6 +66,81 @@ async function ensureTestActor() {
   )
     .bind(testActorId, "ledger-test-user", new Date().toISOString())
     .run();
+}
+
+async function makeOfflineOperation(): Promise<OperationEnvelope> {
+  await ensureTestActor();
+  const categoryId = crypto.randomUUID();
+  const productId = crypto.randomUUID();
+  const name = `Produto PDV ${productId}`;
+  await bindings.DB.prepare(
+    "INSERT INTO categories (category_id, name, created_at) VALUES (?, ?, ?)",
+  )
+    .bind(categoryId, `Categoria ${categoryId}`, new Date().toISOString())
+    .run();
+  await bindings.DB.prepare(
+    `INSERT INTO products
+       (product_id, name, category_id, unit, sale_price_cents, unit_cost_cents,
+        active, created_at, updated_at)
+     VALUES (?, ?, ?, 'un', 2500, 500, 1, ?, ?)`,
+  )
+    .bind(
+      productId,
+      name,
+      categoryId,
+      new Date().toISOString(),
+      new Date().toISOString(),
+    )
+    .run();
+  const operation: OperationEnvelope = {
+    operationId: crypto.randomUUID(),
+    deviceId: crypto.randomUUID(),
+    actor: { userId: testActorId, label: "ledger-test-user" },
+    operationType: "sale.create",
+    occurredAt: new Date().toISOString(),
+    clientCreatedAt: new Date().toISOString(),
+    catalogVersion: "test-catalog-v1",
+    hashVersion: "pdv-op/v1",
+    payloadHash: "0".repeat(64),
+    payload: {
+      saleId: "pending",
+      occurredOn: new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date()),
+      customer: null,
+      notes: null,
+      items: [
+        {
+          productId,
+          name,
+          category: `Categoria ${categoryId}`,
+          quantity: "1",
+          unitPriceCents: 2500,
+          unitCostCents: 500,
+          lineTotalCents: 2500,
+          position: 0,
+        },
+      ],
+      splits: [{ partNumber: 1, dueCents: 2500 }],
+      payments: [
+        {
+          method: "Dinheiro",
+          methodLabel: null,
+          amountCents: 2500,
+          feeRate: "0",
+          feeCents: 0,
+          partNumber: 1,
+          position: 0,
+        },
+      ],
+    },
+  };
+  operation.payload.saleId = `pdv-sale:${operation.operationId}`;
+  operation.payloadHash = await operationPayloadHash(operation);
+  return operation;
 }
 
 async function authenticatedCookie() {
@@ -218,39 +298,21 @@ describe("bindings Cloudflare locais", () => {
   });
 
   it("grava uma venda uma vez e reproduz a resposta em retries", async () => {
-    await ensureTestActor();
-    const key = `test:${crypto.randomUUID()}`;
+    const operation = await makeOfflineOperation();
     const stub = bindings.SALE_COORDINATOR.get(
-      bindings.SALE_COORDINATOR.idFromName(key),
+      bindings.SALE_COORDINATOR.idFromName(`pdv-device:${operation.deviceId}`),
     );
     const makeRequest = (body: unknown) =>
-      new Request("https://coordinator.local/", {
+      new Request("https://coordinator.local/operations", {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "idempotency-key": key,
           "x-actor-user-id": testActorId,
         },
         body: JSON.stringify(body),
       });
-    const first = await stub.fetch(makeRequest(payload));
-    const reorderedPayload = {
-      payments: payload.payments.map((payment) => ({
-        fee_cents: payment.fee_cents,
-        amount_cents: payment.amount_cents,
-        fee_rate: payment.fee_rate,
-        method: payment.method,
-      })),
-      items: payload.items.map((item) => ({
-        unit_cost_cents: item.unit_cost_cents,
-        unit_price_cents: item.unit_price_cents,
-        quantity: item.quantity,
-        category: item.category,
-        name: item.name,
-      })),
-      occurred_on: payload.occurred_on,
-    };
-    const replay = await stub.fetch(makeRequest(reorderedPayload));
+    const first = await stub.fetch(makeRequest(operation));
+    const replay = await stub.fetch(makeRequest(operation));
     expect(first.status).toBe(201);
     expect(replay.status).toBe(200);
     expect((await replay.json<{ replayed: boolean }>()).replayed).toBe(true);
@@ -260,37 +322,79 @@ describe("bindings Cloudflare locais", () => {
        INNER JOIN ledger_entries USING (ledger_id)
        WHERE ledger_entries.idempotency_key = ?`,
     )
-      .bind(`pdv:${key}`)
+      .bind(`pdv:sale.create:${operation.operationId}`)
       .first<{ total: number }>();
     expect(count?.total).toBe(1);
     const actor = await bindings.DB.prepare(
       "SELECT actor_user_id FROM ledger_entries WHERE idempotency_key = ?",
     )
-      .bind(`pdv:${key}`)
+      .bind(`pdv:sale.create:${operation.operationId}`)
       .first<{ actor_user_id: string }>();
     expect(actor?.actor_user_id).toBe(testActorId);
   });
 
   it("recusa reuso de chave com payload diferente", async () => {
-    await ensureTestActor();
-    const key = `test:${crypto.randomUUID()}`;
+    const operation = await makeOfflineOperation();
     const stub = bindings.SALE_COORDINATOR.get(
-      bindings.SALE_COORDINATOR.idFromName(key),
+      bindings.SALE_COORDINATOR.idFromName(`pdv-device:${operation.deviceId}`),
     );
     const makeRequest = (body: unknown) =>
-      new Request("https://coordinator.local/", {
+      new Request("https://coordinator.local/operations", {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "idempotency-key": key,
           "x-actor-user-id": testActorId,
         },
         body: JSON.stringify(body),
       });
-    expect((await stub.fetch(makeRequest(payload))).status).toBe(201);
-    const changed = structuredClone(payload);
-    changed.items[0].name = "Payload divergente";
+    expect((await stub.fetch(makeRequest(operation))).status).toBe(201);
+    const changed = structuredClone(operation);
+    if (changed.operationType !== "sale.create")
+      throw new Error("type mismatch");
+    (changed.payload as SaleCreatePayload).notes = "Payload divergente";
+    changed.payloadHash = await operationPayloadHash(changed);
     expect((await stub.fetch(makeRequest(changed))).status).toBe(409);
+  });
+
+  it("bloqueia hash idêntico antes de 15 segundos e aceita no limite exato", async () => {
+    const first = await makeOfflineOperation();
+    first.occurredAt = "2026-11-01T15:00:00.000Z";
+    if (first.operationType !== "sale.create") throw new Error("type mismatch");
+    (first.payload as SaleCreatePayload).occurredOn = "2026-11-01";
+    first.payloadHash = await operationPayloadHash(first);
+    const stub = bindings.SALE_COORDINATOR.get(
+      bindings.SALE_COORDINATOR.idFromName(`pdv-device:${first.deviceId}`),
+    );
+    const send = (operation: OperationEnvelope) =>
+      stub.fetch(
+        new Request("https://coordinator.local/operations", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-actor-user-id": testActorId,
+          },
+          body: JSON.stringify(operation),
+        }),
+      );
+
+    expect((await send(first)).status).toBe(201);
+    const duplicate = structuredClone(first);
+    duplicate.operationId = crypto.randomUUID();
+    duplicate.occurredAt = "2026-11-01T15:00:14.999Z";
+    if (duplicate.operationType !== "sale.create")
+      throw new Error("type mismatch");
+    duplicate.payload.saleId = `pdv-sale:${duplicate.operationId}`;
+    duplicate.payloadHash = await operationPayloadHash(duplicate);
+    expect((await send(duplicate)).status).toBe(409);
+
+    const boundary = structuredClone(first);
+    boundary.operationId = crypto.randomUUID();
+    boundary.occurredAt = "2026-11-01T15:00:15.000Z";
+    if (boundary.operationType !== "sale.create")
+      throw new Error("type mismatch");
+    boundary.payload.saleId = `pdv-sale:${boundary.operationId}`;
+    boundary.payloadHash = await operationPayloadHash(boundary);
+    expect((await send(boundary)).status).toBe(201);
   });
 
   it("grava e lê objetos do R2 pelo binding privado", async () => {

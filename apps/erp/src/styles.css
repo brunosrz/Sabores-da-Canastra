@@ -1,80 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Berkshire+Swash&family=Josefin+Sans:wght@400;500;600;700&family=Mulish:wght@400;500;600;700;800&display=swap');
+@import '../../../packages/design-system/tokens.css';
 @import 'tailwindcss';
 @plugin "@tailwindcss/typography";
-
-@theme {
-	--font-sans: 'Josefin Sans', 'Mulish', ui-sans-serif, system-ui, sans-serif;
-	--font-display: 'Alfa Slab One', Georgia, serif;
-	--font-accent: 'Berkshire Swash', Georgia, serif;
-}
-
-:root {
-	--sea-ink: #181818;
-	--sea-ink-soft: #404040;
-	--lagoon: #fca336;
-	--lagoon-deep: #fe8800;
-	--palm: #fe8800;
-	--sand: #fff3e5;
-	--foam: #fff9f1;
-	--surface: rgba(255, 255, 255, 0.82);
-	--surface-strong: #ffffff;
-	--line: rgba(24, 24, 24, 0.14);
-	--inset-glint: rgba(255, 255, 255, 0.9);
-	--kicker: #cf4712;
-	--bg-base: #fff9f1;
-	--header-bg: rgba(255, 249, 241, 0.92);
-	--chip-bg: #ffffff;
-	--chip-line: rgba(24, 24, 24, 0.16);
-	--link-bg-hover: #fff3e5;
-	--hero-a: rgba(254, 136, 0, 0.16);
-	--hero-b: rgba(24, 24, 24, 0.07);
-}
-
-:root[data-theme='dark'] {
-	--sea-ink: #ffffff;
-	--sea-ink-soft: #eeeeee;
-	--lagoon: #fca336;
-	--lagoon-deep: #fe8800;
-	--palm: #fe8800;
-	--sand: #1d1d1d;
-	--foam: #181818;
-	--surface: rgba(29, 29, 29, 0.92);
-	--surface-strong: #1d1d1d;
-	--line: rgba(238, 238, 238, 0.16);
-	--inset-glint: rgba(255, 255, 255, 0.06);
-	--kicker: #fca336;
-	--bg-base: #181818;
-	--header-bg: rgba(24, 24, 24, 0.94);
-	--chip-bg: #1d1d1d;
-	--chip-line: rgba(238, 238, 238, 0.16);
-	--link-bg-hover: #292929;
-	--hero-a: rgba(254, 136, 0, 0.12);
-	--hero-b: rgba(238, 238, 238, 0.04);
-}
-
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) {
-		--sea-ink: #ffffff;
-		--sea-ink-soft: #eeeeee;
-		--lagoon: #fca336;
-		--lagoon-deep: #fe8800;
-		--palm: #fe8800;
-		--sand: #1d1d1d;
-		--foam: #181818;
-		--surface: rgba(29, 29, 29, 0.92);
-		--surface-strong: #1d1d1d;
-		--line: rgba(238, 238, 238, 0.16);
-		--inset-glint: rgba(255, 255, 255, 0.06);
-		--kicker: #fca336;
-		--bg-base: #181818;
-		--header-bg: rgba(24, 24, 24, 0.94);
-		--chip-bg: #1d1d1d;
-		--chip-line: rgba(238, 238, 238, 0.16);
-		--link-bg-hover: #292929;
-		--hero-a: rgba(254, 136, 0, 0.12);
-		--hero-b: rgba(238, 238, 238, 0.04);
-	}
-}
 
 * {
 	box-sizing: border-box;
@@ -455,6 +381,170 @@ a {
 
 .rise-in {
 	animation: rise-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.erp-topbar {
+	position: sticky;
+	top: 0;
+	z-index: 20;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	min-height: 3.75rem;
+	padding: 0.6rem max(1rem, env(safe-area-inset-left)) 0.6rem max(1rem, env(safe-area-inset-right));
+	border-bottom: 1px solid var(--line);
+	background: var(--header-bg);
+	backdrop-filter: blur(16px);
+}
+
+.erp-topbar > div {
+	display: flex;
+	align-items: center;
+	gap: 0.85rem;
+}
+
+.erp-home {
+	width: min(70rem, calc(100% - 2rem));
+	margin: 0 auto;
+	padding: clamp(1.5rem, 5vw, 4rem) 0 calc(7rem + env(safe-area-inset-bottom));
+}
+
+.erp-welcome {
+	position: relative;
+	overflow: hidden;
+	border: 1px solid var(--line);
+	border-radius: 1.5rem;
+	background: linear-gradient(135deg, var(--surface-strong), var(--surface));
+	padding: clamp(1.25rem, 5vw, 3rem);
+	box-shadow: 0 1rem 3rem rgba(30, 48, 42, 0.1);
+}
+
+.erp-welcome img {
+	width: min(28rem, 100%);
+	height: auto;
+	margin: 0 auto 1.5rem;
+}
+
+.erp-welcome .island-kicker {
+	margin: 0;
+}
+.erp-welcome h1 {
+	margin: 0.3rem 0;
+	font: 700 clamp(2.5rem, 9vw, 5rem) / 1 var(--font-display);
+}
+.erp-welcome > p:last-child {
+	max-width: 38rem;
+	margin: 0.5rem 0 0;
+	color: var(--sea-ink-soft);
+	font-size: 1.1rem;
+}
+
+.erp-area-grid {
+	display: grid;
+	gap: 1rem;
+	margin-top: 1rem;
+}
+
+.erp-area-card {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	gap: 1rem;
+	min-height: 6rem;
+	border: 1px solid var(--line);
+	border-radius: 1.1rem;
+	background: var(--surface-strong);
+	padding: 1rem;
+}
+
+.erp-area-icon {
+	display: grid;
+	place-items: center;
+	width: 3rem;
+	height: 3rem;
+	border-radius: 1rem;
+	background: var(--chip-bg);
+	color: var(--kicker);
+	font-weight: 800;
+}
+.erp-area-card h2 {
+	margin: 0;
+	font-size: 1.1rem;
+}
+.erp-area-card p {
+	margin: 0.25rem 0 0;
+	color: var(--sea-ink-soft);
+}
+.erp-mobile-hint {
+	color: var(--sea-ink-soft);
+	text-align: center;
+}
+
+.erp-bottom-nav {
+	position: fixed;
+	z-index: 30;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 0.25rem;
+	padding: 0.55rem 0.6rem calc(0.55rem + env(safe-area-inset-bottom));
+	border-top: 1px solid var(--line);
+	background: var(--header-bg);
+	backdrop-filter: blur(18px);
+}
+
+.erp-bottom-nav a {
+	min-height: 2.9rem;
+	display: grid;
+	place-items: center;
+	border-radius: 0.8rem;
+	color: var(--sea-ink-soft);
+	text-decoration: none;
+	font-size: 0.8rem;
+	font-weight: 700;
+}
+.erp-bottom-nav a:hover,
+.erp-bottom-nav a:focus-visible {
+	color: var(--sea-ink);
+	background: var(--link-bg-hover);
+}
+
+@media (min-width: 720px) {
+	.erp-area-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+	.erp-area-card {
+		grid-template-columns: auto 1fr;
+		align-content: start;
+	}
+	.erp-area-card .demo-pill {
+		grid-column: 2;
+		justify-self: start;
+	}
+	.erp-mobile-hint {
+		display: none;
+	}
+}
+
+@media (max-width: 520px) {
+	.erp-topbar {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+	.erp-topbar > div {
+		width: 100%;
+		justify-content: space-between;
+	}
+	.erp-area-card {
+		grid-template-columns: auto 1fr;
+	}
+	.erp-area-card .demo-pill {
+		grid-column: 2;
+		justify-self: start;
+	}
 }
 
 @keyframes rise-in {

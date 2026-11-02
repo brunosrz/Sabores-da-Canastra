@@ -72,9 +72,10 @@ const QUANTITY_SCALE = 1_000n;
 
 function decimalScaled(value: string, scale: bigint): bigint | null {
   if (typeof value !== "string") return null;
-  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(value)) return null;
+  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return null;
   const [whole, fraction = ""] = value.split(".");
   const fractionDigits = scale.toString().length - 1;
+  if (fraction.length > fractionDigits) return null;
   return BigInt(whole!) * scale + BigInt(fraction.padEnd(fractionDigits, "0"));
 }
 

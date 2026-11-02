@@ -78,6 +78,10 @@ describe("contrato de sincronização do PDV", () => {
   it("calcula quantidades e taxas em centavos com arredondamento half-up", () => {
     expect(lineTotalCents("1.005", 101)).toBe(102);
     expect(feeCents(101, "0.005")).toBe(1);
+    expect(feeCents(2500, "0.0334")).toBe(84);
+    expect(feeCents(10000, "0.0139")).toBe(139);
+    expect(feeCents(100, "0.0000001")).toBeNull();
+    expect(lineTotalCents("1.0001", 100)).toBeNull();
     expect(lineTotalCents("1.0001", 101)).toBeNull();
     expect(lineTotalCents("0", 101)).toBeNull();
     expect(lineTotalCents("1", -1)).toBeNull();

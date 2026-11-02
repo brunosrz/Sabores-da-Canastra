@@ -339,11 +339,6 @@ describe("bindings Cloudflare locais", () => {
     const salePayload = sale.payload as SaleCreatePayload;
     const date = salePayload.occurredOn;
     const saleId = salePayload.saleId;
-    await bindings.DB.prepare(
-      "INSERT INTO parameters (name, value, status, updated_at) VALUES ('pos_credit_rate', '0.03', 'test', ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value",
-    )
-      .bind(new Date().toISOString())
-      .run();
     const stub = bindings.SALE_COORDINATOR.get(
       bindings.SALE_COORDINATOR.idFromName(`pdv-device:${sale.deviceId}`),
     );
@@ -373,8 +368,8 @@ describe("bindings Cloudflare locais", () => {
             method: "Crédito",
             methodLabel: null,
             amountCents: 2500,
-            feeRate: "0.03",
-            feeCents: 75,
+            feeRate: "0.0334",
+            feeCents: 84,
             partNumber: 1,
             position: 0,
           },
@@ -402,8 +397,8 @@ describe("bindings Cloudflare locais", () => {
     }>();
     const result = data.sales.find((row) => row.sale_id === saleId);
     expect(result).toMatchObject({
-      fee_cents: 75,
-      net_cents: 2425,
+      fee_cents: 84,
+      net_cents: 2416,
       payments: [{ method: "Crédito" }],
     });
   });

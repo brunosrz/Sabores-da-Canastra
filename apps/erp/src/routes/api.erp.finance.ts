@@ -6,7 +6,11 @@ export const Route = createFileRoute('/api/erp/finance')({
 		handlers: {
 			GET: async ({ request }) => {
 				const source = new URL(request.url);
-				const target = new URL('https://sabores-api.internal/api/erp/finance');
+				const target = new URL(
+					source.searchParams.get('entries') === '1'
+						? 'https://sabores-api.internal/api/finance/entries'
+						: 'https://sabores-api.internal/api/erp/finance',
+				);
 				target.search = source.search;
 				const headers = new Headers();
 				const cookie = request.headers.get('cookie');

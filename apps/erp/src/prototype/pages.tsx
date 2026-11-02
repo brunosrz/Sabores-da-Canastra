@@ -260,18 +260,30 @@ export function FinancePrototype() {
 	const [from, setFrom] = useState(today);
 	const [to, setTo] = useState(today);
 	const [totals, setTotals] = useState<Record<string, number>>({});
+	const [entries, setEntries] = useState<
+		Array<{ ledger_id: string; occurred_on: string; entry_type: string; description: string; category: string; amount_cents: number }>
+	>([]);
+	const [entryType, setEntryType] = useState('');
+	const [truncated, setTruncated] = useState(false);
 	const [loaded, setLoaded] = useState(false);
 	const [status, setStatus] = useState('Selecione o período e consulte.');
 	async function loadFinance() {
 		setLoaded(false);
 		setStatus('Consultando…');
 		try {
-			const response = await fetch(`/api/erp/finance?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
-				credentials: 'same-origin',
-				cache: 'no-store',
-			});
-			if (!response.ok) throw new Error('Não foi possível consultar o financeiro.');
+			const query = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+			const [response, entryResponse] = await Promise.all([
+				fetch(`/api/erp/finance?${query}`, { credentials: 'same-origin', cache: 'no-store' }),
+				fetch(`/api/erp/finance?${query}&entries=1&type=${encodeURIComponent(entryType)}`, {
+					credentials: 'same-origin',
+					cache: 'no-store',
+				}),
+			]);
+			if (!response.ok || !entryResponse.ok) throw new Error('Não foi possível consultar o financeiro.');
 			const body = (await response.json()) as { data: Array<{ entry_type: string; total: number }> };
+			const entryBody = (await entryResponse.json()) as { data: typeof entries; truncated: boolean };
+			setEntries(entryBody.data);
+			setTruncated(entryBody.truncated);
 			setTotals(Object.fromEntries(body.data.map((row) => [row.entry_type, row.total])));
 			setLoaded(true);
 			setStatus(`Período consultado: ${from} a ${to}.`);
@@ -288,23 +300,50 @@ export function FinancePrototype() {
 			<label>
 				Até <input className="demo-input" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
 			</label>{' '}
+			<label>
+				Tipo{' '}
+				<select className="demo-input" value={entryType} onChange={(event) => setEntryType(event.target.value)}>
+					<option value="">Todos</option>
+					<option value="sale">Venda</option>
+					<option value="purchase">Compra</option>
+					<option value="expense">Gasto</option>
+					<option value="adjustment">Ajuste</option>
+				</select>
+			</label>{' '}
 			<button type="button" className="demo-button" onClick={() => void loadFinance()}>
 				Consultar
 			</button>
 			<p role="status">{status}</p>
 			{loaded ? (
-				<div className="erp-area-grid">
-					{[
-						['Vendas brutas', totals.sale ?? 0],
-						['Compras', totals.purchase ?? 0],
-						['Gastos', totals.expense ?? 0],
-					].map(([label, cents]) => (
-						<Card key={String(label)}>
-							<p className="demo-muted">{label}</p>
-							<Price cents={Number(cents)} />
-						</Card>
-					))}
-				</div>
+				<>
+					<div className="erp-area-grid">
+						{[
+							['Vendas brutas', totals.sale ?? 0],
+							['Compras', totals.purchase ?? 0],
+							['Gastos', totals.expense ?? 0],
+						].map(([label, cents]) => (
+							<Card key={String(label)}>
+								<p className="demo-muted">{label}</p>
+								<Price cents={Number(cents)} />
+							</Card>
+						))}
+					</div>
+					<section>
+						<h2>Lançamentos</h2>
+						{truncated ? <p role="status">Exibindo os 500 lançamentos mais recentes; reduza o período para consultar os demais.</p> : null}
+						{entries.length === 0 ? (
+							<p>Nenhum lançamento encontrado.</p>
+						) : (
+							<ul>
+								{entries.map((entry) => (
+									<li key={entry.ledger_id}>
+										{entry.occurred_on} · {entry.entry_type} · {entry.description} · {entry.category} · <Price cents={entry.amount_cents} />
+									</li>
+								))}
+							</ul>
+						)}
+					</section>
+				</>
 			) : null}
 			<p className="demo-muted">
 				Vendas canceladas são excluídas. Compras e gastos refletem os lançamentos registrados; estes valores não representam lucro.

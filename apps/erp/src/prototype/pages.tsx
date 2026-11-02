@@ -210,22 +210,64 @@ export function InventoryPrototype() {
 }
 
 export function FinancePrototype() {
+	const today = new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'America/Sao_Paulo',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+	}).format(new Date());
+	const [from, setFrom] = useState(today);
+	const [to, setTo] = useState(today);
+	const [totals, setTotals] = useState<Record<string, number>>({});
+	const [loaded, setLoaded] = useState(false);
+	const [status, setStatus] = useState('Selecione o período e consulte.');
+	async function loadFinance() {
+		setLoaded(false);
+		setStatus('Consultando…');
+		try {
+			const response = await fetch(`/api/erp/finance?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+				credentials: 'same-origin',
+				cache: 'no-store',
+			});
+			if (!response.ok) throw new Error('Não foi possível consultar o financeiro.');
+			const body = (await response.json()) as { data: Array<{ entry_type: string; total: number }> };
+			setTotals(Object.fromEntries(body.data.map((row) => [row.entry_type, row.total])));
+			setLoaded(true);
+			setStatus(`Período consultado: ${from} a ${to}.`);
+		} catch (error) {
+			setTotals({});
+			setStatus(error instanceof Error ? error.message : 'Financeiro indisponível.');
+		}
+	}
 	return (
-		<PrototypeFrame title="Financeiro" description="Resumo demonstrativo de vendas, compras, taxas e despesas do período.">
-			<div className="erp-area-grid">
-				{[
-					['Vendas brutas', 128450],
-					['Taxas estimadas', 4820],
-					['Custos e despesas', 75200],
-					['Resultado estimado', 48430],
-				].map(([label, cents]) => (
-					<Card key={String(label)}>
-						<p className="demo-muted">{label}</p>
-						<Price cents={Number(cents)} />
-					</Card>
-				))}
-			</div>
-			<EmptyState title="Visão de demonstração" description="Os valores acima são sintéticos e não representam o caixa real." />
+		<PrototypeFrame title="Financeiro" description="Movimentações registradas no período.">
+			<label>
+				De <input className="demo-input" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+			</label>{' '}
+			<label>
+				Até <input className="demo-input" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+			</label>{' '}
+			<button type="button" className="demo-button" onClick={() => void loadFinance()}>
+				Consultar
+			</button>
+			<p role="status">{status}</p>
+			{loaded ? (
+				<div className="erp-area-grid">
+					{[
+						['Vendas brutas', totals.sale ?? 0],
+						['Compras', totals.purchase ?? 0],
+						['Gastos', totals.expense ?? 0],
+					].map(([label, cents]) => (
+						<Card key={String(label)}>
+							<p className="demo-muted">{label}</p>
+							<Price cents={Number(cents)} />
+						</Card>
+					))}
+				</div>
+			) : null}
+			<p className="demo-muted">
+				Vendas canceladas são excluídas. Compras e gastos refletem os lançamentos registrados; estes valores não representam lucro.
+			</p>
 		</PrototypeFrame>
 	);
 }

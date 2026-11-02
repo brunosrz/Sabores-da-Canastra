@@ -163,6 +163,40 @@ app.get("/api/catalog/products", async (context) => {
   }
 });
 
+app.get("/api/erp/finance", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  const from = context.req.query("from") ?? "";
+  const to = context.req.query("to") ?? "";
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(from) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(to) ||
+    from > to ||
+    !Number.isFinite(Date.parse(`${from}T00:00:00Z`)) ||
+    !Number.isFinite(Date.parse(`${to}T00:00:00Z`))
+  )
+    return context.json({ error: "Informe um período válido." }, 400);
+  try {
+    const result = await context.env.DB.prepare(
+      `SELECT l.entry_type, COALESCE(SUM(l.amount_cents), 0) AS total
+       FROM ledger_entries l
+       LEFT JOIN sales s ON s.ledger_id = l.ledger_id
+       LEFT JOIN sale_cancellations c ON c.sale_id = s.sale_id
+       WHERE l.occurred_on BETWEEN ? AND ? AND l.entry_type IN ('sale', 'purchase', 'expense')
+         AND (l.entry_type <> 'sale' OR c.sale_id IS NULL)
+       GROUP BY l.entry_type`,
+    )
+      .bind(from, to)
+      .all<{ entry_type: string; total: number }>();
+    return context.json({ data: result.results }, 200, {
+      "cache-control": "private, no-store",
+    });
+  } catch (error) {
+    console.error("Falha ao consultar financeiro.", error);
+    return context.json({ error: "Financeiro indisponível." }, 503);
+  }
+});
+
 app.get("/api/erp/catalog/products", async (context) => {
   if (context.get("authUser").role !== "owner")
     return context.json({ error: "Permissão insuficiente." }, 403);

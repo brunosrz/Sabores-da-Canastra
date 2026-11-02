@@ -5,13 +5,17 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import appCss from '../styles.css?url';
 import { AuthGate } from '../auth-gate';
-import { themeInitScript } from '@sabores/ui';
+import { PwaRuntime, themeInitScript } from '@sabores/ui';
+import { ErpOfflineRuntime } from '../components/erp-offline-runtime';
 
 export const Route = createRootRoute({
 	head: () => ({
 		meta: [
 			{ charSet: 'utf-8' },
-			{ name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content' },
+			{
+				name: 'viewport',
+				content: 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content',
+			},
 			{ title: 'ERP Sabores da Canastra | Gestão do bar' },
 			{
 				name: 'description',
@@ -98,7 +102,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<HeadContent />
 			</head>
 			<body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[#fca336]/30">
-				<AuthGate>{children}</AuthGate>
+				<PwaRuntime enabled={import.meta.env.PROD}>
+					<AuthGate>
+						<ErpOfflineRuntime>{children}</ErpOfflineRuntime>
+					</AuthGate>
+				</PwaRuntime>
 				{import.meta.env.DEV ? (
 					<TanStackDevtools
 						config={{

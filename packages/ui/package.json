@@ -32,5 +32,8 @@
     "typescript-eslint": "^8.72.1",
     "vitest": "5.0.5",
     "vitest-axe": "^0.1.0"
+  },
+  "dependencies": {
+    "motion": "13.2.0"
   }
 }

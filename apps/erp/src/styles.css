@@ -454,6 +454,73 @@ a {
 	text-align: center;
 }
 
+.erp-offline-status {
+	position: sticky;
+	z-index: 20;
+	top: var(--app-header-height, 4.5rem);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
+	background: var(--surface-overlay);
+	padding: 0.55rem 1rem;
+	color: var(--text);
+	font-size: 0.85rem;
+}
+.erp-offline-status button {
+	border: 0;
+	border-radius: 0.6rem;
+	background: var(--accent-soft);
+	color: var(--text);
+	padding: 0.45rem 0.7rem;
+	font-weight: 700;
+}
+.erp-catalog-tools {
+	display: grid;
+	grid-template-columns: auto minmax(14rem, 1fr);
+	align-items: center;
+	gap: 0.7rem 1rem;
+	margin-block: 1rem;
+}
+.erp-catalog-tools [role='status'] {
+	grid-column: 2;
+	color: var(--sea-ink-soft);
+	font-size: 0.85rem;
+}
+.erp-product-cards {
+	display: none;
+}
+.erp-modal-backdrop {
+	position: fixed;
+	z-index: 100;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	background: rgb(12 18 15 / 62%);
+	padding: 1rem;
+}
+.erp-price-modal {
+	width: min(32rem, 100%);
+	border: 1px solid var(--line);
+	border-radius: 1.25rem;
+	background: var(--surface-strong);
+	color: var(--sea-ink);
+	padding: 1.4rem;
+	box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 24%);
+}
+.erp-price-modal > label {
+	display: block;
+	margin-block: 1rem 0.4rem;
+	font-weight: 700;
+}
+.erp-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.6rem;
+	margin-top: 1rem;
+}
+
 @media (min-width: 720px) {
 	.erp-area-grid {
 		grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -472,6 +539,38 @@ a {
 }
 
 @media (max-width: 520px) {
+	.erp-catalog-tools {
+		grid-template-columns: 1fr;
+	}
+	.erp-catalog-tools [role='status'] {
+		grid-column: auto;
+	}
+	.erp-product-cards {
+		display: grid;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+	.erp-product-card {
+		display: grid;
+		gap: 0.8rem;
+	}
+	.erp-product-card h2 {
+		margin: 0.5rem 0 0.2rem;
+	}
+	.erp-product-card p {
+		margin: 0;
+		color: var(--sea-ink-soft);
+	}
+	.erp-product-card > div:nth-child(2),
+	.erp-product-card > div:nth-child(3) {
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.erp-modal-actions {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+	}
 	.erp-area-card {
 		grid-template-columns: auto 1fr;
 	}

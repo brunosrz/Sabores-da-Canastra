@@ -14,6 +14,8 @@ export type CachedProduct = {
 	name: string;
 	category: string;
 	unit: string;
+	barcode?: string | null;
+	auxiliary_code?: string | null;
 	sale_price_cents: number;
 	unit_cost_cents?: number | null;
 	[key: string]: unknown;

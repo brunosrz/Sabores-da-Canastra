@@ -1,12 +1,6 @@
 import { Badge, Card, CategoryBadge, EmptyState, PageHeader, Price, ResponsiveTable } from '@sabores/ui';
-
-type ExampleRow = { name: string; category: string; detail: string; cents: number };
-
-const sampleProducts: ExampleRow[] = [
-	{ name: 'Coxinha de frango', category: 'Salgados', detail: 'Unidade · custo cadastrado', cents: 800 },
-	{ name: 'Refrigerante 350 ml', category: 'Bebidas', detail: 'Lata · estoque em acompanhamento', cents: 600 },
-	{ name: 'Pizza calabresa', category: 'Pizzas', detail: 'Média · ficha técnica pendente', cents: 5000 },
-];
+import { useEffect, useState } from 'react';
+import { enqueuePriceChange, listPriceOperations, loadProducts, refreshProducts, syncPriceQueue, type ErpProduct } from '../offline/store';
 
 function PrototypeFrame({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
 	return (
@@ -18,20 +12,179 @@ function PrototypeFrame({ title, description, children }: { title: string; descr
 }
 
 export function ProductsPrototype() {
+	const [products, setProducts] = useState<ErpProduct[]>([]);
+	const [search, setSearch] = useState('');
+	const [editing, setEditing] = useState<ErpProduct | null>(null);
+	const [price, setPrice] = useState('');
+	const [status, setStatus] = useState('Carregando catálogo…');
+	const [busy, setBusy] = useState(false);
+	useEffect(() => {
+		void loadProducts()
+			.then((cached) => {
+				setProducts(cached);
+				setStatus(cached.length ? `${cached.length} produtos salvos neste dispositivo` : 'Nenhum catálogo local ainda');
+				return refreshProducts();
+			})
+			.then((fresh) => {
+				setProducts(fresh);
+				setStatus(`${fresh.length} produtos sincronizados com o D1`);
+			})
+			.catch(() => setStatus('Offline: exibindo o catálogo deste dispositivo.'));
+	}, []);
+	const filtered = products.filter((product) =>
+		`${product.name} ${product.barcode ?? ''} ${product.auxiliary_code ?? ''} ${product.category}`
+			.toLocaleLowerCase('pt-BR')
+			.includes(search.trim().toLocaleLowerCase('pt-BR')),
+	);
+	async function savePrice() {
+		if (!editing || busy) return;
+		const normalized = price.replace(',', '.');
+		if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
+			setStatus('Informe um preço válido com até duas casas decimais.');
+			return;
+		}
+		const cents = Math.round(Number(normalized) * 100);
+		setBusy(true);
+		try {
+			const operation = await enqueuePriceChange(editing.product_id, cents);
+			setProducts(await loadProducts());
+			setEditing(null);
+			setStatus(
+				navigator.onLine
+					? 'Preço salvo localmente; sincronizando com o servidor…'
+					: 'Preço enfileirado neste dispositivo para sincronizar quando voltar a internet.',
+			);
+			await syncPriceQueue();
+			const saved = (await listPriceOperations()).find((item) => item.operationId === operation.operationId);
+			setStatus(
+				saved?.state === 'synced'
+					? 'Preço atualizado no D1 e registrado no histórico.'
+					: saved?.state === 'conflict'
+						? 'Conflito: o servidor tem outro preço. Recarregue o catálogo e revise antes de tentar novamente.'
+						: saved?.state === 'blocked_auth'
+							? 'Preço aguardando uma sessão válida para sincronizar.'
+							: 'Preço salvo neste dispositivo e aguardando sincronização.',
+			);
+		} catch (error) {
+			setStatus(error instanceof Error ? error.message : 'Não foi possível salvar o preço.');
+		} finally {
+			setBusy(false);
+		}
+	}
 	return (
 		<PrototypeFrame title="Produtos" description="Catálogo do bar com preços, categorias, custos e fichas técnicas.">
+			<div className="erp-catalog-tools">
+				<label htmlFor="erp-product-search">Buscar produto</label>
+				<input
+					id="erp-product-search"
+					className="demo-input"
+					value={search}
+					onChange={(event) => setSearch(event.target.value)}
+					placeholder="Nome, código de barras ou código auxiliar"
+				/>
+				<span role="status">{status}</span>
+			</div>
 			<ResponsiveTable
-				caption="Exemplos do catálogo de produtos"
+				caption="Catálogo de produtos"
 				columns={[
 					{ key: 'name', label: 'Produto' },
-					{ key: 'category', label: 'Categoria', render: (row) => <CategoryBadge category={row.category} /> },
+					{
+						key: 'category',
+						label: 'Categoria',
+						render: (row) => <CategoryBadge category={row.category} />,
+					},
 					{ key: 'detail', label: 'Detalhes' },
-					{ key: 'cents', label: 'Venda', render: (row) => <Price cents={row.cents} /> },
+					{
+						key: 'cents',
+						label: 'Venda',
+						render: (row) => <Price cents={row.cents} />,
+					},
 				]}
-				rows={sampleProducts}
-				rowKey={(row) => row.name}
+				rows={filtered.map((product) => ({
+					...product,
+					cents: product.sale_price_cents ?? 0,
+					detail: `${product.unit} · custo ${product.unit_cost_cents == null ? 'pendente' : 'cadastrado'}`,
+				}))}
+				rowKey={(row) => row.product_id}
 			/>
-			<p className="demo-muted">Dados demonstrativos; edição de catálogo será conectada ao fluxo de produtos do ERP.</p>
+			<div className="erp-product-cards">
+				{filtered.map((product) => (
+					<Card key={product.product_id} className="erp-product-card">
+						<div>
+							<CategoryBadge category={product.category} />
+							<h2>{product.name}</h2>
+							<p>
+								{product.barcode || product.auxiliary_code || 'Sem código'} · {product.unit}
+							</p>
+						</div>
+						<div>
+							<span>Venda</span>
+							<Price cents={product.sale_price_cents ?? 0} />
+						</div>
+						<div>
+							<span>Custo</span>
+							<strong>{product.unit_cost_cents == null ? 'Pendente' : <Price cents={product.unit_cost_cents} />}</strong>
+						</div>
+						<button
+							className="demo-button demo-button-secondary"
+							type="button"
+							onClick={() => {
+								setEditing(product);
+								setPrice(((product.sale_price_cents ?? 0) / 100).toFixed(2).replace('.', ','));
+							}}
+						>
+							Editar preço
+						</button>
+					</Card>
+				))}
+			</div>
+			{!filtered.length ? (
+				<EmptyState
+					title="Nenhum produto no catálogo local"
+					description="Conecte-se para carregar os produtos cadastrados no banco de dados."
+				/>
+			) : null}
+			{editing ? (
+				<div
+					className="erp-modal-backdrop"
+					onMouseDown={(event) => {
+						if (event.target === event.currentTarget) setEditing(null);
+					}}
+				>
+					<section className="erp-price-modal" role="dialog" aria-modal="true" aria-labelledby="erp-price-title">
+						<div className="ui-page-header">
+							<div>
+								<h2 id="erp-price-title">Editar preço</h2>
+								<p>{editing.name}</p>
+							</div>
+							<button type="button" aria-label="Fechar" onClick={() => setEditing(null)}>
+								×
+							</button>
+						</div>
+						<label htmlFor="erp-price-input">Preço de venda (R$)</label>
+						<input
+							id="erp-price-input"
+							autoFocus
+							inputMode="decimal"
+							className="demo-input"
+							value={price}
+							onChange={(event) => setPrice(event.target.value)}
+							onKeyDown={(event) => {
+								if (event.key === 'Enter') void savePrice();
+							}}
+						/>
+						<p className="demo-muted">Sem internet, o valor fica disponível neste dispositivo e entra na fila de sincronização.</p>
+						<div className="erp-modal-actions">
+							<button type="button" className="demo-button demo-button-secondary" onClick={() => setEditing(null)}>
+								Cancelar
+							</button>
+							<button type="button" className="demo-button" disabled={busy} onClick={() => void savePrice()}>
+								{busy ? 'Salvando…' : 'Salvar preço'}
+							</button>
+						</div>
+					</section>
+				</div>
+			) : null}
 		</PrototypeFrame>
 	);
 }

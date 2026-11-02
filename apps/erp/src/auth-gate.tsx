@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell, Button } from '@sabores/ui';
+import { clearErpSession, loadErpSession, saveErpSession } from './offline/store';
 
 type User = { id: string; username: string; role: string };
 const NAV_ITEMS = [
@@ -16,14 +17,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	const session = useQuery({
 		queryKey: ['auth', 'session'],
 		queryFn: async (): Promise<User | null> => {
-			const response = await fetch('/api/auth/session', {
-				credentials: 'same-origin',
-				cache: 'no-store',
-			});
-			if (response.status === 401) return null;
-			if (!response.ok) throw new Error('session unavailable');
-			const body = (await response.json()) as { user?: User };
-			return body.user ?? null;
+			try {
+				const response = await fetch('/api/auth/session', {
+					credentials: 'same-origin',
+					cache: 'no-store',
+				});
+				if (response.status === 401) {
+					await clearErpSession();
+					return null;
+				}
+				if (!response.ok) throw new Error('session unavailable');
+				const body = (await response.json()) as {
+					user?: User;
+					expiresAt?: string;
+				};
+				if (body.user && body.expiresAt) await saveErpSession({ user: body.user, expiresAt: body.expiresAt });
+				return body.user ?? null;
+			} catch {
+				return (await loadErpSession())?.user ?? null;
+			}
 		},
 		retry: false,
 		staleTime: 0,
@@ -54,7 +66,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
 				};
 				setError(body.error ?? 'Não foi possível entrar.');
 			} else {
-				const body = (await response.json()) as { user: User };
+				const body = (await response.json()) as {
+					user: User;
+					expiresAt: string;
+				};
+				await saveErpSession({ user: body.user, expiresAt: body.expiresAt });
 				queryClient.setQueryData(['auth', 'session'], body.user);
 				formElement.reset();
 			}
@@ -67,16 +83,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 	async function signOut() {
 		setBusy(true);
+		await clearErpSession();
 		try {
 			const response = await fetch('/api/auth/logout', {
 				method: 'POST',
 				credentials: 'same-origin',
 			});
-			if (response.ok) queryClient.setQueryData(['auth', 'session'], null);
-			else setError('Não foi possível encerrar a sessão. Tente novamente.');
+			if (!response.ok) setError('Sessão encerrada neste dispositivo; o servidor será avisado quando houver conexão.');
 		} catch {
-			setError('Não foi possível encerrar a sessão. Tente novamente.');
+			setError('Sessão encerrada neste dispositivo; o servidor será avisado quando houver conexão.');
 		} finally {
+			queryClient.setQueryData(['auth', 'session'], null);
 			setBusy(false);
 		}
 	}

@@ -163,6 +163,139 @@ app.get("/api/catalog/products", async (context) => {
   }
 });
 
+app.get("/api/erp/catalog/products", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT p.product_id, p.barcode, p.auxiliary_code, p.name,
+              c.name AS category, p.unit, p.sale_price_cents,
+              p.unit_cost_cents, p.active
+       FROM products p JOIN categories c ON c.category_id = p.category_id
+       WHERE p.active = 1 ORDER BY p.name COLLATE NOCASE`,
+    ).all();
+    return context.json({ data: results });
+  } catch (error) {
+    console.error("Falha ao consultar catálogo financeiro do ERP.", error);
+    return context.json({ error: "Catálogo indisponível." }, 503);
+  }
+});
+
+app.post("/api/erp/product-price", async (context) => {
+  const user = context.get("authUser");
+  if (user.role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  if (!hasTrustedOrigin(context.req.raw, context.env as AuthBindings))
+    return context.json({ error: "Solicitação inválida." }, 403);
+  let body: unknown;
+  try {
+    body = await context.req.json();
+  } catch {
+    return context.json({ error: "Corpo JSON inválido." }, 400);
+  }
+  if (
+    !body ||
+    typeof body !== "object" ||
+    typeof (body as Record<string, unknown>).operationId !== "string" ||
+    !/^[0-9a-f-]{36}$/i.test((body as Record<string, string>).operationId) ||
+    typeof (body as Record<string, unknown>).productId !== "string" ||
+    !/^[A-Za-z0-9_-]{1,120}$/.test(
+      (body as Record<string, string>).productId,
+    ) ||
+    !("basePriceCents" in (body as Record<string, unknown>)) ||
+    ((body as Record<string, unknown>).basePriceCents !== null &&
+      (!Number.isSafeInteger(
+        (body as Record<string, unknown>).basePriceCents,
+      ) ||
+        Number((body as Record<string, unknown>).basePriceCents) < 0)) ||
+    !Number.isSafeInteger((body as Record<string, unknown>).salePriceCents) ||
+    Number((body as Record<string, unknown>).salePriceCents) < 0 ||
+    typeof (body as Record<string, unknown>).occurredAt !== "string" ||
+    !Number.isFinite(Date.parse((body as Record<string, string>).occurredAt))
+  )
+    return context.json({ error: "Ajuste de preço inválido." }, 422);
+  const operation = body as {
+    operationId: string;
+    productId: string;
+    basePriceCents: number | null;
+    salePriceCents: number;
+    occurredAt: string;
+  };
+  try {
+    const existing = await context.env.DB.prepare(
+      "SELECT product_id, new_price_cents FROM product_price_changes WHERE operation_id = ?",
+    )
+      .bind(operation.operationId)
+      .first<{ product_id: string; new_price_cents: number }>();
+    if (existing) {
+      if (
+        existing.product_id !== operation.productId ||
+        existing.new_price_cents !== operation.salePriceCents
+      )
+        return context.json(
+          { error: "operationId já foi usado por outra alteração." },
+          409,
+        );
+      return context.json({ status: "already_applied" });
+    }
+    const product = await context.env.DB.prepare(
+      "SELECT sale_price_cents FROM products WHERE product_id = ?",
+    )
+      .bind(operation.productId)
+      .first<{ sale_price_cents: number | null }>();
+    if (!product)
+      return context.json({ error: "Produto não encontrado." }, 404);
+    if (product.sale_price_cents !== operation.basePriceCents)
+      return context.json(
+        {
+          error:
+            "O preço foi alterado em outro dispositivo; revise o conflito.",
+        },
+        409,
+      );
+    const now = new Date().toISOString();
+    const results = await context.env.DB.batch([
+      context.env.DB.prepare(
+        "UPDATE products SET sale_price_cents = ?, updated_at = ? WHERE product_id = ? AND sale_price_cents IS ?",
+      ).bind(
+        operation.salePriceCents,
+        now,
+        operation.productId,
+        operation.basePriceCents,
+      ),
+      context.env.DB.prepare(
+        "INSERT INTO product_price_changes (operation_id, product_id, old_price_cents, new_price_cents, actor_user_id, occurred_at, recorded_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1",
+      ).bind(
+        operation.operationId,
+        operation.productId,
+        operation.basePriceCents,
+        operation.salePriceCents,
+        user.id,
+        operation.occurredAt,
+        now,
+      ),
+    ]);
+    if (results.some((result) => !result.success))
+      return context.json(
+        { error: "A alteração de preço não foi aplicada." },
+        503,
+      );
+    if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1)
+      return context.json(
+        {
+          error:
+            "O preço foi alterado em outro dispositivo; revise o conflito.",
+        },
+        409,
+      );
+    await invalidateCatalogCache(context.env.CATALOG_CACHE);
+    return context.json({ status: "applied" });
+  } catch (error) {
+    console.error("Falha ao registrar ajuste de preço no ERP.", error);
+    return context.json({ error: "Não foi possível salvar o preço." }, 503);
+  }
+});
+
 app.get("/api/pdv/catalog", async (context) => {
   try {
     const { results: products } = await context.env.DB.prepare(

@@ -13,6 +13,7 @@ export function PdvRuntime({ children }: { children: ReactNode }) {
 	}
 
 	useEffect(() => {
+		if ('storage' in navigator && 'persist' in navigator.storage) void navigator.storage.persist().catch(() => false);
 		const onControllerChange = () => location.reload();
 		const onlineHandler = () => {
 			setOnline(true);

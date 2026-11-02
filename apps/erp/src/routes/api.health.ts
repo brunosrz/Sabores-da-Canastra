@@ -1,10 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { env } from 'cloudflare:workers';
 import { healthResponse } from '../health';
 
 export const Route = createFileRoute('/api/health')({
 	server: {
 		handlers: {
-			GET: () => healthResponse('erp'),
+			GET: () => healthResponse('erp', env.API),
 		},
 	},
 });

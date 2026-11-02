@@ -4,19 +4,25 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --ip 127.0.0.1 --port 3000",
-    "build": "wrangler deploy --dry-run --outdir dist",
+    "build": "wrangler deploy --dry-run --outdir dist --env=",
+    "deploy:preview": "node scripts/deploy-guard.mjs preview && wrangler deploy --env preview",
+    "deploy:production": "node scripts/deploy-guard.mjs production && wrangler deploy --env production",
     "lint": "eslint .",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" scripts/*.mjs eslint.config.js package.json tsconfig.json vitest.config.ts wrangler.jsonc",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" test/fixtures/*.json scripts/*.mjs scripts/*.jsonc eslint.config.js package.json tsconfig.json vitest.config.ts wrangler.jsonc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "cf-typegen": "wrangler types --include-runtime=false",
-    "db:migrate:local": "wrangler d1 migrations apply sabores-canastra-shared --local --config wrangler.jsonc",
+    "db:migrate:local": "wrangler d1 migrations apply sabores-canastra-local --local --config wrangler.jsonc",
+    "db:restore:validate": "node scripts/restore-backup-local.mjs",
+    "db:backup:local": "node scripts/backup-local.mjs",
     "db:import:local": "node scripts/import-local.mjs"
   },
   "dependencies": {
+    "@noble/hashes": "^2.4.0",
     "hono": "^4.10.6"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.11",
     "@cloudflare/workers-types": "^5.20261101.1",
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.10.2",

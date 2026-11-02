@@ -59,4 +59,117 @@ describe("rotas locais da API", () => {
     );
     expect(response.status).toBe(404);
   });
+
+  it("reaproveita instância do Workflow quando o mesmo ID é reenviado", async () => {
+    const create = vi.fn(async () => {
+      throw new Error("Instance ID already exists");
+    });
+    const get = vi.fn(async (id: string) => ({
+      id,
+      status: async () => ({ status: "complete" as const }),
+    }));
+    const response = await app.request(
+      "https://api.example.test/api/backups/run",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer backup-token",
+          "idempotency-key": "retry-1234",
+        },
+      },
+      {
+        DB: {} as D1Database,
+        PRIVATE_FILES: {} as R2Bucket,
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
+        D1_BACKUP: { create, get } as unknown as Workflow,
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      id: "manual-retry-1234",
+      status: "complete",
+    });
+    expect(get).toHaveBeenCalledWith("manual-retry-1234");
+  });
+
+  it("rejeita chave do Workflow que não respeita o formato permitido", async () => {
+    const create = vi.fn();
+    const response = await app.request(
+      "https://api.example.test/api/backups/run",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer backup-token",
+          "idempotency-key": "invalid:key",
+        },
+      },
+      {
+        DB: {} as D1Database,
+        PRIVATE_FILES: {} as R2Bucket,
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
+        D1_BACKUP: { create } as unknown as Workflow,
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("direciona exportação de D1 local ao utilitário local", async () => {
+    const create = vi.fn();
+    const response = await app.request(
+      "https://api.example.test/api/backups/run",
+      {
+        method: "POST",
+        headers: { authorization: "Bearer backup-token" },
+      },
+      {
+        DB: {} as D1Database,
+        PRIVATE_FILES: {} as R2Bucket,
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
+        BACKUP_ACCOUNT_ID: "local",
+        BACKUP_DATABASE_ID: "local",
+        D1_BACKUP: { create } as unknown as Workflow,
+      },
+    );
+    expect(response.status).toBe(409);
+    expect(create).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining("db:backup:local"),
+    });
+  });
+
+  it("limita o corpo da venda lendo o stream e cancela acima de 1 MB", async () => {
+    const getByName = vi.fn();
+    const response = await app.request(
+      "https://api.example.test/api/sales",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer pdv-token",
+          "idempotency-key": "sale-size-limit-1",
+        },
+        body: "x".repeat(1_000_001),
+      },
+      {
+        DB: {} as D1Database,
+        SALE_COORDINATOR: { getByName } as unknown as DurableObjectNamespace,
+        PDV_WRITE_TOKEN: "pdv-token",
+      },
+    );
+    expect(response.status).toBe(413);
+    expect(getByName).not.toHaveBeenCalled();
+  });
+
+  it("retorna 404 quando o caminho do arquivo de backup tem escape inválido", async () => {
+    const response = await app.request(
+      "https://api.example.test/api/backups/file/backups/d1/%E0%A4%A.sql",
+      { headers: { authorization: "Bearer backup-token" } },
+      {
+        DB: {} as D1Database,
+        PRIVATE_FILES: {} as R2Bucket,
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
+      },
+    );
+    expect(response.status).toBe(404);
+  });
 });

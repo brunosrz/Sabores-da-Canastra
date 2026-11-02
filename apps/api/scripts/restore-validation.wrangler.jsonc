@@ -1,0 +1,13 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "sabores-canastra-restore-validation",
+  "main": "../src/index.ts",
+  "compatibility_date": "2026-10-30",
+  "d1_databases": [
+    {
+      "binding": "RESTORE_DB",
+      "database_name": "sabores-canastra-restore-validation",
+      "database_id": "00000000-0000-0000-0000-000000000099",
+    },
+  ],
+}

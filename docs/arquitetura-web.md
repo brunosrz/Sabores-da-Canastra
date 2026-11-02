@@ -4,8 +4,8 @@
 
 Esta página descreve o bootstrap e as decisões das etapas seguintes. ERP e PDV
 têm infraestrutura e rotas iniciais, mas ainda não implementam os fluxos de
-negócio nem estão ligados à API. Domínios e recursos remotos são planejados,
-não publicados.
+negócio. A API remota de preview foi publicada sem rota pública; faltam habilitar
+Access e publicar os apps web. Produção permanece separada.
 
 ## Aplicações
 
@@ -13,31 +13,35 @@ não publicados.
   estoque, custos, compras, despesas e relatórios.
 - `apps/pdv`: ponto de venda em `pdv.brunosrz.com`, para registrar pedidos e
   pagamentos.
-- `apps/api`: Worker Hono interno, dono do schema D1 e da futura lógica de
-  negócio compartilhada. Hoje expõe saúde local e importação local protegida.
+- `apps/api`: Worker Hono interno, dono do schema D1 e da lógica de negócio
+  compartilhada. Expõe saúde, catálogo com cache, registro idempotente de venda
+  e acesso autenticado a backups privados.
 
 ERP e PDV são interfaces independentes, implantáveis e versionadas
 separadamente. ERP e PDV executam localmente como Workers independentes e ainda
-têm apenas rotas iniciais e verificação de saúde. A API executa em
-`127.0.0.1:3000` e seu D1 também é local. Recursos remotos, domínios e
-credenciais ainda não estão ligados. Os arquivos Python continuam sendo a
-referência funcional durante a migração, não os backends dos novos apps.
+têm rotas iniciais e verificação de saúde. A API executa em `127.0.0.1:3000`;
+D1, KV, R2, Durable Objects e Workflows usam simuladores locais. Os recursos
+remotos de preview foram provisionados. A API já está publicada e
+depende apenas de Service Bindings; os apps web aguardam Access para expor seus
+domínios. Os arquivos Python continuam sendo a referência funcional durante a
+migração, não os backends dos novos apps.
 
 ## Backend e banco compartilhados
 
 O backend de negócio é um único serviço interno em `apps/api`. Esse Worker é o
 único com binding direto ao D1 e será responsável por autenticação, regras de
 negócio, validação, catálogo/receitas, estoque, vendas, compras, despesas e
-ledger. O schema e o fluxo local de migração estão implementados; os endpoints
-de negócio e autenticação ainda não.
+ledger. O schema, bindings e rotas iniciais de catálogo, venda e backup estão
+implementados; autenticação de usuários e integração com os frontends ainda
+não.
 
 ERP e PDV continuarão sendo dois apps. Suas rotas e server functions do TanStack
 Start atuarão como camada de interface/BFF: recebem a sessão da requisição,
 chamam o backend via Cloudflare Service Binding e entregam os resultados ao
 cliente. O navegador não terá credenciais de D1 nem acesso direto ao banco. A
 API não precisa de um terceiro site público; o binding de serviço conecta os
-Workers internamente. Os bindings entre os três Workers ainda não estão
-configurados.
+Workers internamente. Os Service Bindings entre os três Workers estão
+configurados por ambiente.
 
 As sessões serão emitidas para autenticação nos dois subdomínios, com cookies
 `Secure`, `HttpOnly` e política de domínio/CSRF definida na etapa de autenticação.
@@ -46,8 +50,9 @@ preview separados dos recursos de produção.
 
 O SQLite do legado Python é um banco local independente. A migração inicial
 exporta uma cópia validada e não cria sincronização contínua entre SQLite e D1.
-O endpoint `/health` da API só informa saúde; não é endpoint de negócio. A
-importação `/__local/import` exige hostname local e segredo em `.dev.vars`.
+O endpoint `/health` informa saúde. A importação `/__local/import` exige
+hostname local e segredo em `.dev.vars`. Vendas exigem segredo transitório do
+PDV; a sessão de usuário substituirá esse mecanismo na issue #6.
 
 ## Bibliotecas TanStack
 
@@ -82,9 +87,8 @@ importação `/__local/import` exige hostname local e segredo em `.dev.vars`.
   dois aplicativos.
 
 O catálogo completo do TanStack está registrado aqui para orientar decisões de
-produto. A API compartilhada será uma aplicação/Worker próprio, não mais uma
-biblioteca TanStack; o CI ganhará um job independente para ela quando for
-introduzida.
+produto. A API compartilhada é um Worker Hono próprio, sem duplicar backend nos
+dois apps, e tem job independente no CI.
 
 ## Comandos na raiz
 
@@ -107,9 +111,28 @@ uma reformatação em massa foi evitada. Os apps web têm formatação Prettier 
 hooks próprios. Os comandos publicados no PR são os mesmos definidos no
 `package.json` da raiz.
 
-Nenhum comando desta etapa publica Workers ou acessa D1 remoto. O `wrangler.jsonc`
-da API contém somente um ID local fictício para o simulador; não há IDs ou
-credenciais Cloudflare de preview/produção.
+`uv run scons api-preview` aplica migrations remotas idempotentes e publica a
+API sem rota pública. `uv run scons preview` valida primeiro que os domínios
+estão protegidos por políticas Cloudflare Access que permitem um e-mail
+específico, depois publica API, ERP e PDV. Produção mantém IDs de exemplo e é
+recusada até que seus recursos sejam provisionados.
+
+O preview usa `erp-preview.brunosrz.com` e `pdv-preview.brunosrz.com`; produção
+usa `erp.brunosrz.com` e `pdv.brunosrz.com`. Custom Domains criam DNS e TLS na
+zona Cloudflare. A API continua sem hostname público e só é acessada via
+Service Bindings. O plano Free inclui D1, KV, R2 Standard, Durable Objects com
+backend SQLite e Workflows, cada qual com limites de uso; exceder uma cota Free
+pode fazer operações falharem. Antes do deploy web, habilite Zero Trust/Access e
+crie aplicações protegidas com políticas para um e-mail individual. O SCons
+valida aplicação e política e aborta se Access estiver desativado, ausente ou
+com regra `bypass`.
+
+`.env.example` contém somente nomes e campos de configuração local. Secrets
+remotos ficam em `apps/api/.env.preview` e `apps/api/.env.production`; o SCons
+os envia com Wrangler `secret bulk`, sem imprimir os valores. `CLOUDFLARE_API_TOKEN`
+precisa ser um token Cloudflare de escopo mínimo para a API de exportação; sem
+ele, o Worker publica, mas backups remotos ficam indisponíveis. Nunca coloque
+senhas ou tokens em `vars` versionadas.
 
 ### Idempotência Cloudflare
 
@@ -121,9 +144,15 @@ inspecionar `PRAGMA table_info` antes de adicionar uma coluna. Nunca editar uma
 migration já aplicada; criar uma nova versão preserva histórico e repetibilidade.
 
 D1 é a fonte de verdade para dados financeiros: chaves únicas/idempotentes e
-lotes transacionais protegem contra reenvio. KV será cache ou configuração
-descartável, nunca trava de unicidade. R2 deve usar chaves determinísticas e
-escrita condicional para objetos imutáveis. Durable Objects devem usar
-transações e identificadores persistidos para eventos repetíveis. KV, R2 e
-Durable Objects ainda não têm bindings neste bootstrap; seus recursos devem ser
-declarados uma vez e reutilizados, sem provisionamento por execução do app.
+lotes transacionais protegem contra reenvio. KV guarda apenas cache de catálogo
+com TTL e fallback para D1; nunca participa de cálculo financeiro. R2 guarda
+backups privados SQL e manifestos SHA-256, baixados por rota autenticada. O
+Durable Object serializa vendas por chave e D1 guarda o hash e o recibo de
+idempotência. Workflows exportam D1 em streaming e aplicam retenção em R2. A
+exportação oficial pode bloquear consultas e gravações durante a operação; o
+horário configurado para a rotina diária é 06:00 UTC, e a rota manual deve ser
+usada na mesma janela operacional. Confirme que esse horário está fora do
+expediente antes de ativar produção. D1 Time Travel é a primeira opção para
+recuperações pontuais. Alertas externos dependem do provisionamento futuro da
+conta. O Worker API é privado sem rota `workers.dev`; ERP e PDV o acessam por
+Service Bindings internos configurados por ambiente.

@@ -4,8 +4,8 @@ Repositório dos sistemas operacionais do Bar Sabores da Canastra. A evolução
 principal é uma plataforma web mobile first, composta por dois aplicativos
 independentes: **ERP** (`erp.brunosrz.com`) e **PDV** (`pdv.brunosrz.com`). Os
 aplicativos Python e a planilha Excel permanecem no repositório como legado
-funcional, utilitários e referência para a migração. Os domínios e serviços
-remotos ainda não estão publicados.
+funcional, utilitários e referência para a migração. A API de preview já está
+publicada sem rota pública; falta concluir Access e publicar ERP/PDV.
 
 ## Aplicativos web
 
@@ -18,9 +18,10 @@ remotos ainda não estão publicados.
   backend compartilhado.
 
 ERP e PDV usam TanStack Start, Router, Query e Form. A API compartilhada usa
-Hono e possui migration D1 local e importador validado. Fluxos de negócio,
-autenticação e conexão dos frontends com a API ainda serão implementados. Cada
-app possui checks independentes.
+Hono; seus bindings D1, KV, R2, Durable Objects e Workflows têm simuladores
+locais. A API já oferece cache de catálogo com fallback D1, registro de venda
+idempotente e backup privado. A conexão dos frontends e a autenticação de
+usuários são etapas posteriores. Cada app possui checks independentes.
 
 ### Desenvolvimento web
 
@@ -60,14 +61,44 @@ pnpm build:api
 
 Também existem aliases `*:web`, que executam a verificação correspondente nos
 dois frontends, e `pnpm lint:docs` para Markdown. `pnpm db:migrate:local`
-aplica o schema no D1 local via Wrangler; os comandos não usam banco remoto.
+aplica o schema no D1 local via Wrangler; os comandos de desenvolvimento não
+usam banco remoto. Deploy em preview/produção só é permitido após provisionar
+recursos Cloudflare separados e substituir IDs de exemplo. Os scripts
+`deploy:preview` e `deploy:production` fazem essa validação.
+
+### Publicação Cloudflare
+
+O SCons coordena migrations D1, secrets da API e deploy explícito. Preview usa
+`erp-preview.brunosrz.com` e `pdv-preview.brunosrz.com`; produção usa
+`erp.brunosrz.com` e `pdv.brunosrz.com`. Antes de publicar as interfaces,
+configure Cloudflare Access com políticas que permitam somente seu e-mail.
+
+```powershell
+uv sync --group dev
+Copy-Item .env.example .env
+Copy-Item apps/api/.env.preview.example apps/api/.env.preview
+uv run scons api-preview
+uv run scons preview
+```
+
+Preencha `.env` com o token Cloudflare, Account ID e Zone ID. Gere os três
+tokens de aplicação em `apps/api/.env.preview`; `CLOUDFLARE_API_TOKEN` (nesse
+arquivo, diferente do token local de deploy no `.env` raiz) pode ficar
+vazio no primeiro deploy, mas backups remotos só funcionarão depois de
+configurá-lo com um token Cloudflare de escopo mínimo. Arquivos preenchidos são
+ignorados pelo Git. `scons api-preview` publica somente a API sem rota pública;
+`scons preview` valida políticas Access para os dois domínios antes de publicar
+ERP e PDV. `uv run scons prod` usa secrets, bindings e políticas Access
+separados e não deve ser executado até provisionar e revisar produção.
 
 ## Backend e banco de dados
 
-ERP e PDV usarão **um único backend de negócio compartilhado** e um único D1.
-O Worker Hono em `apps/api` já contém o schema e a migração local. Autenticação,
-endpoints de negócio e bindings dos frontends ainda serão implementados. Os
-domínios planejados não estão publicados. O SQLite do Python permanece
+ERP e PDV usam **um único backend de negócio compartilhado** e um D1 por
+ambiente. O Worker Hono em `apps/api` contém schema e bindings. KV mantém
+apenas cache descartável; R2 guarda backups privados; Durable Objects coordenam
+retries; Workflows exportam D1 diariamente em produção. A autenticação de
+usuários ainda será implementada; os Service Bindings entre os frontends e a
+API estão declarados por ambiente. O SQLite do Python permanece
 independente, sem sincronização automática com D1; a migração é uma cópia
 inicial validada.
 
@@ -121,6 +152,27 @@ PDV e documentação. O formatter global Python não foi habilitado para o legad
 porque causaria uma reformatação extensa; Ruff, testes e validação do workbook
 continuam cobertos. A CI não faz deploy. CodeRabbit pode revisar PRs quando a
 integração estiver habilitada no repositório.
+
+### Releases e ambientes do GitHub
+
+Release Please acompanha a linha estável `master` (milestone `0.1.x`) e a linha
+de desenvolvimento `release/0.2` (milestone `0.2`). Títulos de PR seguem
+Conventional Commits; changelog e versões são gerados a partir deles. Ao
+publicar uma nova versão minor, o workflow avança a branch e as milestones da
+linha de desenvolvimento. Os utilitários e os workflows de release têm testes
+próprios em `utils/`.
+
+Os environments GitHub `preview` e `production` possuem as variáveis de conta,
+zone e e-mails do Access. Os tokens PDV, catálogo e backup são segredos separados
+por ambiente. Em produção, os três segredos de aplicação foram gerados e
+cadastrados no environment. Isso não provisiona recursos Cloudflare: o D1, KV,
+R2, rotas Access e token de exportação D1 da produção ainda precisam ser
+configurados antes de qualquer deploy de produção.
+
+`.env.gha.example` documenta os nomes esperados por futuros workflows de deploy
+e release; `.env.gha` local é ignorado pelo Git. `RELEASE_PLEASE_TOKEN` é
+opcional: sem ele, Release Please usa `GITHUB_TOKEN`, cujas PRs geradas não
+iniciam outros workflows. O fluxo de release não publica os aplicativos.
 
 ## Documentação de referência
 

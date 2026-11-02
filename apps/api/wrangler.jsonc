@@ -1,20 +1,137 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "sabores-canastra-api",
+  "name": "sabores-canastra-api-local",
   "main": "src/index.ts",
+  "workers_dev": false,
   "compatibility_date": "2026-10-30",
   "compatibility_flags": ["nodejs_compat"],
-  "observability": { "enabled": true },
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "sabores-canastra-shared",
+      "database_name": "sabores-canastra-local",
       "database_id": "00000000-0000-0000-0000-000000000001",
       "migrations_dir": "migrations",
     },
   ],
+  "kv_namespaces": [
+    { "binding": "CATALOG_CACHE", "id": "00000000000000000000000000000001" },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PRIVATE_FILES",
+      "bucket_name": "sabores-canastra-local-private",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "SALE_COORDINATOR", "class_name": "SaleCoordinator" },
+    ],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SaleCoordinator"] }],
+  "workflows": [
+    {
+      "name": "sabores-canastra-backup-local",
+      "binding": "D1_BACKUP",
+      "class_name": "D1BackupWorkflow",
+    },
+  ],
+  "vars": {
+    "BACKUP_ACCOUNT_ID": "local",
+    "BACKUP_DATABASE_ID": "local",
+    "BACKUP_RETENTION_DAYS": "90",
+  },
   "env": {
-    "preview": { "name": "sabores-canastra-api-preview" },
-    "production": { "name": "sabores-canastra-api" },
+    "preview": {
+      "name": "sabores-canastra-api-preview",
+      "workers_dev": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "sabores-canastra-preview",
+          "database_id": "c9152e33-9220-44e7-8f46-32aee3fe682c",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "CATALOG_CACHE",
+          "id": "de083c3910c24bb1ac2a75126b136e6a",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "PRIVATE_FILES",
+          "bucket_name": "sabores-canastra-preview-private",
+        },
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "SALE_COORDINATOR", "class_name": "SaleCoordinator" },
+        ],
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["SaleCoordinator"] },
+      ],
+      "workflows": [
+        {
+          "name": "sabores-canastra-backup-preview",
+          "binding": "D1_BACKUP",
+          "class_name": "D1BackupWorkflow",
+        },
+      ],
+      "vars": {
+        "BACKUP_ACCOUNT_ID": "94e04fd3c2a3c68a6cae057ad33cb4db",
+        "BACKUP_DATABASE_ID": "c9152e33-9220-44e7-8f46-32aee3fe682c",
+        "BACKUP_RETENTION_DAYS": "30",
+      },
+      "observability": { "enabled": true, "head_sampling_rate": 1 },
+    },
+    "production": {
+      "name": "sabores-canastra-api",
+      "workers_dev": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "sabores-canastra-production",
+          "database_id": "00000000-0000-0000-0000-000000000003",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "CATALOG_CACHE",
+          "id": "00000000000000000000000000000003",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "PRIVATE_FILES",
+          "bucket_name": "sabores-canastra-production-private",
+        },
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "SALE_COORDINATOR", "class_name": "SaleCoordinator" },
+        ],
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["SaleCoordinator"] },
+      ],
+      "workflows": [
+        {
+          "name": "sabores-canastra-backup-production",
+          "binding": "D1_BACKUP",
+          "class_name": "D1BackupWorkflow",
+          "schedules": ["0 6 * * *"],
+        },
+      ],
+      "vars": {
+        "BACKUP_ACCOUNT_ID": "REPLACE_WITH_PRODUCTION_ACCOUNT_ID",
+        "BACKUP_DATABASE_ID": "REPLACE_WITH_PRODUCTION_D1_ID",
+        "BACKUP_RETENTION_DAYS": "90",
+      },
+      "observability": { "enabled": true, "head_sampling_rate": 1 },
+    },
   },
 }

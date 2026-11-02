@@ -5,8 +5,17 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "@tanstack/react-start/server-entry",
 	"observability": { "enabled": true },
+	"services": [{ "binding": "API", "service": "sabores-canastra-api-local" }],
 	"env": {
-		"preview": { "name": "sabores-canastra-erp-preview" },
-		"production": { "name": "sabores-canastra-erp" },
+		"preview": {
+			"name": "sabores-canastra-erp-preview",
+			"routes": [{ "pattern": "erp-preview.brunosrz.com", "custom_domain": true }],
+			"services": [{ "binding": "API", "service": "sabores-canastra-api-preview" }],
+		},
+		"production": {
+			"name": "sabores-canastra-erp",
+			"routes": [{ "pattern": "erp.brunosrz.com", "custom_domain": true }],
+			"services": [{ "binding": "API", "service": "sabores-canastra-api" }],
+		},
 	},
 }

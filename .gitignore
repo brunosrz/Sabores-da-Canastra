@@ -4,6 +4,8 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+.sconsign.dblite
+.scons-logs/
 
 # Local secrets and Cloudflare development state
 .env
@@ -22,6 +24,7 @@ __pycache__/
 .local/
 node_modules/
 dist/
+dist-*/
 coverage/
 
 # TanStack Start and Cloudflare generated state

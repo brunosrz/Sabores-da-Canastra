@@ -40,14 +40,17 @@ const payload = {
 };
 const testActorId = "test-ledger-actor";
 const backupTestUserId = "backup-test-user";
-async function backupCredentialFingerprint() {
+async function backupCredentialFingerprint(
+  userId = backupTestUserId,
+  role = "owner",
+) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(
       JSON.stringify([
-        backupTestUserId,
-        backupTestUserId,
-        "owner",
+        userId,
+        userId,
+        role,
         "AAAAAAAAAAAAAAAAAAAAAA",
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         100_000,
@@ -143,8 +146,8 @@ async function makeOfflineOperation(): Promise<OperationEnvelope> {
   return operation;
 }
 
-async function authenticatedCookie() {
-  const userId = backupTestUserId;
+async function authenticatedCookie(role = "owner") {
+  const userId = role === "owner" ? backupTestUserId : "operator-test-user";
   const token = crypto.randomUUID() + crypto.randomUUID();
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -158,16 +161,22 @@ async function authenticatedCookie() {
     .replaceAll("/", "_")
     .replace(/=+$/, "");
   await bindings.DB.prepare(
-    "INSERT INTO auth_users (user_id, username, role, active, created_at) VALUES (?, ?, 'owner', 1, ?) ON CONFLICT(user_id) DO UPDATE SET active = 1",
+    "INSERT INTO auth_users (user_id, username, role, active, created_at) VALUES (?, ?, ?, 1, ?) ON CONFLICT(user_id) DO UPDATE SET active = 1, role = excluded.role",
   )
-    .bind(userId, userId, new Date().toISOString())
+    .bind(userId, userId, role, new Date().toISOString())
     .run();
   await bindings.DB.prepare(
     `INSERT OR REPLACE INTO users
       (user_id, username, role, salt, password_hash, iterations, active, created_at, updated_at)
-     VALUES (?, ?, 'owner', 'AAAAAAAAAAAAAAAAAAAAAA', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 100000, 1, ?, ?)`,
+     VALUES (?, ?, ?, 'AAAAAAAAAAAAAAAAAAAAAA', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 100000, 1, ?, ?)`,
   )
-    .bind(userId, userId, new Date().toISOString(), new Date().toISOString())
+    .bind(
+      userId,
+      userId,
+      role,
+      new Date().toISOString(),
+      new Date().toISOString(),
+    )
     .run();
   await bindings.DB.prepare(
     "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, credential_fingerprint) VALUES (?, ?, ?, ?, ?)",
@@ -177,13 +186,49 @@ async function authenticatedCookie() {
       userId,
       new Date().toISOString(),
       new Date(Date.now() + 60_000).toISOString(),
-      await backupCredentialFingerprint(),
+      await backupCredentialFingerprint(userId, role),
     )
     .run();
   return `sabores_session=${token}`;
 }
 
 describe("bindings Cloudflare locais", () => {
+  it("protege backup e lançamentos de operadores e valida datas", async () => {
+    const operator = await authenticatedCookie("operator");
+    const owner = await authenticatedCookie();
+    const request = (path: string, cookie: string) =>
+      app.request(
+        `https://api.example.test${path}`,
+        { headers: { cookie } },
+        bindings,
+      );
+    expect((await request("/api/backups", operator)).status).toBe(403);
+    expect(
+      (
+        await request(
+          "/api/finance/entries?from=2026-01-01&to=2026-12-31",
+          operator,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(
+          "/api/finance/entries?from=2026-02-30&to=2026-12-31",
+          owner,
+        )
+      ).status,
+    ).toBe(422);
+    const response = await request(
+      "/api/finance/entries?from=2026-01-01&to=2026-12-31",
+      owner,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      limit: 500,
+      truncated: false,
+    });
+  });
   it("recusa token legado no catálogo antes de consultar D1", async () => {
     const prepare = vi.fn();
     const response = await app.request(

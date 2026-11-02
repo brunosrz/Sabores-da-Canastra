@@ -32,7 +32,7 @@ def sql_string(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def collect_user() -> tuple[str, str, str, str, str]:
+def collect_user(role: str = "owner") -> tuple[str, str, str, str, str]:
     username = input("Nome de usuário: ").strip()
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", username):
         raise SystemExit("O nome de usuário precisa ter de 1 a 80 caracteres.")
@@ -51,7 +51,7 @@ def collect_user() -> tuple[str, str, str, str, str]:
         encode(salt),
         encode(digest),
         str(uuid.uuid4()),
-        "owner",
+        role,
     )
 
 
@@ -73,11 +73,12 @@ WHERE user_id = (SELECT user_id FROM users WHERE username = {name} COLLATE NOCAS
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("environment", choices=tuple(DATABASES))
+    parser.add_argument("--role", choices=("owner", "operator"), default="owner")
     args = parser.parse_args()
     count = input("Quantidade de usuários para cadastrar/atualizar: ").strip()
     if not count.isdecimal() or not 1 <= int(count) <= 100:
         raise SystemExit("Informe uma quantidade entre 1 e 100.")
-    sql = "\n".join(statements(collect_user()) for _ in range(int(count)))
+    sql = "\n".join(statements(collect_user(args.role)) for _ in range(int(count)))
     temporary = ROOT / ".local" / f"provision-users-{args.environment}.sql"
     temporary.parent.mkdir(parents=True, exist_ok=True)
     temporary.write_text(sql, encoding="utf-8")

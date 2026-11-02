@@ -150,6 +150,12 @@ app.use("/api/*", async (context, next) => {
   await next();
 });
 
+app.use("/api/backups*", async (context, next) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Acesso negado." }, 403);
+  await next();
+});
+
 app.get("/api/catalog/products", async (context) => {
   try {
     const result = await listProducts(
@@ -194,6 +200,50 @@ app.get("/api/erp/finance", async (context) => {
   } catch (error) {
     console.error("Falha ao consultar financeiro.", error);
     return context.json({ error: "Financeiro indisponível." }, 503);
+  }
+});
+
+app.get("/api/finance/entries", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Acesso negado." }, 403);
+  const from = context.req.query("from") ?? "";
+  const to = context.req.query("to") ?? "";
+  const type = context.req.query("type") ?? "";
+  const validDate = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00Z`);
+    return (
+      Number.isFinite(date.getTime()) &&
+      date.toISOString().slice(0, 10) === value
+    );
+  };
+  if (
+    !validDate(from) ||
+    !validDate(to) ||
+    from > to ||
+    (type && !["sale", "purchase", "expense", "adjustment"].includes(type))
+  )
+    return context.json({ error: "Período ou tipo inválido." }, 422);
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT ledger_id, entry_type, occurred_on, amount_cents, description, category, actor_user_id
+       FROM ledger_entries WHERE occurred_on BETWEEN ? AND ? AND (? = '' OR entry_type = ?)
+       ORDER BY occurred_on DESC, recorded_at DESC, ledger_id DESC LIMIT 501`,
+    )
+      .bind(from, to, type, type)
+      .all();
+    return context.json(
+      {
+        data: results.slice(0, 500),
+        truncated: results.length > 500,
+        limit: 500,
+      },
+      200,
+      { "cache-control": "private, no-store" },
+    );
+  } catch (error) {
+    console.error("Falha ao consultar lançamentos.", error);
+    return context.json({ error: "Lançamentos indisponíveis." }, 503);
   }
 });
 

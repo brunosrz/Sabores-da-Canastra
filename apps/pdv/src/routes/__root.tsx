@@ -6,12 +6,13 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import appCss from '../styles.css?url';
 import { AuthGate } from '../auth-gate';
 import { PdvRuntime } from '../components/pdv-runtime';
+import { themeInitScript } from '@sabores/ui';
 
 export const Route = createRootRoute({
 	head: () => ({
 		meta: [
 			{ charSet: 'utf-8' },
-			{ name: 'viewport', content: 'width=device-width, initial-scale=1' },
+			{ name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content' },
 			{ title: 'PDV Sabores da Canastra | Frente de caixa' },
 			{
 				name: 'description',
@@ -90,9 +91,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="pt-BR" suppressHydrationWarning>
 			<head>
+				<script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
 				<HeadContent />
 			</head>
-			<body className="min-h-screen font-sans antialiased">
+			<body className="min-h-dvh font-sans antialiased">
 				<AuthGate>
 					<PdvRuntime>{children}</PdvRuntime>
 				</AuthGate>

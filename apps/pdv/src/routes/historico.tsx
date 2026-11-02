@@ -176,7 +176,7 @@ function SalesHistory() {
 	}
 
 	return (
-		<main className="pdv-page">
+		<div className="pdv-page">
 			<section className="pdv-heading">
 				<div>
 					<p className="island-kicker">Vendas e sincronização</p>
@@ -399,6 +399,6 @@ function SalesHistory() {
 					{!queue.length ? <p className="demo-muted">Nenhuma operação pendente.</p> : null}
 				</div>
 			</section>
-		</main>
+		</div>
 	);
 }

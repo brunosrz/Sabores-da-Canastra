@@ -1,8 +1,15 @@
 import { createContext, useContext, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { AppShell, Button } from '@sabores/ui';
 
 type User = { id: string; username: string; role: string };
 const AuthUserContext = createContext<User | null>(null);
+const NAV_ITEMS = [
+	{ to: '/', label: 'Venda', icon: '＋' },
+	{ to: '/historico', label: 'Pedidos', icon: '▤' },
+	{ to: '/sincronizacao', label: 'Fila', icon: '↻' },
+	{ to: '/ajustes', label: 'Ajustes', icon: '⚙' },
+];
 
 export function useAuthUser() {
 	return useContext(AuthUserContext);
@@ -183,20 +190,27 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 	return (
 		<AuthUserContext.Provider value={user}>
-			<div className="flex justify-end gap-3 px-5 py-3 text-sm">
-				<span>
-					Conectado como <strong>{user.username}</strong>
-				</span>
-				{error ? (
-					<span role="alert" className="text-red-700 dark:text-red-300">
-						{error}
-					</span>
-				) : null}
-				<button type="button" disabled={busy} onClick={() => void signOut()} className="font-semibold text-[#cf4712] underline">
-					Sair
-				</button>
-			</div>
-			{children}
+			<AppShell
+				appName="PDV · Sabores da Canastra"
+				navItems={NAV_ITEMS}
+				account={
+					<>
+						<span>
+							Conectado como <strong>{user.username}</strong>
+						</span>
+						{error ? (
+							<span role="alert" className="text-red-700 dark:text-red-300">
+								{error}
+							</span>
+						) : null}
+						<Button type="button" disabled={busy} onClick={() => void signOut()} variant="danger">
+							Sair
+						</Button>
+					</>
+				}
+			>
+				{children}
+			</AppShell>
 		</AuthUserContext.Provider>
 	);
 }

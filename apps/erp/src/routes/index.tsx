@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { Badge, PageHeader } from '@sabores/ui';
 
 export const Route = createFileRoute('/')({ component: ErpHome });
 
@@ -10,12 +11,15 @@ const areas = [
 
 function ErpHome() {
 	return (
-		<main className="erp-home">
+		<div className="erp-home">
 			<section className="erp-welcome" id="inicio">
 				<img src="/brand/logo-sabores-canastra.svg" alt="Sabores da Canastra" width="1600" height="520" />
 				<p className="island-kicker">Gestão do bar</p>
-				<h1>ERP</h1>
-				<p>Cadastros, operação e acompanhamento financeiro em um só lugar.</p>
+				<PageHeader
+					title="ERP"
+					description="Cadastros, operação e acompanhamento financeiro em um só lugar."
+					actions={<Badge>Protótipo</Badge>}
+				/>
 			</section>
 			<section className="erp-area-grid" aria-label="Áreas do ERP">
 				{areas.map((area) => (
@@ -32,6 +36,6 @@ function ErpHome() {
 				))}
 			</section>
 			<p className="erp-mobile-hint">Use a navegação inferior para acessar as áreas do ERP.</p>
-		</main>
+		</div>
 	);
 }

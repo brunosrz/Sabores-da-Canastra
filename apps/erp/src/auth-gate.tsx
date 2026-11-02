@@ -1,7 +1,15 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { AppShell, Button } from '@sabores/ui';
 
 type User = { id: string; username: string; role: string };
+const NAV_ITEMS = [
+	{ to: '/', label: 'Início', icon: '⌂' },
+	{ to: '/produtos', label: 'Produtos', icon: '▦' },
+	{ to: '/estoque', label: 'Estoque', icon: '▤' },
+	{ to: '/financeiro', label: 'Financeiro', icon: 'R$' },
+	{ to: '/ajustes', label: 'Ajustes', icon: '⚙' },
+];
 
 export function AuthGate({ children }: { children: ReactNode }) {
 	const queryClient = useQueryClient();
@@ -24,16 +32,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const [showPassword, setShowPassword] = useState(false);
-	const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-		if (typeof window === 'undefined') return 'light';
-		const stored = window.localStorage.getItem('theme');
-		return stored === 'light' || stored === 'dark' ? stored : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-	});
-
-	useEffect(() => {
-		document.documentElement.dataset.theme = theme;
-	}, [theme]);
-
 	async function submit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const formElement = event.currentTarget;
@@ -168,18 +166,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
 			</main>
 		);
 
-	function toggleTheme() {
-		const next = theme === 'dark' ? 'light' : 'dark';
-		setTheme(next);
-		document.documentElement.dataset.theme = next;
-		window.localStorage.setItem('theme', next);
-	}
-
 	return (
-		<>
-			<div className="erp-topbar">
-				<strong>ERP · Sabores da Canastra</strong>
-				<div>
+		<AppShell
+			appName="ERP · Sabores da Canastra"
+			navItems={NAV_ITEMS}
+			account={
+				<>
 					<span>
 						Conectado como <strong>{user.username}</strong>
 					</span>
@@ -188,26 +180,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
 							{error}
 						</span>
 					) : null}
-					<button
-						type="button"
-						onClick={toggleTheme}
-						className="demo-button demo-button-secondary"
-						aria-label={`Ativar tema ${theme === 'dark' ? 'claro' : 'escuro'}`}
-					>
-						{theme === 'dark' ? '☀' : '☾'}
-					</button>
-					<button type="button" disabled={busy} onClick={() => void signOut()} className="font-semibold text-[#cf4712] underline">
+					<Button type="button" disabled={busy} onClick={() => void signOut()} variant="danger">
 						Sair
-					</button>
-				</div>
-			</div>
+					</Button>
+				</>
+			}
+		>
 			{children}
-			<nav className="erp-bottom-nav" aria-label="Navegação principal">
-				<a href="#inicio">Início</a>
-				<a href="#cadastros">Cadastros</a>
-				<a href="#operacao">Operação</a>
-				<a href="#financeiro">Financeiro</a>
-			</nav>
-		</>
+		</AppShell>
 	);
 }

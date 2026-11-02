@@ -118,6 +118,45 @@ describe("contrato de sincronização do PDV", () => {
     expect(await operationPayloadHash(second)).toBe(first.payloadHash);
   });
 
+  it("normaliza strings em NFC, espaços e zeros finais das quantidades", async () => {
+    const first = await seal(createSaleOperation());
+    const equivalent = structuredClone(first);
+    const payload = equivalent.payload as SaleCreatePayload;
+    payload.items[0]!.name = "  Porc\u0327a\u0303o  ";
+    payload.items[0]!.quantity = "2.000";
+    payload.customer = "  Cafe\u0301  ";
+
+    const canonical = structuredClone(first);
+    const canonicalPayload = canonical.payload as SaleCreatePayload;
+    canonicalPayload.items[0]!.name = "Porção";
+    canonicalPayload.items[0]!.quantity = "2";
+    canonicalPayload.customer = "Café";
+
+    expect(await operationPayloadHash(equivalent)).toBe(
+      await operationPayloadHash(canonical),
+    );
+    expect(await verifyOperationHash(equivalent)).toBe(false);
+  });
+
+  it("preserva a ordem dos itens no hash e detecta alterações relevantes", async () => {
+    const operation = await seal(createSaleOperation());
+    const originalHash = operation.payloadHash;
+    const payload = operation.payload as SaleCreatePayload;
+    payload.items.push({
+      ...payload.items[0]!,
+      productId: "produto-2",
+      position: 1,
+    });
+    payload.splits[0]!.dueCents = 1000;
+    payload.payments[0]!.amountCents = 1000;
+    payload.payments[0]!.feeCents = 0;
+    const reordered = structuredClone(operation);
+    (reordered.payload as SaleCreatePayload).items.reverse();
+
+    expect(await operationPayloadHash(reordered)).not.toBe(originalHash);
+    expect(await verifyOperationHash(reordered)).toBe(false);
+  });
+
   it("hash não muda com saleId local, mas detecta alteração nos itens", async () => {
     const operation = await seal(createSaleOperation());
     const changedSaleId = structuredClone(operation);
@@ -162,6 +201,44 @@ describe("contrato de sincronização do PDV", () => {
       "taxa de pagamento inconsistente",
       (value: OperationEnvelope) => {
         (value.payload as SaleCreatePayload).payments[0]!.feeCents = 1;
+      },
+    ],
+    [
+      "quantidade inválida",
+      (value: OperationEnvelope) => {
+        (value.payload as SaleCreatePayload).items[0]!.quantity = "01.0";
+      },
+    ],
+    [
+      "posição duplicada em item",
+      (value: OperationEnvelope) => {
+        (value.payload as SaleCreatePayload).items[0]!.position = 1;
+      },
+    ],
+    [
+      "divisão com parte fora de ordem",
+      (value: OperationEnvelope) => {
+        (value.payload as SaleCreatePayload).splits[0]!.partNumber = 2;
+      },
+    ],
+    [
+      "método de pagamento não reconhecido",
+      (value: OperationEnvelope) => {
+        (value.payload as SaleCreatePayload).payments[0]!.method =
+          "Cheque" as SaleCreatePayload["payments"][number]["method"];
+      },
+    ],
+    [
+      "total de pagamentos acima do inteiro seguro",
+      (value: OperationEnvelope) => {
+        (value.payload as SaleCreatePayload).payments[0]!.amountCents =
+          Number.MAX_SAFE_INTEGER;
+      },
+    ],
+    [
+      "versão de hash incompatível",
+      (value: OperationEnvelope) => {
+        value.hashVersion = "pdv-op/v2" as OperationEnvelope["hashVersion"];
       },
     ],
   ])("rejeita contrato inválido: %s", async (_description, mutate) => {
@@ -212,5 +289,19 @@ describe("contrato de sincronização do PDV", () => {
     (adjustment.payload as SaleAdjustPaymentsPayload).basePaymentVersion = 0;
     expect(validateOperationPayload(cancellation)).toBe(false);
     expect(validateOperationPayload(adjustment)).toBe(false);
+  });
+
+  it("rejeita timestamps inválidos, UUIDs malformados e metadados fora do limite", () => {
+    const operation = createSaleOperation();
+    operation.occurredAt = "ontem";
+    expect(validateOperationPayload(operation)).toBe(false);
+
+    operation.occurredAt = "2026-11-02T15:00:00.000Z";
+    operation.deviceId = "device";
+    expect(validateOperationPayload(operation)).toBe(false);
+
+    operation.deviceId = DEVICE_ID;
+    operation.catalogVersion = "x".repeat(201);
+    expect(validateOperationPayload(operation)).toBe(false);
   });
 });

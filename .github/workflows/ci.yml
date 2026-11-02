@@ -52,7 +52,7 @@ jobs:
 
       - name: Check repository configuration and Python lint
         run: >-
-          SKIP=erp-format,erp-lint,pdv-format,pdv-lint,api-format,api-lint,markdownlint
+          SKIP=ui-format,ui-lint,erp-format,erp-lint,pdv-format,pdv-lint,api-format,api-lint,markdownlint
           uvx --from pre-commit==4.7.0 pre-commit run --all-files
 
       - name: Run Python tests
@@ -60,6 +60,34 @@ jobs:
 
       - name: Validate workbook utility
         run: uv run sabores validar
+
+  ui:
+    name: Design system, tests and accessibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.12.0"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 12.11.2
+          run_install: false
+
+      - name: Install locked web dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format, lint, typecheck and test shared UI
+        run: |
+          pnpm format:check:ui
+          pnpm lint:ui
+          pnpm typecheck:ui
+          pnpm test:ui
 
   erp:
     name: ERP lint, tests and build

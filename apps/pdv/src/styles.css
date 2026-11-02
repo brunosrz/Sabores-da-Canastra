@@ -1,6 +1,7 @@
-@import '../../../packages/design-system/tokens.css';
 @import 'tailwindcss';
+@import '@sabores/ui/styles.css';
 @plugin "@tailwindcss/typography";
+@source '../../../packages/ui/src';
 
 * {
 	box-sizing: border-box;

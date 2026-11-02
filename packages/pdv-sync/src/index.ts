@@ -138,14 +138,25 @@ export function occurredOnInSaoPaulo(instant: string): string | null {
   return `${fields.year}-${fields.month}-${fields.day}`;
 }
 
-function normalize(value: unknown): unknown {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map(normalize);
+function normalizeQuantity(value: string): string {
+  const match = /^(0|[1-9]\d*)(?:\.(\d{1,3}))?$/.exec(value.trim());
+  if (!match) return value.trim().normalize("NFC");
+  const fraction = (match[2] ?? "").replace(/0+$/, "");
+  return fraction ? `${match[1]}.${fraction}` : match[1]!;
+}
+
+function normalize(value: unknown, key?: string): unknown {
+  if (typeof value === "string") {
+    return key === "quantity"
+      ? normalizeQuantity(value)
+      : value.trim().normalize("NFC");
+  }
+  if (Array.isArray(value)) return value.map((nested) => normalize(nested));
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, nested]) => [key, normalize(nested)]),
+      .map(([nestedKey, nested]) => [nestedKey, normalize(nested, nestedKey)]),
   );
 }
 

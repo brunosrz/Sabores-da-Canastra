@@ -17,6 +17,20 @@ repos:
 
   - repo: local
     hooks:
+      - id: ui-format
+        name: Shared UI formatting
+        entry: pnpm format:check:ui
+        language: system
+        types_or: [javascript, jsx, ts, tsx, css]
+        files: ^packages/ui/.*\.(js|jsx|ts|tsx|css|mts)$
+        pass_filenames: false
+      - id: ui-lint
+        name: Shared UI ESLint
+        entry: pnpm lint:ui
+        language: system
+        types_or: [javascript, jsx, ts, tsx]
+        files: ^packages/ui/.*\.(js|jsx|ts|tsx)$
+        pass_filenames: false
       - id: erp-format
         name: ERP formatting
         entry: pnpm format:check:erp

@@ -268,7 +268,7 @@ function PdvHome() {
 	}
 
 	return (
-		<main className="pdv-page">
+		<div className="pdv-page">
 			<section className="pdv-heading">
 				<div>
 					<p className="island-kicker">Frente de caixa</p>
@@ -524,6 +524,6 @@ function PdvHome() {
 					</div>
 				</section>
 			</div>
-		</main>
+		</div>
 	);
 }

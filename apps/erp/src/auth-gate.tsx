@@ -8,7 +8,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	const session = useQuery({
 		queryKey: ['auth', 'session'],
 		queryFn: async (): Promise<User | null> => {
-			const response = await fetch('/api/auth/session', { credentials: 'same-origin', cache: 'no-store' });
+			const response = await fetch('/api/auth/session', {
+				credentials: 'same-origin',
+				cache: 'no-store',
+			});
 			if (response.status === 401) return null;
 			if (!response.ok) throw new Error('session unavailable');
 			const body = (await response.json()) as { user?: User };
@@ -32,10 +35,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				credentials: 'same-origin',
-				body: JSON.stringify({ username: form.get('username'), password: form.get('password') }),
+				body: JSON.stringify({
+					username: form.get('username'),
+					password: form.get('password'),
+				}),
 			});
 			if (!response.ok) {
-				const body = (await response.json().catch(() => ({}))) as { error?: string };
+				const body = (await response.json().catch(() => ({}))) as {
+					error?: string;
+				};
 				setError(body.error ?? 'Não foi possível entrar.');
 			} else {
 				const body = (await response.json()) as { user: User };
@@ -52,7 +60,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	async function signOut() {
 		setBusy(true);
 		try {
-			const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+			const response = await fetch('/api/auth/logout', {
+				method: 'POST',
+				credentials: 'same-origin',
+			});
 			if (response.ok) queryClient.setQueryData(['auth', 'session'], null);
 			else setError('Não foi possível encerrar a sessão. Tente novamente.');
 		} catch {
@@ -75,8 +86,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
 					onSubmit={submit}
 					className="w-full max-w-md rounded-3xl border border-black/10 bg-white p-7 shadow-xl dark:border-white/10 dark:bg-[#242424] sm:p-9"
 				>
-					<p className="text-sm font-bold uppercase tracking-[0.16em] text-[#cf4712] dark:text-[#fca336]">Sabores da Canastra</p>
-					<h1 className="mt-3 text-3xl font-bold text-[var(--sea-ink)]">Entrar no ERP</h1>
+					<img
+						src="/brand/logo-sabores-canastra.svg"
+						alt="Sabores da Canastra — sabor caseiro, feito em família"
+						width="1600"
+						height="520"
+						decoding="async"
+						className="mb-5 h-auto w-full"
+					/>
+					<h1 className="text-3xl font-bold text-[var(--sea-ink)]">Entrar no ERP</h1>
 					<p className="mt-2 text-[var(--sea-ink-soft)]">Use seu usuário e senha para continuar.</p>
 					<label className="mt-7 block text-sm font-semibold" htmlFor="username">
 						Usuário

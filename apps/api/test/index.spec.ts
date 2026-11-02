@@ -16,6 +16,33 @@ const testAuthUsers = JSON.stringify([
     iterations: 100_000,
   },
 ]);
+async function testCredentialFingerprint() {
+  const user = JSON.parse(testAuthUsers)[0] as {
+    id: string;
+    username: string;
+    role: string;
+    salt: string;
+    hash: string;
+    iterations: number;
+  };
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      JSON.stringify([
+        user.id,
+        user.username.toLowerCase(),
+        user.role,
+        user.salt,
+        user.hash,
+        user.iterations,
+      ]),
+    ),
+  );
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+}
 function databaseWithSession() {
   return {
     prepare: () => ({
@@ -24,6 +51,7 @@ function databaseWithSession() {
           id: "test-user",
           username: "bruno",
           role: "owner",
+          credential_fingerprint: await testCredentialFingerprint(),
         }),
       }),
     }),

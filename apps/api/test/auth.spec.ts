@@ -110,6 +110,34 @@ describe("autenticação e sessão", () => {
     expect(revoked.status).toBe(401);
   });
 
+  it("invalida sessões quando as credenciais configuradas mudam", async () => {
+    const loggedIn = await login();
+    const cookie = loggedIn.headers.get("set-cookie")!.split(";")[0]!;
+    const previousUsers = authUsers;
+    const replacementHash = await passwordHash("replacement-password");
+    authUsers = JSON.stringify([
+      {
+        id: userId,
+        username,
+        role: "owner",
+        salt: encode(salt),
+        hash: replacementHash,
+        iterations: 100_000,
+      },
+    ]);
+
+    try {
+      const session = await app.request(
+        "https://api.example.test/api/auth/session",
+        { headers: { cookie } },
+        bindings(),
+      );
+      expect(session.status).toBe(401);
+    } finally {
+      authUsers = previousUsers;
+    }
+  });
+
   it("responde igual para usuário desconhecido e senha incorreta", async () => {
     const wrongPassword = await login("wrong-password");
     const unknownUser = await app.request(

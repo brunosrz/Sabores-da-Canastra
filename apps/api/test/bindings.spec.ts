@@ -45,6 +45,33 @@ const backupAuthUsers = JSON.stringify([
     iterations: 100_000,
   },
 ]);
+async function backupCredentialFingerprint() {
+  const user = JSON.parse(backupAuthUsers)[0] as {
+    id: string;
+    username: string;
+    role: string;
+    salt: string;
+    hash: string;
+    iterations: number;
+  };
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      JSON.stringify([
+        user.id,
+        user.username.toLowerCase(),
+        user.role,
+        user.salt,
+        user.hash,
+        user.iterations,
+      ]),
+    ),
+  );
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+}
 
 async function ensureTestActor() {
   await bindings.DB.prepare(
@@ -74,13 +101,14 @@ async function authenticatedCookie() {
     .bind(userId, userId, new Date().toISOString())
     .run();
   await bindings.DB.prepare(
-    "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+    "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, credential_fingerprint) VALUES (?, ?, ?, ?, ?)",
   )
     .bind(
       encodedHash,
       userId,
       new Date().toISOString(),
       new Date(Date.now() + 60_000).toISOString(),
+      await backupCredentialFingerprint(),
     )
     .run();
   return `sabores_session=${token}`;

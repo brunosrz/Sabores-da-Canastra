@@ -98,7 +98,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 						type="password"
 						autoComplete="current-password"
 						required
-						maxLength={256}
+						maxLength={128}
 						className="mt-2 w-full rounded-xl border border-black/20 bg-transparent px-4 py-3 outline-none focus:ring-2 focus:ring-[#fca336]"
 					/>
 					{error || session.isError ? (
@@ -107,6 +107,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 						</p>
 					) : null}
 					<button
+						type="submit"
 						disabled={busy}
 						className="mt-6 w-full rounded-xl bg-[#cf4712] px-4 py-3 font-bold text-white hover:bg-[#b83e0f] disabled:opacity-60"
 					>

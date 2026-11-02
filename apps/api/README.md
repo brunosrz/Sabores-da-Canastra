@@ -28,7 +28,9 @@ O primeiro comando grava `AUTH_USERS` em `apps/api/.env.preview`; o segundo
 reaproveita os hashes no `apps/api/.dev.vars`. Para produção, use o argumento
 `production` depois de criar `.env.production` a partir do exemplo. `AUTH_USERS`
 é um segredo JSON com IDs, nomes, papéis e hashes PBKDF2; nunca armazene senhas
-em texto puro no repositório. O Wrangler executa simuladores
+em texto puro no repositório. As senhas provisionadas precisam ter de 12 a 128
+caracteres; os hashes usam PBKDF2-SHA-256 com 100.000 iterações, compatível com
+o WebCrypto dos Workers. O Wrangler executa simuladores
 locais de D1, KV, R2, Durable Objects e Workflows. O servidor responde em
 `http://127.0.0.1:3000`; nenhum comando de desenvolvimento usa `--remote`.
 Ao desenvolver uma tela que chama a API por Service Binding, mantenha também
@@ -128,10 +130,12 @@ conferido sem credenciais com `pnpm build:api` e `wrangler deploy --env preview
 
 Não existe rota de cadastro. Para provisionar usuários, gere sal/hash PBKDF2 e
 configure `AUTH_USERS` como secret em cada ambiente. O cookie tem validade de
-12 horas, `HttpOnly`, `SameSite=Strict` e `Secure` fora de localhost. Mutations
-validam a origem contra a lista do ambiente. O limite atual é de 10 tentativas
-por endereço em 15 minutos; o banco guarda somente o hash do endereço e o
-contador da janela.
+12 horas, `HttpOnly`, `SameSite=Strict` e `Secure` fora de localhost. Preview e
+produção usam nomes de cookie distintos. Mutations validam a origem somente
+contra a lista explícita do ambiente. Há limites de 10 tentativas por IP e por
+combinação de IP/usuário, além de 100 por conta, em 15 minutos. D1 armazena os
+hashes dos identificadores dos buckets e os contadores da janela; falhas de
+credenciais são registradas sem incluir usuário ou senha em claro.
 
 ## Backup, retenção e restauração
 

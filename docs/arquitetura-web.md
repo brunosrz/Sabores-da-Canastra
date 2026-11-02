@@ -41,9 +41,11 @@ API não precisa de um terceiro site público; o binding de serviço conecta os
 Workers internamente. Os Service Bindings entre os três Workers estão
 configurados por ambiente.
 
-As sessões usam cookies opacos `Secure`, `HttpOnly`, `SameSite=Strict` e domínio
-compartilhado entre os subdomínios. O D1 mantém somente o hash do token, validade
-e revogação. Não existe cadastro aberto: as contas são provisionadas pelo
+As sessões usam cookies opacos `Secure`, `HttpOnly` e `SameSite=Strict`, com
+nomes distintos entre preview e produção e domínio compartilhado entre os
+subdomínios. O D1 mantém somente o hash do token, validade, revogação e impressão
+digital das credenciais configuradas; alterar as credenciais invalida as sessões
+existentes. Não existe cadastro aberto: as contas são provisionadas pelo
 secret `AUTH_USERS`, com hashes PBKDF2. Login e vendas verificam a origem, e as
 tentativas de login são limitadas. Cada venda grava `actor_user_id` no ledger.
 Os Workers de preview usam recursos e dados de preview separados dos recursos

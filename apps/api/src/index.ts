@@ -25,6 +25,7 @@ type Bindings = {
   LOCAL_IMPORT_TOKEN?: string;
   AUTH_USERS?: string;
   AUTH_COOKIE_DOMAIN?: string;
+  AUTH_COOKIE_NAME?: string;
   AUTH_ALLOWED_ORIGINS?: string;
 };
 

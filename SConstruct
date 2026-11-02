@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import os
 import re
@@ -13,7 +14,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(Dir(".").abspath)
+ROOT = Path(Dir(".").abspath)  # noqa: F821 - SCons built-in.
 API = ROOT / "apps" / "api"
 ERP = ROOT / "apps" / "erp"
 PDV = ROOT / "apps" / "pdv"
@@ -223,8 +224,8 @@ def _secrets_for(environment: str) -> dict[str, str]:
                 users = json.loads(value)
             except json.JSONDecodeError as error:
                 raise SystemExit("AUTH_USERS precisa ser um JSON válido.") from error
-            if not isinstance(users, list) or not users:
-                raise SystemExit("AUTH_USERS precisa conter ao menos um usuário autorizado.")
+            if not isinstance(users, list) or not 1 <= len(users) <= 100:
+                raise SystemExit("AUTH_USERS precisa conter de 1 a 100 usuários autorizados.")
             user_ids: set[str] = set()
             usernames: set[str] = set()
             for user in users:
@@ -233,16 +234,37 @@ def _secrets_for(environment: str) -> dict[str, str]:
                     for field in ("id", "username", "role", "salt", "hash")
                 ):
                     raise SystemExit("Cada usuário em AUTH_USERS precisa ter id, username, role, salt e hash.")
+                if (
+                    not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", user["id"])
+                    or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", user["username"])
+                ):
+                    raise SystemExit("AUTH_USERS contém ID ou username fora do padrão aceito pela API.")
                 if user["id"] in user_ids or user["username"].lower() in usernames:
                     raise SystemExit("AUTH_USERS não pode repetir IDs nem nomes de usuário.")
                 user_ids.add(user["id"])
                 usernames.add(user["username"].lower())
+                def decode_base64url(value: str) -> bytes:
+                    if not re.fullmatch(r"[A-Za-z0-9_-]+", value) or len(value) % 4 == 1:
+                        raise ValueError("Base64URL inválido")
+                    return base64.b64decode(
+                        value + "=" * (-len(value) % 4),
+                        altchars=b"-_",
+                        validate=True,
+                    )
+
                 try:
-                    salt = base64.urlsafe_b64decode(user["salt"] + "=" * (-len(user["salt"]) % 4))
-                    password_hash = base64.urlsafe_b64decode(user["hash"] + "=" * (-len(user["hash"]) % 4))
-                except ValueError as error:
+                    salt = decode_base64url(user["salt"])
+                    password_hash = decode_base64url(user["hash"])
+                except (ValueError, binascii.Error) as error:
                     raise SystemExit("AUTH_USERS contém sal ou hash Base64URL inválido.") from error
-                if len(salt) != 16 or len(password_hash) != 32 or not isinstance(user.get("iterations"), int) or not 100_000 <= user["iterations"] <= 2_000_000:
+                iterations = user.get("iterations")
+                if (
+                    len(salt) != 16
+                    or len(password_hash) != 32
+                    or not isinstance(iterations, int)
+                    or isinstance(iterations, bool)
+                    or iterations != 100_000
+                ):
                     raise SystemExit("AUTH_USERS precisa usar sal de 16 bytes, hash de 32 bytes e iterações PBKDF2 válidas.")
             continue
         if len(value) < 32 or value.lower().startswith(
@@ -290,9 +312,6 @@ def _deploy_api(environment: str) -> None:
         cwd=API,
     )
     _run(
-        [PNPM, "--filter", "@sabores/api", "deploy:" + environment],
-    )
-    _run(
         [
             PNPM,
             "--filter",
@@ -308,6 +327,41 @@ def _deploy_api(environment: str) -> None:
         ],
         cwd=API,
         input_text=json.dumps(secrets),
+    )
+    secret_names = _run(
+        [
+            PNPM,
+            "--filter",
+            "@sabores/api",
+            "exec",
+            "wrangler",
+            "secret",
+            "list",
+            "--env",
+            environment,
+            "--config",
+            "wrangler.jsonc",
+            "--format",
+            "json",
+        ],
+        cwd=API,
+        capture=True,
+    )
+    try:
+        configured_secret_names = {
+            item["name"] for item in json.loads(secret_names) if isinstance(item, dict)
+        }
+    except (json.JSONDecodeError, TypeError) as error:
+        raise SystemExit("Não foi possível confirmar os secrets publicados na Cloudflare.") from error
+    missing_secrets = secrets.keys() - configured_secret_names
+    if missing_secrets:
+        raise SystemExit(
+            "A Cloudflare não confirmou os secrets obrigatórios: "
+            + ", ".join(sorted(missing_secrets))
+            + ". O Worker não será publicado."
+        )
+    _run(
+        [PNPM, "--filter", "@sabores/api", "deploy:" + environment],
     )
 
 
@@ -362,7 +416,7 @@ Secrets da API ficam em apps/api/.env.preview ou apps/api/.env.production.
     )
 
 
-env = Environment(ENV=os.environ)
+env = Environment(ENV=os.environ)  # noqa: F821 - SCons built-in.
 env.Decider("timestamp-match")
 
 
@@ -377,4 +431,4 @@ _target("preview", _preview)
 _target("prod", _prod)
 _target("help", _help)
 
-Default(env.Command("_default", [], _help))
+Default(env.Command("_default", [], _help))  # noqa: F821 - SCons built-in.

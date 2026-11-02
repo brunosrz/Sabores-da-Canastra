@@ -33,9 +33,78 @@ const payload = {
     },
   ],
 };
+const testActorId = "test-ledger-actor";
+const backupTestUserId = "backup-test-user";
+async function backupCredentialFingerprint() {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      JSON.stringify([
+        backupTestUserId,
+        backupTestUserId,
+        "owner",
+        "AAAAAAAAAAAAAAAAAAAAAA",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        100_000,
+      ]),
+    ),
+  );
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+}
+
+async function ensureTestActor() {
+  await bindings.DB.prepare(
+    "INSERT OR IGNORE INTO auth_users (user_id, username, role, active, created_at) VALUES (?, ?, 'owner', 1, ?)",
+  )
+    .bind(testActorId, "ledger-test-user", new Date().toISOString())
+    .run();
+}
+
+async function authenticatedCookie() {
+  const userId = backupTestUserId;
+  const token = crypto.randomUUID() + crypto.randomUUID();
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(token),
+  );
+  const tokenHash = [...new Uint8Array(digest)]
+    .map((byte) => String.fromCharCode(byte))
+    .join("");
+  const encodedHash = btoa(tokenHash)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+  await bindings.DB.prepare(
+    "INSERT INTO auth_users (user_id, username, role, active, created_at) VALUES (?, ?, 'owner', 1, ?) ON CONFLICT(user_id) DO UPDATE SET active = 1",
+  )
+    .bind(userId, userId, new Date().toISOString())
+    .run();
+  await bindings.DB.prepare(
+    `INSERT OR REPLACE INTO users
+      (user_id, username, role, salt, password_hash, iterations, active, created_at, updated_at)
+     VALUES (?, ?, 'owner', 'AAAAAAAAAAAAAAAAAAAAAA', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 100000, 1, ?, ?)`,
+  )
+    .bind(userId, userId, new Date().toISOString(), new Date().toISOString())
+    .run();
+  await bindings.DB.prepare(
+    "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, credential_fingerprint) VALUES (?, ?, ?, ?, ?)",
+  )
+    .bind(
+      encodedHash,
+      userId,
+      new Date().toISOString(),
+      new Date(Date.now() + 60_000).toISOString(),
+      await backupCredentialFingerprint(),
+    )
+    .run();
+  return `sabores_session=${token}`;
+}
 
 describe("bindings Cloudflare locais", () => {
-  it("recusa token inválido no catálogo antes de consultar D1", async () => {
+  it("recusa token legado no catálogo antes de consultar D1", async () => {
     const prepare = vi.fn();
     const response = await app.request(
       "https://api.example.test/api/catalog/products",
@@ -50,13 +119,13 @@ describe("bindings Cloudflare locais", () => {
     expect(prepare).not.toHaveBeenCalled();
   });
 
-  it("permite leitura do catálogo com o token correto", async () => {
+  it("não permite leitura do catálogo somente com token legado", async () => {
     const response = await app.request(
       "https://api.example.test/api/catalog/products",
       { headers: { authorization: "Bearer catalog-secret-for-test" } },
       { ...bindings, CATALOG_READ_TOKEN: "catalog-secret-for-test" },
     );
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(401);
   });
 
   it("valida campos opcionais e pagamentos malformados antes de somar", async () => {
@@ -107,7 +176,7 @@ describe("bindings Cloudflare locais", () => {
       {},
       apiBindings,
     );
-    expect(unauthorized.status).toBe(503);
+    expect(unauthorized.status).toBe(401);
     expect(prepare).not.toHaveBeenCalled();
   });
 
@@ -149,6 +218,7 @@ describe("bindings Cloudflare locais", () => {
   });
 
   it("grava uma venda uma vez e reproduz a resposta em retries", async () => {
+    await ensureTestActor();
     const key = `test:${crypto.randomUUID()}`;
     const stub = bindings.SALE_COORDINATOR.get(
       bindings.SALE_COORDINATOR.idFromName(key),
@@ -156,7 +226,11 @@ describe("bindings Cloudflare locais", () => {
     const makeRequest = (body: unknown) =>
       new Request("https://coordinator.local/", {
         method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": key },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": key,
+          "x-actor-user-id": testActorId,
+        },
         body: JSON.stringify(body),
       });
     const first = await stub.fetch(makeRequest(payload));
@@ -189,9 +263,16 @@ describe("bindings Cloudflare locais", () => {
       .bind(`pdv:${key}`)
       .first<{ total: number }>();
     expect(count?.total).toBe(1);
+    const actor = await bindings.DB.prepare(
+      "SELECT actor_user_id FROM ledger_entries WHERE idempotency_key = ?",
+    )
+      .bind(`pdv:${key}`)
+      .first<{ actor_user_id: string }>();
+    expect(actor?.actor_user_id).toBe(testActorId);
   });
 
   it("recusa reuso de chave com payload diferente", async () => {
+    await ensureTestActor();
     const key = `test:${crypto.randomUUID()}`;
     const stub = bindings.SALE_COORDINATOR.get(
       bindings.SALE_COORDINATOR.idFromName(key),
@@ -199,7 +280,11 @@ describe("bindings Cloudflare locais", () => {
     const makeRequest = (body: unknown) =>
       new Request("https://coordinator.local/", {
         method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": key },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": key,
+          "x-actor-user-id": testActorId,
+        },
         body: JSON.stringify(body),
       });
     expect((await stub.fetch(makeRequest(payload))).status).toBe(201);
@@ -242,15 +327,13 @@ describe("bindings Cloudflare locais", () => {
       }),
     );
     const url = `https://api.example.test/api/backups/file/${key}`;
-    const appBindings = {
-      ...bindings,
-      BACKUP_DOWNLOAD_TOKEN: "secret-for-test",
-    };
+    const appBindings = bindings;
+    const cookie = await authenticatedCookie();
     const unauthorized = await app.request(url, {}, appBindings);
     expect(unauthorized.status).toBe(401);
     const authorized = await app.request(
       url,
-      { headers: { authorization: "Bearer secret-for-test" } },
+      { headers: { cookie } },
       appBindings,
     );
     expect(authorized.status).toBe(200);
@@ -261,7 +344,7 @@ describe("bindings Cloudflare locais", () => {
     await bindings.PRIVATE_FILES.put(key, "tampered");
     const tampered = await app.request(
       url,
-      { headers: { authorization: "Bearer secret-for-test" } },
+      { headers: { cookie } },
       appBindings,
     );
     expect(tampered.status).toBe(409);

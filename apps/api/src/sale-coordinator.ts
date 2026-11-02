@@ -17,6 +17,10 @@ export class SaleCoordinator extends DurableObject<Env> {
     if (request.method !== "POST")
       return Response.json({ error: "Method not allowed" }, { status: 405 });
     const key = request.headers.get("idempotency-key") ?? "";
+    const actorUserId = request.headers.get("x-actor-user-id") ?? "";
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(actorUserId)) {
+      return Response.json({ error: "Não autenticado." }, { status: 401 });
+    }
     if (!/^[A-Za-z0-9._:-]{8,128}$/.test(key)) {
       return Response.json(
         { error: "Informe uma chave de idempotência válida." },
@@ -49,6 +53,7 @@ export class SaleCoordinator extends DurableObject<Env> {
         this.env.DB,
         key,
         payload as SaleInput,
+        actorUserId,
       );
       return Response.json(outcome, { status: outcome.replayed ? 200 : 201 });
     } catch (error) {

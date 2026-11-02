@@ -17,8 +17,19 @@ pnpm db:migrate:local
 pnpm dev:api
 ```
 
-Defina valores aleatórios locais para `LOCAL_IMPORT_TOKEN`, `PDV_WRITE_TOKEN`,
-`CATALOG_READ_TOKEN` e `BACKUP_DOWNLOAD_TOKEN` em `apps/api/.dev.vars`. O Wrangler executa simuladores
+Cadastre contas diretamente na tabela privada `users` do D1. O script solicita
+os nomes e as senhas no terminal sem ecoar as senhas; esses dados não ficam em
+arquivos versionados nem em secrets do Worker:
+
+```powershell
+uv run python apps/api/scripts/provision_auth_users.py preview
+```
+
+Execute depois de aplicar as migrations ao ambiente desejado. O script grava
+um SQL temporário ignorado pelo Git, aplica os hashes no D1 e apaga o arquivo.
+Use `local`, `preview` ou `production` como argumento. As senhas precisam ter
+de 4 a 128 caracteres; os hashes usam PBKDF2-SHA-256 com 100.000 iterações,
+compatível com o WebCrypto dos Workers. O Wrangler executa simuladores
 locais de D1, KV, R2, Durable Objects e Workflows. O servidor responde em
 `http://127.0.0.1:3000`; nenhum comando de desenvolvimento usa `--remote`.
 Ao desenvolver uma tela que chama a API por Service Binding, mantenha também
@@ -35,8 +46,8 @@ do serviço.
   KV são tolerantes a falha; lista cai para D1. Cálculos e leituras financeiras
   consultam sempre D1.
 - **R2 (`PRIVATE_FILES`)**: SQL de backup e manifesto JSON. Bucket privado, sem
-  domínio público ou `r2.dev`. A lista e o download passam por rotas com
-  `BACKUP_DOWNLOAD_TOKEN`; respostas são `private, no-store`. Escritas são
+  domínio público ou `r2.dev`. A lista e o download exigem uma sessão de usuário;
+  respostas são `private, no-store`. Escritas são
   condicionais e conteúdo diferente na mesma chave é recusado; download SQL
   valida contrato, tamanho e SHA-256 em streaming antes de entregar o arquivo;
   o SQL é lido duas vezes no R2 para validar primeiro e então responder sem
@@ -75,6 +86,12 @@ uv run scons api-preview
 uv run scons preview
 ```
 
+As contas ficam no D1 e não existe cadastro público. Para criá-las ou trocar
+credenciais, execute o utilitário de provisionamento após aplicar as migrations
+do ambiente. Ele pede a quantidade de contas e os dados em prompts locais; os
+nomes não aparecem em código, exemplos versionados ou configuração do Worker.
+Use senhas e salts independentes entre preview e produção.
+
 `CLOUDFLARE_API_TOKEN` (no arquivo de secrets da API) deve ter somente a permissão necessária para exportar o D1
 correspondente. `BACKUP_DATABASE_ID` precisa ser o mesmo ID de
 `d1_databases[0].database_id`; o guard interrompe o deploy se divergirem. Antes
@@ -96,19 +113,30 @@ conferido sem credenciais com `pnpm build:api` e `wrangler deploy --env preview
 ## Rotas da API
 
 - `GET /health`: disponibilidade do Worker.
-- `GET /api/catalog/products`: requer `Bearer CATALOG_READ_TOKEN`; KV é
-  acelerador descartável.
-- `POST /api/sales`: requer `Bearer PDV_WRITE_TOKEN` e `Idempotency-Key`.
+- `POST /api/auth/login`: valida usuário na tabela privada `users`, limita
+  tentativas por IP e emite cookie HttpOnly compartilhado entre os subdomínios.
+- `GET /api/auth/session` e `POST /api/auth/logout`: consultam e revogam a sessão
+  opaca, persistida somente como hash no D1.
+- `GET /api/catalog/products`: exige sessão autenticada; KV é acelerador
+  descartável.
+- `POST /api/sales`: exige sessão, origem confiável e `Idempotency-Key`.
   Entrada inclui data, itens congelados e pagamentos; valores são centavos
-  inteiros e a soma dos itens precisa reconciliar com a soma dos pagamentos.
-- `GET /api/backups`: lista manifestos, exige `Bearer BACKUP_DOWNLOAD_TOKEN`.
+  inteiros e a soma dos itens precisa reconciliar com a soma dos pagamentos. O
+  usuário autenticado é gravado em `ledger_entries.actor_user_id`.
+- `GET /api/backups`: lista manifestos, exige sessão autenticada.
 - `GET /api/backups/file/{chave R2}`: baixa artefato autenticado.
 - `POST /api/backups/run`: inicia backup manual autenticado e idempotente.
 - `POST /__local/import`: importação local protegida por token e hostname.
 
-Os tokens de catálogo e PDV são proteções transitórias para esta API. A
-autenticação de usuários/sessões será feita na etapa #6 e substituirá esses
-segredos compartilhados.
+Não existe rota de cadastro. O provisionador local cadastra usuários diretamente
+na tabela privada `users`, que guarda salt e hash PBKDF2; nenhum nome de usuário
+é publicado como variável ou secret do Worker. O cookie tem validade de
+12 horas, `HttpOnly`, `SameSite=Strict` e `Secure` fora de localhost. Preview e
+produção usam nomes de cookie distintos. Mutations validam a origem somente
+contra a lista explícita do ambiente. Há limites de 10 tentativas por IP e por
+combinação de IP/usuário, além de 100 por conta, em 15 minutos. D1 armazena os
+hashes dos identificadores dos buckets e os contadores da janela; falhas de
+credenciais são registradas sem incluir usuário ou senha em claro.
 
 ## Backup, retenção e restauração
 

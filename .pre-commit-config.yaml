@@ -65,10 +65,17 @@ repos:
         language: system
         types: [markdown]
         files: ^(AGENTS\.md|README\.md|docs/(json-contract|arquitetura-web)\.md|apps/(erp|pdv|api)/README\.md)$
+      - id: svg-optimization
+        name: SVG optimization (SVGO)
+        entry: uv run python scripts/optimize_svg_files.py --pre-commit
+        language: system
+        types: [file]
+        files: \.svg$
+        pass_filenames: false
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3
     hooks:
       - id: ruff-check
         args: [--select=E4, E7, E9]
-        files: ^(SConstruct|src/sabores/.*\.py|tests/.*\.py|utils/.*\.py)$
+        files: ^(SConstruct|src/sabores/.*\.py|tests/.*\.py|utils/.*\.py|apps/api/scripts/.*\.py)$

@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@12.11.2",
   "scripts": {
+    "assets:brand": "node scripts/generate-brand-assets.mjs",
     "dev:erp": "pnpm --filter @sabores/erp dev",
     "dev:pdv": "pnpm --filter @sabores/pdv dev",
     "dev:api": "pnpm --filter @sabores/api dev",
@@ -31,5 +32,9 @@
     "typecheck:web": "pnpm typecheck:erp && pnpm typecheck:pdv",
     "test:web": "pnpm test:erp && pnpm test:pdv",
     "lint:docs": "pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml AGENTS.md README.md docs/json-contract.md docs/arquitetura-web.md apps/erp/README.md apps/pdv/README.md apps/api/README.md"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "svgo": "^4.1.0"
   }
 }

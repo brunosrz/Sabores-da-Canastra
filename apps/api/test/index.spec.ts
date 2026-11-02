@@ -5,30 +5,6 @@ const environment = {
   DB: {} as D1Database,
   LOCAL_IMPORT_TOKEN: "x".repeat(40),
 };
-const sessionCookie = "sabores_session=session-for-test";
-const testAuthUsers = JSON.stringify([
-  {
-    id: "test-user",
-    username: "bruno",
-    role: "owner",
-    salt: "AAAAAAAAAAAAAAAAAAAAAA",
-    hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    iterations: 100_000,
-  },
-]);
-function databaseWithSession() {
-  return {
-    prepare: () => ({
-      bind: () => ({
-        first: async () => ({
-          id: "test-user",
-          username: "bruno",
-          role: "owner",
-        }),
-      }),
-    }),
-  } as unknown as D1Database;
-}
 
 describe("rotas locais da API", () => {
   it("responde saúde sem acessar D1", async () => {
@@ -97,16 +73,14 @@ describe("rotas locais da API", () => {
       {
         method: "POST",
         headers: {
-          cookie: sessionCookie,
-          origin: "https://erp.example.test",
+          authorization: "Bearer backup-token",
           "idempotency-key": "retry-1234",
         },
       },
       {
-        DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
+        DB: {} as D1Database,
         PRIVATE_FILES: {} as R2Bucket,
-        AUTH_ALLOWED_ORIGINS: "https://erp.example.test",
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
         D1_BACKUP: { create, get } as unknown as Workflow,
       },
     );
@@ -125,16 +99,14 @@ describe("rotas locais da API", () => {
       {
         method: "POST",
         headers: {
-          cookie: sessionCookie,
-          origin: "https://erp.example.test",
+          authorization: "Bearer backup-token",
           "idempotency-key": "invalid:key",
         },
       },
       {
-        DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
+        DB: {} as D1Database,
         PRIVATE_FILES: {} as R2Bucket,
-        AUTH_ALLOWED_ORIGINS: "https://erp.example.test",
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
         D1_BACKUP: { create } as unknown as Workflow,
       },
     );
@@ -148,13 +120,12 @@ describe("rotas locais da API", () => {
       "https://api.example.test/api/backups/run",
       {
         method: "POST",
-        headers: { cookie: sessionCookie, origin: "https://erp.example.test" },
+        headers: { authorization: "Bearer backup-token" },
       },
       {
-        DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
+        DB: {} as D1Database,
         PRIVATE_FILES: {} as R2Bucket,
-        AUTH_ALLOWED_ORIGINS: "https://erp.example.test",
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
         BACKUP_ACCOUNT_ID: "local",
         BACKUP_DATABASE_ID: "local",
         D1_BACKUP: { create } as unknown as Workflow,
@@ -174,17 +145,15 @@ describe("rotas locais da API", () => {
       {
         method: "POST",
         headers: {
-          cookie: sessionCookie,
+          authorization: "Bearer pdv-token",
           "idempotency-key": "sale-size-limit-1",
-          origin: "http://localhost:5174",
         },
         body: "x".repeat(1_000_001),
       },
       {
-        DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
+        DB: {} as D1Database,
         SALE_COORDINATOR: { getByName } as unknown as DurableObjectNamespace,
-        AUTH_ALLOWED_ORIGINS: "http://localhost:5174",
+        PDV_WRITE_TOKEN: "pdv-token",
       },
     );
     expect(response.status).toBe(413);
@@ -194,11 +163,11 @@ describe("rotas locais da API", () => {
   it("retorna 404 quando o caminho do arquivo de backup tem escape inválido", async () => {
     const response = await app.request(
       "https://api.example.test/api/backups/file/backups/d1/%E0%A4%A.sql",
-      { headers: { cookie: sessionCookie } },
+      { headers: { authorization: "Bearer backup-token" } },
       {
-        DB: databaseWithSession(),
-        AUTH_USERS: testAuthUsers,
+        DB: {} as D1Database,
         PRIVATE_FILES: {} as R2Bucket,
+        BACKUP_DOWNLOAD_TOKEN: "backup-token",
       },
     );
     expect(response.status).toBe(404);

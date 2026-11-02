@@ -3,9 +3,9 @@
 ## Estado deste documento
 
 Esta página descreve o bootstrap e as decisões das etapas seguintes. ERP e PDV
-têm telas iniciais e autenticação; os módulos de negócio serão entregues em
-etapas posteriores. Os recursos remotos de preview permanecem separados dos de
-produção.
+têm infraestrutura e rotas iniciais, mas ainda não implementam os fluxos de
+negócio. A API remota de preview foi publicada sem rota pública; faltam habilitar
+Access e publicar os apps web. Produção permanece separada.
 
 ## Aplicações
 
@@ -14,24 +14,26 @@ produção.
 - `apps/pdv`: ponto de venda em `pdv.brunosrz.com`, para registrar pedidos e
   pagamentos.
 - `apps/api`: Worker Hono interno, dono do schema D1 e da lógica de negócio
-  compartilhada. Expõe saúde, autenticação, catálogo com cache, registro
-  idempotente de venda com autoria no ledger e acesso autenticado a backups.
+  compartilhada. Expõe saúde, catálogo com cache, registro idempotente de venda
+  e acesso autenticado a backups privados.
 
 ERP e PDV são interfaces independentes, implantáveis e versionadas
 separadamente. ERP e PDV executam localmente como Workers independentes e ainda
 têm rotas iniciais e verificação de saúde. A API executa em `127.0.0.1:3000`;
 D1, KV, R2, Durable Objects e Workflows usam simuladores locais. Os recursos
-remotos de preview foram provisionados. A API e os apps usam Service Bindings.
-Os arquivos Python continuam sendo a referência funcional durante a migração,
-não os backends dos novos apps.
+remotos de preview foram provisionados. A API já está publicada e
+depende apenas de Service Bindings; os apps web aguardam Access para expor seus
+domínios. Os arquivos Python continuam sendo a referência funcional durante a
+migração, não os backends dos novos apps.
 
 ## Backend e banco compartilhados
 
 O backend de negócio é um único serviço interno em `apps/api`. Esse Worker é o
 único com binding direto ao D1 e será responsável por autenticação, regras de
 negócio, validação, catálogo/receitas, estoque, vendas, compras, despesas e
-ledger. O schema, bindings e rotas iniciais de catálogo, venda, backup e
-autenticação estão implementados.
+ledger. O schema, bindings e rotas iniciais de catálogo, venda e backup estão
+implementados; autenticação de usuários e integração com os frontends ainda
+não.
 
 ERP e PDV continuarão sendo dois apps. Suas rotas e server functions do TanStack
 Start atuarão como camada de interface/BFF: recebem a sessão da requisição,
@@ -41,19 +43,16 @@ API não precisa de um terceiro site público; o binding de serviço conecta os
 Workers internamente. Os Service Bindings entre os três Workers estão
 configurados por ambiente.
 
-As sessões usam cookies opacos `Secure`, `HttpOnly`, `SameSite=Strict` e domínio
-compartilhado entre os subdomínios. O D1 mantém somente o hash do token, validade
-e revogação. Não existe cadastro aberto: as contas são provisionadas pelo
-secret `AUTH_USERS`, com hashes PBKDF2. Login e vendas verificam a origem, e as
-tentativas de login são limitadas. Cada venda grava `actor_user_id` no ledger.
-Os Workers de preview usam recursos e dados de preview separados dos recursos
-de produção.
+As sessões serão emitidas para autenticação nos dois subdomínios, com cookies
+`Secure`, `HttpOnly` e política de domínio/CSRF definida na etapa de autenticação.
+Não haverá cadastro aberto. Os Workers de preview usarão recursos e dados de
+preview separados dos recursos de produção.
 
 O SQLite do legado Python é um banco local independente. A migração inicial
 exporta uma cópia validada e não cria sincronização contínua entre SQLite e D1.
 O endpoint `/health` informa saúde. A importação `/__local/import` exige
-hostname local e segredo em `.dev.vars`. Vendas exigem sessão autenticada e
-registram o usuário responsável no ledger.
+hostname local e segredo em `.dev.vars`. Vendas exigem segredo transitório do
+PDV; a sessão de usuário substituirá esse mecanismo na issue #6.
 
 ## Bibliotecas TanStack
 

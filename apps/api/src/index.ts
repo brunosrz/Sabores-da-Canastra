@@ -2,15 +2,6 @@ import { Hono } from "hono";
 import { importBundle } from "./import";
 import { invalidateCatalogCache, listProducts } from "./catalog-cache";
 import { verifyBackupStream } from "./backup";
-import {
-  currentUser,
-  hasTrustedOrigin,
-  login,
-  logout,
-  sessionResponse,
-  type AuthBindings,
-  type AuthUser,
-} from "./auth";
 export { SaleCoordinator } from "./sale-coordinator";
 export { D1BackupWorkflow } from "./backup";
 
@@ -20,25 +11,16 @@ type Bindings = {
   PRIVATE_FILES: R2Bucket;
   SALE_COORDINATOR: DurableObjectNamespace;
   D1_BACKUP: Workflow;
+  BACKUP_DOWNLOAD_TOKEN?: string;
   BACKUP_ACCOUNT_ID?: string;
   BACKUP_DATABASE_ID?: string;
+  PDV_WRITE_TOKEN?: string;
+  CATALOG_READ_TOKEN?: string;
   LOCAL_IMPORT_TOKEN?: string;
-  AUTH_USERS?: string;
-  AUTH_COOKIE_DOMAIN?: string;
-  AUTH_ALLOWED_ORIGINS?: string;
 };
 
-const app = new Hono<{
-  Bindings: Bindings;
-  Variables: { authUser: AuthUser };
-}>();
+const app = new Hono<{ Bindings: Bindings }>();
 const MAX_SALE_BODY_BYTES = 1_000_000;
-const MAX_LOGIN_BODY_BYTES = 16_384;
-const PUBLIC_AUTH_ROUTES = new Set([
-  "POST /api/auth/login",
-  "GET /api/auth/session",
-  "POST /api/auth/logout",
-]);
 
 async function readBodyWithinLimit(
   body: ReadableStream<Uint8Array> | null,
@@ -75,30 +57,13 @@ async function readBodyWithinLimit(
   return result;
 }
 
-async function authenticatedUser(context: {
-  req: { raw: Request };
-  env: Bindings;
-}): Promise<AuthUser | null> {
-  try {
-    return await currentUser(context.req.raw, context.env as AuthBindings);
-  } catch {
-    return null;
-  }
-}
-
-function unauthorized(context: {
-  json: (body: unknown, status?: number) => Response;
-}): Response {
-  return context.json({ error: "Não autenticado." }, 401);
-}
-
 async function bearerMatches(
   authorization: string | undefined,
   expectedToken: string | undefined,
 ): Promise<boolean> {
   if (!authorization || !expectedToken) return false;
   const actual = authorization.startsWith("Bearer ")
-    ? authorization.slice(7)
+    ? authorization.slice("Bearer ".length)
     : "";
   const [actualDigest, expectedDigest] = await Promise.all([
     crypto.subtle.digest("SHA-256", new TextEncoder().encode(actual)),
@@ -107,8 +72,9 @@ async function bearerMatches(
   const left = new Uint8Array(actualDigest);
   const right = new Uint8Array(expectedDigest);
   let difference = 0;
-  for (let index = 0; index < left.length; index += 1)
+  for (let index = 0; index < left.length; index += 1) {
     difference |= left[index]! ^ right[index]!;
+  }
   return difference === 0 && authorization.startsWith("Bearer ");
 }
 
@@ -116,41 +82,14 @@ app.get("/health", (context) =>
   context.json({ app: "sabores-api", status: "ok" }),
 );
 
-app.post("/api/auth/login", async (context) => {
-  const bytes = await readBodyWithinLimit(
-    context.req.raw.body,
-    MAX_LOGIN_BODY_BYTES,
-  );
-  if (!bytes)
-    return context.json({ error: "Corpo de login excede 16 KB." }, 413);
-  const bodyBuffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(bodyBuffer).set(bytes);
-  return login(
-    new Request(context.req.raw.url, {
-      method: "POST",
-      headers: context.req.raw.headers,
-      body: bodyBuffer,
-    }),
-    context.env as AuthBindings,
-  );
-});
-app.get("/api/auth/session", (context) =>
-  sessionResponse(context.req.raw, context.env as AuthBindings),
-);
-app.post("/api/auth/logout", (context) =>
-  logout(context.req.raw, context.env as AuthBindings),
-);
-
-app.use("/api/*", async (context, next) => {
-  if (PUBLIC_AUTH_ROUTES.has(`${context.req.method} ${context.req.path}`))
-    return next();
-  const user = await authenticatedUser(context);
-  if (!user) return unauthorized(context);
-  context.set("authUser", user);
-  await next();
-});
-
 app.get("/api/catalog/products", async (context) => {
+  const expectedToken = context.env.CATALOG_READ_TOKEN;
+  if (
+    !expectedToken ||
+    !(await bearerMatches(context.req.header("authorization"), expectedToken))
+  ) {
+    return context.json({ error: "Unauthorized" }, expectedToken ? 401 : 503);
+  }
   try {
     const result = await listProducts(
       context.env.DB,
@@ -164,9 +103,13 @@ app.get("/api/catalog/products", async (context) => {
 });
 
 app.post("/api/sales", async (context) => {
-  const user = context.get("authUser");
-  if (!hasTrustedOrigin(context.req.raw, context.env as AuthBindings))
-    return context.json({ error: "Solicitação inválida." }, 403);
+  const expectedToken = context.env.PDV_WRITE_TOKEN;
+  if (
+    !expectedToken ||
+    !(await bearerMatches(context.req.header("authorization"), expectedToken))
+  ) {
+    return context.json({ error: "Unauthorized" }, expectedToken ? 401 : 503);
+  }
   const idempotencyKey = context.req.header("idempotency-key") ?? "";
   if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
     return context.json(
@@ -206,7 +149,6 @@ app.post("/api/sales", async (context) => {
       headers: {
         "content-type": "application/json",
         "idempotency-key": idempotencyKey,
-        "x-actor-user-id": user.id,
       },
       body: requestBody,
     }),
@@ -214,7 +156,20 @@ app.post("/api/sales", async (context) => {
   return new Response(response.body, response);
 });
 
+async function hasBackupAccess(context: {
+  env: Bindings;
+  req: { header(name: string): string | undefined };
+}): Promise<boolean> {
+  const token = context.env.BACKUP_DOWNLOAD_TOKEN;
+  return bearerMatches(context.req.header("authorization"), token);
+}
+
 app.get("/api/backups", async (context) => {
+  if (!(await hasBackupAccess(context)))
+    return context.json(
+      { error: "Unauthorized" },
+      context.env.BACKUP_DOWNLOAD_TOKEN ? 401 : 503,
+    );
   const page = await context.env.PRIVATE_FILES.list({
     prefix: "backups/d1/",
     limit: 1000,
@@ -231,8 +186,11 @@ app.get("/api/backups", async (context) => {
 });
 
 app.post("/api/backups/run", async (context) => {
-  if (!hasTrustedOrigin(context.req.raw, context.env as AuthBindings))
-    return context.json({ error: "Solicitação inválida." }, 403);
+  if (!(await hasBackupAccess(context)))
+    return context.json(
+      { error: "Unauthorized" },
+      context.env.BACKUP_DOWNLOAD_TOKEN ? 401 : 503,
+    );
   if (
     context.env.BACKUP_ACCOUNT_ID === "local" ||
     context.env.BACKUP_DATABASE_ID === "local"
@@ -274,6 +232,11 @@ app.post("/api/backups/run", async (context) => {
 });
 
 app.get("/api/backups/file/*", async (context) => {
+  if (!(await hasBackupAccess(context)))
+    return context.json(
+      { error: "Unauthorized" },
+      context.env.BACKUP_DOWNLOAD_TOKEN ? 401 : 503,
+    );
   let key: string;
   try {
     key = decodeURIComponent(

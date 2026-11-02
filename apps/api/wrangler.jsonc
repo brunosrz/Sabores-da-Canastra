@@ -40,7 +40,6 @@
     "BACKUP_ACCOUNT_ID": "local",
     "BACKUP_DATABASE_ID": "local",
     "BACKUP_RETENTION_DAYS": "90",
-    "AUTH_ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174",
   },
   "env": {
     "preview": {
@@ -85,8 +84,6 @@
         "BACKUP_ACCOUNT_ID": "94e04fd3c2a3c68a6cae057ad33cb4db",
         "BACKUP_DATABASE_ID": "c9152e33-9220-44e7-8f46-32aee3fe682c",
         "BACKUP_RETENTION_DAYS": "30",
-        "AUTH_COOKIE_DOMAIN": "brunosrz.com",
-        "AUTH_ALLOWED_ORIGINS": "https://erp-preview.brunosrz.com,https://pdv-preview.brunosrz.com",
       },
       "observability": { "enabled": true, "head_sampling_rate": 1 },
     },
@@ -133,8 +130,6 @@
         "BACKUP_ACCOUNT_ID": "REPLACE_WITH_PRODUCTION_ACCOUNT_ID",
         "BACKUP_DATABASE_ID": "REPLACE_WITH_PRODUCTION_D1_ID",
         "BACKUP_RETENTION_DAYS": "90",
-        "AUTH_COOKIE_DOMAIN": "brunosrz.com",
-        "AUTH_ALLOWED_ORIGINS": "https://erp.brunosrz.com,https://pdv.brunosrz.com",
       },
       "observability": { "enabled": true, "head_sampling_rate": 1 },
     },

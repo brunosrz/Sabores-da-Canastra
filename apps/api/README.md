@@ -17,18 +17,8 @@ pnpm db:migrate:local
 pnpm dev:api
 ```
 
-Gere os hashes em arquivos ignorados, com a senha digitada sem eco no terminal:
-
-```powershell
-uv run python apps/api/scripts/provision_auth_users.py preview
-uv run python apps/api/scripts/provision_auth_users.py local
-```
-
-O primeiro comando grava `AUTH_USERS` em `apps/api/.env.preview`; o segundo
-reaproveita os hashes no `apps/api/.dev.vars`. Para produção, use o argumento
-`production` depois de criar `.env.production` a partir do exemplo. `AUTH_USERS`
-é um segredo JSON com IDs, nomes, papéis e hashes PBKDF2; nunca armazene senhas
-em texto puro no repositório. O Wrangler executa simuladores
+Defina valores aleatórios locais para `LOCAL_IMPORT_TOKEN`, `PDV_WRITE_TOKEN`,
+`CATALOG_READ_TOKEN` e `BACKUP_DOWNLOAD_TOKEN` em `apps/api/.dev.vars`. O Wrangler executa simuladores
 locais de D1, KV, R2, Durable Objects e Workflows. O servidor responde em
 `http://127.0.0.1:3000`; nenhum comando de desenvolvimento usa `--remote`.
 Ao desenvolver uma tela que chama a API por Service Binding, mantenha também
@@ -45,8 +35,8 @@ do serviço.
   KV são tolerantes a falha; lista cai para D1. Cálculos e leituras financeiras
   consultam sempre D1.
 - **R2 (`PRIVATE_FILES`)**: SQL de backup e manifesto JSON. Bucket privado, sem
-  domínio público ou `r2.dev`. A lista e o download exigem uma sessão de usuário;
-  respostas são `private, no-store`. Escritas são
+  domínio público ou `r2.dev`. A lista e o download passam por rotas com
+  `BACKUP_DOWNLOAD_TOKEN`; respostas são `private, no-store`. Escritas são
   condicionais e conteúdo diferente na mesma chave é recusado; download SQL
   valida contrato, tamanho e SHA-256 em streaming antes de entregar o arquivo;
   o SQL é lido duas vezes no R2 para validar primeiro e então responder sem
@@ -85,11 +75,6 @@ uv run scons api-preview
 uv run scons preview
 ```
 
-O `AUTH_USERS` é obrigatório no preview e em produção. Gere o JSON por meio do
-utilitário acima antes de publicar; o comando nunca imprime as senhas nem os
-hashes gerados. As contas são `bruno` e `ivone`, provisionadas sem cadastro
-público. Use sal/senha independentes em produção.
-
 `CLOUDFLARE_API_TOKEN` (no arquivo de secrets da API) deve ter somente a permissão necessária para exportar o D1
 correspondente. `BACKUP_DATABASE_ID` precisa ser o mesmo ID de
 `d1_databases[0].database_id`; o guard interrompe o deploy se divergirem. Antes
@@ -111,27 +96,19 @@ conferido sem credenciais com `pnpm build:api` e `wrangler deploy --env preview
 ## Rotas da API
 
 - `GET /health`: disponibilidade do Worker.
-- `POST /api/auth/login`: valida usuário contra o segredo `AUTH_USERS`, limita
-  tentativas por IP e emite cookie HttpOnly compartilhado entre os subdomínios.
-- `GET /api/auth/session` e `POST /api/auth/logout`: consultam e revogam a sessão
-  opaca, persistida somente como hash no D1.
-- `GET /api/catalog/products`: exige sessão autenticada; KV é acelerador
-  descartável.
-- `POST /api/sales`: exige sessão, origem confiável e `Idempotency-Key`.
+- `GET /api/catalog/products`: requer `Bearer CATALOG_READ_TOKEN`; KV é
+  acelerador descartável.
+- `POST /api/sales`: requer `Bearer PDV_WRITE_TOKEN` e `Idempotency-Key`.
   Entrada inclui data, itens congelados e pagamentos; valores são centavos
-  inteiros e a soma dos itens precisa reconciliar com a soma dos pagamentos. O
-  usuário autenticado é gravado em `ledger_entries.actor_user_id`.
-- `GET /api/backups`: lista manifestos, exige sessão autenticada.
+  inteiros e a soma dos itens precisa reconciliar com a soma dos pagamentos.
+- `GET /api/backups`: lista manifestos, exige `Bearer BACKUP_DOWNLOAD_TOKEN`.
 - `GET /api/backups/file/{chave R2}`: baixa artefato autenticado.
 - `POST /api/backups/run`: inicia backup manual autenticado e idempotente.
 - `POST /__local/import`: importação local protegida por token e hostname.
 
-Não existe rota de cadastro. Para provisionar usuários, gere sal/hash PBKDF2 e
-configure `AUTH_USERS` como secret em cada ambiente. O cookie tem validade de
-12 horas, `HttpOnly`, `SameSite=Strict` e `Secure` fora de localhost. Mutations
-validam a origem contra a lista do ambiente. O limite atual é de 10 tentativas
-por endereço em 15 minutos; o banco guarda somente o hash do endereço e o
-contador da janela.
+Os tokens de catálogo e PDV são proteções transitórias para esta API. A
+autenticação de usuários/sessões será feita na etapa #6 e substituirá esses
+segredos compartilhados.
 
 ## Backup, retenção e restauração
 

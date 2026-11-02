@@ -11,9 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
-import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
-import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
-import { Route as ApiAuthSessionRouteImport } from './routes/api.auth.session'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -25,74 +22,31 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
-  id: '/api/auth/login',
-  path: '/api/auth/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
-  id: '/api/auth/logout',
-  path: '/api/auth/logout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthSessionRoute = ApiAuthSessionRouteImport.update({
-  id: '/api/auth/session',
-  path: '/api/auth/session',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
-  '/api/auth/login': typeof ApiAuthLoginRoute
-  '/api/auth/logout': typeof ApiAuthLogoutRoute
-  '/api/auth/session': typeof ApiAuthSessionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
-  '/api/auth/login': typeof ApiAuthLoginRoute
-  '/api/auth/logout': typeof ApiAuthLogoutRoute
-  '/api/auth/session': typeof ApiAuthSessionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
-  '/api/auth/login': typeof ApiAuthLoginRoute
-  '/api/auth/logout': typeof ApiAuthLogoutRoute
-  '/api/auth/session': typeof ApiAuthSessionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/api/health'
-    | '/api/auth/login'
-    | '/api/auth/logout'
-    | '/api/auth/session'
+  fullPaths: '/' | '/api/health'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/api/health'
-    | '/api/auth/login'
-    | '/api/auth/logout'
-    | '/api/auth/session'
-  id:
-    | '__root__'
-    | '/'
-    | '/api/health'
-    | '/api/auth/login'
-    | '/api/auth/logout'
-    | '/api/auth/session'
+  to: '/' | '/api/health'
+  id: '__root__' | '/' | '/api/health'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiHealthRoute: typeof ApiHealthRoute
-  ApiAuthLoginRoute: typeof ApiAuthLoginRoute
-  ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
-  ApiAuthSessionRoute: typeof ApiAuthSessionRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -111,36 +65,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/auth/login': {
-      id: '/api/auth/login'
-      path: '/api/auth/login'
-      fullPath: '/api/auth/login'
-      preLoaderRoute: typeof ApiAuthLoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/logout': {
-      id: '/api/auth/logout'
-      path: '/api/auth/logout'
-      fullPath: '/api/auth/logout'
-      preLoaderRoute: typeof ApiAuthLogoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/session': {
-      id: '/api/auth/session'
-      path: '/api/auth/session'
-      fullPath: '/api/auth/session'
-      preLoaderRoute: typeof ApiAuthSessionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiHealthRoute: ApiHealthRoute,
-  ApiAuthLoginRoute: ApiAuthLoginRoute,
-  ApiAuthLogoutRoute: ApiAuthLogoutRoute,
-  ApiAuthSessionRoute: ApiAuthSessionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import catalogAdmin from "./catalog-admin";
+import { productsWithCosts, type CostProduct } from "./product-cost";
 import { importBundle, previewImport } from "./import";
 import type { OperationEnvelope } from "@sabores/pdv-sync";
 import { invalidateCatalogCache, listProducts } from "./catalog-cache";
@@ -252,7 +253,7 @@ app.get("/api/erp/recipes", async (context) => {
     return context.json({ error: "Acesso negado." }, 403);
   try {
     const { results: recipes } = await context.env.DB.prepare(
-      "SELECT r.recipe_id, r.product_id, COALESCE(p.name, r.product_name) AS product_name, r.version, r.yield_units, r.source, r.instructions FROM recipes r LEFT JOIN products p ON p.product_id = r.product_id ORDER BY COALESCE(p.name, r.product_name) COLLATE NOCASE, r.version",
+      "SELECT r.recipe_id, r.product_id, COALESCE(p.name, r.product_name) AS product_name, r.version, r.yield_units, r.source, r.instructions, COALESCE(m.quantity, 0) AS mix_quantity, m.selected_version FROM recipes r LEFT JOIN products p ON p.product_id = r.product_id LEFT JOIN daily_mix m ON m.recipe_id = r.recipe_id ORDER BY COALESCE(p.name, r.product_name) COLLATE NOCASE, r.version",
     ).all<{ recipe_id: string; yield_units: number }>();
     const { results: lines } = await context.env.DB.prepare(
       `SELECT rl.recipe_id, rl.line_id, rl.ingredient_id, i.name AS ingredient_name,
@@ -334,8 +335,10 @@ app.get("/api/erp/catalog/products", async (context) => {
               p.unit_cost_cents, p.active
        FROM products p JOIN categories c ON c.category_id = p.category_id
        WHERE p.active = 1 ORDER BY p.name COLLATE NOCASE`,
-    ).all();
-    return context.json({ data: results });
+    ).all<CostProduct>();
+    return context.json({
+      data: await productsWithCosts(context.env.DB, results),
+    });
   } catch (error) {
     console.error("Falha ao consultar catálogo financeiro do ERP.", error);
     return context.json({ error: "Catálogo indisponível." }, 503);
@@ -459,13 +462,18 @@ app.post("/api/erp/product-price", async (context) => {
 
 app.get("/api/pdv/catalog", async (context) => {
   try {
-    const { results: products } = await context.env.DB.prepare(
+    const { results: rawProducts } = await context.env.DB.prepare(
       `SELECT p.product_id, p.barcode, p.auxiliary_code, p.name,
               c.name AS category, p.unit, p.sale_price_cents, p.unit_cost_cents,
               p.active
          FROM products p JOIN categories c ON c.category_id = p.category_id
         WHERE p.active = 1 ORDER BY p.name COLLATE NOCASE`,
-    ).all();
+    ).all<CostProduct>();
+    const resolved = await productsWithCosts(context.env.DB, rawProducts);
+    const products = rawProducts.map((p, index) => ({
+      ...p,
+      unit_cost_cents: resolved[index]!.unit_cost_cents,
+    }));
     const { results: parameterRows } = await context.env.DB.prepare(
       "SELECT name, value FROM parameters WHERE name IN ('pos_debit_rate', 'pos_credit_rate')",
     ).all<{ name: string; value: string }>();

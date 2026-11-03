@@ -16,6 +16,8 @@ type Recipe = {
 	unit_cost_cents?: number | null;
 	pending_ingredients?: string[];
 	quality?: string;
+	mix_quantity?: number;
+	selected_version?: string | null;
 };
 type Product = { product_id: string; name: string };
 type Ingredient = { ingredient_id: string; name: string; base_unit: string };
@@ -81,6 +83,25 @@ export function RecipesPage() {
 			setMessage(remove ? t('Receita excluída.') : t('Receita salva. Custos recalculados.'));
 		} catch (e) {
 			setMessage(e instanceof Error ? e.message : t('Falha ao salvar.'));
+		} finally {
+			lock.current = false;
+			setBusy(false);
+		}
+	}
+	async function selectMix(recipe: Recipe) {
+		if (lock.current || !recipe.recipe_id) return;
+		lock.current = true;
+		setBusy(true);
+		try {
+			await api(`/api/admin/recipes/${encodeURIComponent(recipe.recipe_id)}/mix`, {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ quantity: recipe.mix_quantity ?? 0, selected_version: recipe.version }),
+			});
+			await load();
+			setMessage('Mix salvo. O custo desta versão será priorizado quando a quantidade for positiva.');
+		} catch (e) {
+			setMessage(e instanceof Error ? e.message : 'Falha ao salvar o mix.');
 		} finally {
 			lock.current = false;
 			setBusy(false);
@@ -294,6 +315,24 @@ export function RecipesPage() {
 								onClick={() => setEditing({ ...r, lines: r.lines.map((l) => ({ ...l })) })}
 							>
 								{t('Editar receita ')}
+							</button>
+							<label>
+								Quantidade planejada no mix
+								<input
+									className="demo-input"
+									type="number"
+									min="0"
+									step="1"
+									value={r.mix_quantity ?? 0}
+									onChange={(e) =>
+										setRecipes(
+											recipes.map((item) => (item.recipe_id === r.recipe_id ? { ...item, mix_quantity: Number(e.target.value) } : item)),
+										)
+									}
+								/>
+							</label>
+							<button type="button" className="demo-button demo-button-secondary" disabled={busy} onClick={() => void selectMix(r)}>
+								Selecionar versão no mix
 							</button>
 						</article>
 					))}

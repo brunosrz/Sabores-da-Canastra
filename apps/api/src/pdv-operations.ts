@@ -9,6 +9,7 @@ import {
   type SaleCreatePayload,
   type SalePayment,
 } from "@sabores/pdv-sync";
+import { resolveProductCosts, type CostProduct } from "./product-cost";
 
 type RecordedOperation = {
   operation_id: string;
@@ -68,8 +69,7 @@ async function validateProducts(
     const matches =
       item.name === product.name &&
       item.category === product.category &&
-      item.unitPriceCents === product.sale_price_cents &&
-      item.unitCostCents === product.unit_cost_cents;
+      item.unitPriceCents === product.sale_price_cents;
     if (!matches) {
       const productUpdatedAt = Date.parse(product.updated_at);
       if (
@@ -234,6 +234,14 @@ async function createSaleStatements(
   discrepancies: CatalogDiscrepancy[],
 ) {
   const payload = op.payload as SaleCreatePayload;
+  const ids = [...new Set(payload.items.map((item) => item.productId))];
+  const { results: costProducts } = await db
+    .prepare(
+      "SELECT product_id, name, unit_cost_cents FROM products WHERE product_id IN (SELECT value FROM json_each(?))",
+    )
+    .bind(JSON.stringify(ids))
+    .all<CostProduct>();
+  const resolvedCosts = await resolveProductCosts(db, costProducts);
   const { saleId } = operationIdentity(op.operationType, op.operationId);
   const ledgerId = makeLedgerId(op.operationId);
   const grossCents = payload.items.reduce(
@@ -301,7 +309,7 @@ async function createSaleStatements(
           item.category,
           item.quantity,
           item.unitPriceCents,
-          item.unitCostCents,
+          resolvedCosts.get(item.productId)?.unit_cost_cents ?? null,
           item.lineTotalCents,
           `${op.operationId}:item:${item.position}`,
           item.position,

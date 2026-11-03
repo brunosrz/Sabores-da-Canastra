@@ -58,9 +58,11 @@ function catalogDatabase() {
           expiresAt: "2099-01-01T00:00:00.000Z",
         }),
         all: async () => ({
-          results: query.includes("unit_cost_cents")
-            ? [{ product_id: "p1", unit_cost_cents: 230 }]
-            : [{ product_id: "p1", sale_price_cents: 500 }],
+          results: query.includes("FROM recipes r")
+            ? []
+            : query.includes("unit_cost_cents")
+              ? [{ product_id: "p1", unit_cost_cents: 230 }]
+              : [{ product_id: "p1", sale_price_cents: 500 }],
         }),
       };
       return statement;
@@ -77,7 +79,16 @@ describe("rotas locais da API", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      data: [{ product_id: "p1", unit_cost_cents: 230 }],
+      data: [
+        {
+          product_id: "p1",
+          unit_cost_cents: 230,
+          manual_unit_cost_cents: 230,
+          cost_source: "manual",
+          cost_recipe_id: null,
+          cost_quality: "Confirmado",
+        },
+      ],
     });
   });
 

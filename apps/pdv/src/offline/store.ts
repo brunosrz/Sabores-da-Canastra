@@ -57,8 +57,13 @@ async function requestValue<T>(storeName: string, mode: IDBTransactionMode, acti
 	return new Promise((resolve, reject) => {
 		const transaction = db.transaction(storeName, mode);
 		const request = action(transaction.objectStore(storeName));
-		request.onsuccess = () => resolve(request.result);
+		let value: T;
+		request.onsuccess = () => {
+			value = request.result;
+		};
+		transaction.oncomplete = () => resolve(value!);
 		request.onerror = () => reject(request.error ?? new Error('Falha ao acessar armazenamento local.'));
+		transaction.onerror = () => reject(transaction.error ?? new Error('Falha ao confirmar armazenamento local.'));
 		transaction.onabort = () => reject(transaction.error ?? new Error('Transação local cancelada.'));
 	});
 }

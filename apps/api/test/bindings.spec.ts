@@ -193,6 +193,74 @@ async function authenticatedCookie(role = "owner") {
 }
 
 describe("bindings Cloudflare locais", () => {
+  it("valida cadastro completo, autorização e colisão de produtos", async () => {
+    const owner = await authenticatedCookie();
+    const operator = await authenticatedCookie("operator");
+    const api = (
+      path: string,
+      method = "GET",
+      body?: unknown,
+      cookie = owner,
+      origin = "https://erp.example.test",
+    ) =>
+      app.request(
+        `https://api.example.test/api/admin/${path}`,
+        {
+          method,
+          headers: { cookie, origin, "content-type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        },
+        { ...bindings, AUTH_ALLOWED_ORIGINS: "https://erp.example.test" },
+      );
+    expect((await api("products", "GET", undefined, operator)).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await api(
+          "categories",
+          "POST",
+          { name: "Teste" },
+          owner,
+          "https://invalid.test",
+        )
+      ).status,
+    ).toBe(403);
+    const categoryResponse = await api("categories", "POST", {
+      name: `Categoria ${crypto.randomUUID()}`,
+    });
+    expect(categoryResponse.status).toBe(201);
+    const category = await categoryResponse.json<{ category_id: string }>();
+    const product = {
+      name: `Produto ${crypto.randomUUID()}`,
+      category_id: category.category_id,
+      unit: "un",
+      barcode: crypto.randomUUID(),
+      auxiliary_code: null,
+      sale_price_cents: 1250,
+      unit_cost_cents: null,
+      active: 1,
+      notes: "Observação preservada",
+    };
+    const saved = await api("products", "POST", product);
+    expect(saved.status).toBe(201);
+    const { product_id } = await saved.json<{ product_id: string }>();
+    expect((await api("products", "POST", product)).status).toBe(409);
+    expect(
+      (await api(`products/${product_id}`, "PUT", { name: "Incompleto" }))
+        .status,
+    ).toBe(422);
+    expect(
+      (await api(`products/${product_id}`, "PUT", { ...product, active: 0 }))
+        .status,
+    ).toBe(200);
+    const row = await bindings.DB.prepare(
+      "SELECT active, notes FROM products WHERE product_id = ?",
+    )
+      .bind(product_id)
+      .first();
+    expect(row).toMatchObject({ active: 0, notes: "Observação preservada" });
+  });
   it("restringe receitas ao proprietário e calcula custo da cotação atual", async () => {
     const suffix = crypto.randomUUID();
     const now = new Date().toISOString();

@@ -19,6 +19,7 @@ type User = { id: string; username: string; role: string };
 const NAV_ITEMS = [
 	{ to: '/', label: 'Início', icon: '⌂' },
 	{ to: '/produtos', label: 'Produtos', icon: '▦' },
+	{ to: '/catalogo', label: 'Cadastros', icon: '＋' },
 	{ to: '/receitas', label: 'Receitas', icon: '☷' },
 	{ to: '/estoque', label: 'Estoque', icon: '▤' },
 	{ to: '/financeiro', label: 'Financeiro', icon: 'R$' },
@@ -205,7 +206,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	return (
 		<AppShell
 			appName="ERP · Sabores da Canastra"
-			navItems={NAV_ITEMS}
+			navItems={user.role === 'owner' ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.to === '/' || item.to === '/ajustes')}
 			account={
 				<>
 					<span>

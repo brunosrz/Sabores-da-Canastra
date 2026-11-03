@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import catalogAdmin from "./catalog-admin";
 import { importBundle, previewImport } from "./import";
 import type { OperationEnvelope } from "@sabores/pdv-sync";
 import { invalidateCatalogCache, listProducts } from "./catalog-cache";
@@ -156,6 +157,8 @@ app.use("/api/backups*", async (context, next) => {
     return context.json({ error: "Acesso negado." }, 403);
   await next();
 });
+
+app.route("/api/admin", catalogAdmin);
 
 app.get("/api/catalog/products", async (context) => {
   try {

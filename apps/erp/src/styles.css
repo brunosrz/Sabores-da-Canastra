@@ -1,80 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Berkshire+Swash&family=Josefin+Sans:wght@400;500;600;700&family=Mulish:wght@400;500;600;700;800&display=swap');
 @import 'tailwindcss';
+@import '@sabores/ui/styles.css';
 @plugin "@tailwindcss/typography";
-
-@theme {
-	--font-sans: 'Josefin Sans', 'Mulish', ui-sans-serif, system-ui, sans-serif;
-	--font-display: 'Alfa Slab One', Georgia, serif;
-	--font-accent: 'Berkshire Swash', Georgia, serif;
-}
-
-:root {
-	--sea-ink: #181818;
-	--sea-ink-soft: #404040;
-	--lagoon: #fca336;
-	--lagoon-deep: #fe8800;
-	--palm: #fe8800;
-	--sand: #fff3e5;
-	--foam: #fff9f1;
-	--surface: rgba(255, 255, 255, 0.82);
-	--surface-strong: #ffffff;
-	--line: rgba(24, 24, 24, 0.14);
-	--inset-glint: rgba(255, 255, 255, 0.9);
-	--kicker: #cf4712;
-	--bg-base: #fff9f1;
-	--header-bg: rgba(255, 249, 241, 0.92);
-	--chip-bg: #ffffff;
-	--chip-line: rgba(24, 24, 24, 0.16);
-	--link-bg-hover: #fff3e5;
-	--hero-a: rgba(254, 136, 0, 0.16);
-	--hero-b: rgba(24, 24, 24, 0.07);
-}
-
-:root[data-theme='dark'] {
-	--sea-ink: #ffffff;
-	--sea-ink-soft: #eeeeee;
-	--lagoon: #fca336;
-	--lagoon-deep: #fe8800;
-	--palm: #fe8800;
-	--sand: #1d1d1d;
-	--foam: #181818;
-	--surface: rgba(29, 29, 29, 0.92);
-	--surface-strong: #1d1d1d;
-	--line: rgba(238, 238, 238, 0.16);
-	--inset-glint: rgba(255, 255, 255, 0.06);
-	--kicker: #fca336;
-	--bg-base: #181818;
-	--header-bg: rgba(24, 24, 24, 0.94);
-	--chip-bg: #1d1d1d;
-	--chip-line: rgba(238, 238, 238, 0.16);
-	--link-bg-hover: #292929;
-	--hero-a: rgba(254, 136, 0, 0.12);
-	--hero-b: rgba(238, 238, 238, 0.04);
-}
-
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) {
-		--sea-ink: #ffffff;
-		--sea-ink-soft: #eeeeee;
-		--lagoon: #fca336;
-		--lagoon-deep: #fe8800;
-		--palm: #fe8800;
-		--sand: #1d1d1d;
-		--foam: #181818;
-		--surface: rgba(29, 29, 29, 0.92);
-		--surface-strong: #1d1d1d;
-		--line: rgba(238, 238, 238, 0.16);
-		--inset-glint: rgba(255, 255, 255, 0.06);
-		--kicker: #fca336;
-		--bg-base: #181818;
-		--header-bg: rgba(24, 24, 24, 0.94);
-		--chip-bg: #1d1d1d;
-		--chip-line: rgba(238, 238, 238, 0.16);
-		--link-bg-hover: #292929;
-		--hero-a: rgba(254, 136, 0, 0.12);
-		--hero-b: rgba(238, 238, 238, 0.04);
-	}
-}
+@source '../../../packages/ui/src';
 
 * {
 	box-sizing: border-box;
@@ -455,6 +382,202 @@ a {
 
 .rise-in {
 	animation: rise-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.erp-home {
+	width: min(70rem, calc(100% - 2rem));
+	margin: 0 auto;
+	padding: clamp(1.5rem, 5vw, 4rem) 0 calc(7rem + env(safe-area-inset-bottom));
+}
+
+.erp-welcome {
+	position: relative;
+	overflow: hidden;
+	border: 1px solid var(--line);
+	border-radius: 1.5rem;
+	background: linear-gradient(135deg, var(--surface-strong), var(--surface));
+	padding: clamp(1.25rem, 5vw, 3rem);
+	box-shadow: 0 1rem 3rem rgba(30, 48, 42, 0.1);
+}
+
+.erp-welcome img {
+	width: min(28rem, 100%);
+	height: auto;
+	margin: 0 auto 1.5rem;
+}
+
+.erp-welcome .island-kicker {
+	margin: 0;
+}
+.erp-welcome h1 {
+	margin: 0.3rem 0;
+	font: 700 clamp(2.5rem, 9vw, 5rem) / 1 var(--font-display);
+}
+.erp-area-grid {
+	display: grid;
+	gap: 1rem;
+	margin-top: 1rem;
+}
+
+.erp-area-card {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	gap: 1rem;
+	min-height: 6rem;
+	border: 1px solid var(--line);
+	border-radius: 1.1rem;
+	background: var(--surface-strong);
+	padding: 1rem;
+}
+
+.erp-area-icon {
+	display: grid;
+	place-items: center;
+	width: 3rem;
+	height: 3rem;
+	border-radius: 1rem;
+	background: var(--chip-bg);
+	color: var(--kicker);
+	font-weight: 800;
+}
+.erp-area-card h2 {
+	margin: 0;
+	font-size: 1.1rem;
+}
+.erp-area-card p {
+	margin: 0.25rem 0 0;
+	color: var(--sea-ink-soft);
+}
+.erp-mobile-hint {
+	color: var(--sea-ink-soft);
+	text-align: center;
+}
+
+.erp-offline-status {
+	position: sticky;
+	z-index: 20;
+	top: var(--app-header-height, 4.5rem);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
+	background: var(--surface-overlay);
+	padding: 0.55rem 1rem;
+	color: var(--text);
+	font-size: 0.85rem;
+}
+.erp-offline-status button {
+	border: 0;
+	border-radius: 0.6rem;
+	background: var(--accent-soft);
+	color: var(--text);
+	padding: 0.45rem 0.7rem;
+	font-weight: 700;
+}
+.erp-catalog-tools {
+	display: grid;
+	grid-template-columns: auto minmax(14rem, 1fr);
+	align-items: center;
+	gap: 0.7rem 1rem;
+	margin-block: 1rem;
+}
+.erp-catalog-tools [role='status'] {
+	grid-column: 2;
+	color: var(--sea-ink-soft);
+	font-size: 0.85rem;
+}
+.erp-product-cards {
+	display: none;
+}
+.erp-modal-backdrop {
+	position: fixed;
+	z-index: 100;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	background: rgb(12 18 15 / 62%);
+	padding: 1rem;
+}
+.erp-price-modal {
+	width: min(32rem, 100%);
+	border: 1px solid var(--line);
+	border-radius: 1.25rem;
+	background: var(--surface-strong);
+	color: var(--sea-ink);
+	padding: 1.4rem;
+	box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 24%);
+}
+.erp-price-modal > label {
+	display: block;
+	margin-block: 1rem 0.4rem;
+	font-weight: 700;
+}
+.erp-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.6rem;
+	margin-top: 1rem;
+}
+
+@media (min-width: 720px) {
+	.erp-area-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+	.erp-area-card {
+		grid-template-columns: auto 1fr;
+		align-content: start;
+	}
+	.erp-area-card .demo-pill {
+		grid-column: 2;
+		justify-self: start;
+	}
+	.erp-mobile-hint {
+		display: none;
+	}
+}
+
+@media (max-width: 520px) {
+	.erp-catalog-tools {
+		grid-template-columns: 1fr;
+	}
+	.erp-catalog-tools [role='status'] {
+		grid-column: auto;
+	}
+	.erp-product-cards {
+		display: grid;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+	.erp-product-card {
+		display: grid;
+		gap: 0.8rem;
+	}
+	.erp-product-card h2 {
+		margin: 0.5rem 0 0.2rem;
+	}
+	.erp-product-card p {
+		margin: 0;
+		color: var(--sea-ink-soft);
+	}
+	.erp-product-card > div:nth-child(2),
+	.erp-product-card > div:nth-child(3) {
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.erp-modal-actions {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+	}
+	.erp-area-card {
+		grid-template-columns: auto 1fr;
+	}
+	.erp-area-card .demo-pill {
+		grid-column: 2;
+		justify-self: start;
+	}
 }
 
 @keyframes rise-in {

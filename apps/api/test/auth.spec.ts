@@ -105,6 +105,8 @@ describe("autenticação e sessão", () => {
     expect(loggedIn.status).toBe(200);
     expect(loggedIn.headers.get("set-cookie")).toContain("HttpOnly");
     expect(loggedIn.headers.get("set-cookie")).toContain("SameSite=Strict");
+    const loginBody = (await loggedIn.clone().json()) as { expiresAt: string };
+    expect(Date.parse(loginBody.expiresAt)).toBeGreaterThan(Date.now());
     const cookie = loggedIn.headers.get("set-cookie")!.split(";")[0]!;
 
     const session = await app.request(
@@ -113,9 +115,14 @@ describe("autenticação e sessão", () => {
       bindings(),
     );
     expect(session.status).toBe(200);
-    expect(await session.json()).toMatchObject({
+    const sessionBody = (await session.json()) as {
+      user: { id: string; username: string };
+      expiresAt: string;
+    };
+    expect(sessionBody).toMatchObject({
       user: { id: userId, username },
     });
+    expect(Date.parse(sessionBody.expiresAt)).toBeGreaterThan(Date.now());
 
     const loggedOut = await app.request(
       "https://api.example.test/api/auth/logout",

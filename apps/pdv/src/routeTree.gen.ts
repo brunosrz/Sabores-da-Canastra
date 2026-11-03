@@ -10,14 +10,35 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AjustesRouteImport } from './routes/ajustes'
+import { Route as HistoricoRouteImport } from './routes/historico'
+import { Route as SincronizacaoRouteImport } from './routes/sincronizacao'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthSessionRouteImport } from './routes/api.auth.session'
+import { Route as ApiPdvCatalogRouteImport } from './routes/api.pdv.catalog'
+import { Route as ApiPdvOperationsRouteImport } from './routes/api.pdv.operations'
+import { Route as ApiPdvSalesRouteImport } from './routes/api.pdv.sales'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AjustesRoute = AjustesRouteImport.update({
+  id: '/ajustes',
+  path: '/ajustes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoricoRoute = HistoricoRouteImport.update({
+  id: '/historico',
+  path: '/historico',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SincronizacaoRoute = SincronizacaoRouteImport.update({
+  id: '/sincronizacao',
+  path: '/sincronizacao',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -40,59 +61,116 @@ const ApiAuthSessionRoute = ApiAuthSessionRouteImport.update({
   path: '/api/auth/session',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPdvCatalogRoute = ApiPdvCatalogRouteImport.update({
+  id: '/api/pdv/catalog',
+  path: '/api/pdv/catalog',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPdvOperationsRoute = ApiPdvOperationsRouteImport.update({
+  id: '/api/pdv/operations',
+  path: '/api/pdv/operations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPdvSalesRoute = ApiPdvSalesRouteImport.update({
+  id: '/api/pdv/sales',
+  path: '/api/pdv/sales',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/ajustes': typeof AjustesRoute
+  '/historico': typeof HistoricoRoute
+  '/sincronizacao': typeof SincronizacaoRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/pdv/catalog': typeof ApiPdvCatalogRoute
+  '/api/pdv/operations': typeof ApiPdvOperationsRoute
+  '/api/pdv/sales': typeof ApiPdvSalesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/ajustes': typeof AjustesRoute
+  '/historico': typeof HistoricoRoute
+  '/sincronizacao': typeof SincronizacaoRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/pdv/catalog': typeof ApiPdvCatalogRoute
+  '/api/pdv/operations': typeof ApiPdvOperationsRoute
+  '/api/pdv/sales': typeof ApiPdvSalesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/ajustes': typeof AjustesRoute
+  '/historico': typeof HistoricoRoute
+  '/sincronizacao': typeof SincronizacaoRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/pdv/catalog': typeof ApiPdvCatalogRoute
+  '/api/pdv/operations': typeof ApiPdvOperationsRoute
+  '/api/pdv/sales': typeof ApiPdvSalesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/ajustes'
+    | '/historico'
+    | '/sincronizacao'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/pdv/catalog'
+    | '/api/pdv/operations'
+    | '/api/pdv/sales'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/ajustes'
+    | '/historico'
+    | '/sincronizacao'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/pdv/catalog'
+    | '/api/pdv/operations'
+    | '/api/pdv/sales'
   id:
     | '__root__'
     | '/'
+    | '/ajustes'
+    | '/historico'
+    | '/sincronizacao'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/pdv/catalog'
+    | '/api/pdv/operations'
+    | '/api/pdv/sales'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AjustesRoute: typeof AjustesRoute
+  HistoricoRoute: typeof HistoricoRoute
+  SincronizacaoRoute: typeof SincronizacaoRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSessionRoute: typeof ApiAuthSessionRoute
+  ApiPdvCatalogRoute: typeof ApiPdvCatalogRoute
+  ApiPdvOperationsRoute: typeof ApiPdvOperationsRoute
+  ApiPdvSalesRoute: typeof ApiPdvSalesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -102,6 +180,27 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ajustes': {
+      id: '/ajustes'
+      path: '/ajustes'
+      fullPath: '/ajustes'
+      preLoaderRoute: typeof AjustesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/historico': {
+      id: '/historico'
+      path: '/historico'
+      fullPath: '/historico'
+      preLoaderRoute: typeof HistoricoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sincronizacao': {
+      id: '/sincronizacao'
+      path: '/sincronizacao'
+      fullPath: '/sincronizacao'
+      preLoaderRoute: typeof SincronizacaoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/health': {
@@ -132,15 +231,42 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSessionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/pdv/catalog': {
+      id: '/api/pdv/catalog'
+      path: '/api/pdv/catalog'
+      fullPath: '/api/pdv/catalog'
+      preLoaderRoute: typeof ApiPdvCatalogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/pdv/operations': {
+      id: '/api/pdv/operations'
+      path: '/api/pdv/operations'
+      fullPath: '/api/pdv/operations'
+      preLoaderRoute: typeof ApiPdvOperationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/pdv/sales': {
+      id: '/api/pdv/sales'
+      path: '/api/pdv/sales'
+      fullPath: '/api/pdv/sales'
+      preLoaderRoute: typeof ApiPdvSalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AjustesRoute: AjustesRoute,
+  HistoricoRoute: HistoricoRoute,
+  SincronizacaoRoute: SincronizacaoRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSessionRoute: ApiAuthSessionRoute,
+  ApiPdvCatalogRoute: ApiPdvCatalogRoute,
+  ApiPdvOperationsRoute: ApiPdvOperationsRoute,
+  ApiPdvSalesRoute: ApiPdvSalesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   calculateBundleIntegrity,
   importBundle,
+  previewImport,
   type D1ImportBundle,
 } from "../src/import";
 
@@ -10,7 +11,10 @@ const baseBundle = async (): Promise<D1ImportBundle> => {
     contract: "sabores-da-canastra/d1-import",
     contract_version: 1,
     import_id: "0".repeat(64),
-    source: { workbook_sha256: "b".repeat(64) },
+    source: {
+      workbook_sha256: "b".repeat(64),
+      sqlite_file_sha256: "a".repeat(64),
+    },
     row_counts: {
       categories: 0,
       products: 0,
@@ -28,7 +32,18 @@ const baseBundle = async (): Promise<D1ImportBundle> => {
       purchaseItems: 0,
       expenses: 0,
     },
-    reconciliation: { financial: {} },
+    reconciliation: {
+      financial: Object.fromEntries(
+        ["Venda", "Compra", "Gasto"].map((kind) => [
+          kind,
+          {
+            source_cents: 0,
+            mapped_cents: 0,
+            matches: true,
+          },
+        ]),
+      ),
+    },
     tables: {
       categories: [],
       products: [],
@@ -51,6 +66,18 @@ const baseBundle = async (): Promise<D1ImportBundle> => {
   const { import_id, ...sourceHashes } = integrity;
   Object.assign(bundle.source, sourceHashes);
   bundle.import_id = import_id;
+  bundle.provenance = {
+    timezone: "America/Sao_Paulo",
+    captured_at: new Date().toISOString(),
+    source_files: {
+      sqlite: { sha256: "a".repeat(64), size_bytes: 1, components: [] },
+      workbook: { sha256: "b".repeat(64), size_bytes: 1, components: [] },
+    },
+    totals: structuredClone(bundle.reconciliation.financial) as Record<
+      string,
+      { source_cents: number; mapped_cents: number; matches: boolean }
+    >,
+  };
   return bundle;
 };
 
@@ -98,6 +125,60 @@ describe("importação do pacote D1", () => {
 
     expect(result.alreadyImported).toBe(true);
     expect(fake.batch).not.toHaveBeenCalled();
+  });
+
+  it("faz preview sem escrita e classifica banco vazio e importação repetida", async () => {
+    const bundle = await baseBundle();
+    const empty = fakeDatabase(null, undefined, 0);
+    const preview = await previewImport(empty.db, bundle);
+    expect(preview.state).toBe("empty");
+    expect(empty.batch).not.toHaveBeenCalled();
+
+    const imported = fakeDatabase({ import_id: bundle.import_id });
+    expect((await previewImport(imported.db, bundle)).state).toBe(
+      "already_imported",
+    );
+    expect(imported.batch).not.toHaveBeenCalled();
+  });
+
+  it("marca destino ocupado sem tentar mesclar os dados", async () => {
+    const fake = fakeDatabase(null, undefined, 1);
+    expect((await previewImport(fake.db, await baseBundle())).state).toBe(
+      "occupied",
+    );
+    expect(fake.batch).not.toHaveBeenCalled();
+  });
+
+  it("rejeita hashes de proveniência inconsistentes", async () => {
+    const fake = fakeDatabase();
+    const bundle = await baseBundle();
+    bundle.provenance!.source_files.sqlite!.sha256 = "c".repeat(64);
+    await expect(previewImport(fake.db, bundle)).rejects.toThrow(
+      "Hash de proveniência não confere",
+    );
+    expect(fake.batch).not.toHaveBeenCalled();
+  });
+
+  it("aceita proveniência íntegra e recusa hash SQLite divergente da origem", async () => {
+    const accepted = await baseBundle();
+    expect(
+      (await previewImport(fakeDatabase(null, undefined, 0).db, accepted))
+        .state,
+    ).toBe("empty");
+
+    const divergent = await baseBundle();
+    divergent.source.sqlite_file_sha256 = "c".repeat(64);
+    await expect(previewImport(fakeDatabase().db, divergent)).rejects.toThrow(
+      "Hash de proveniência não confere para sqlite",
+    );
+  });
+
+  it("recusa totais de proveniência que não reconciliam", async () => {
+    const bundle = await baseBundle();
+    bundle.provenance!.totals.Venda!.source_cents = 1;
+    await expect(previewImport(fakeDatabase().db, bundle)).rejects.toThrow(
+      "Totais de proveniência não conciliam para Venda",
+    );
   });
 
   it("recusa mesclar um pacote novo num D1 que já tem registros", async () => {

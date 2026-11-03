@@ -1,7 +1,10 @@
 import { Hono } from "hono";
-import { importBundle } from "./import";
+import catalogAdmin from "./catalog-admin";
+import { importBundle, previewImport } from "./import";
+import type { OperationEnvelope } from "@sabores/pdv-sync";
 import { invalidateCatalogCache, listProducts } from "./catalog-cache";
 import { verifyBackupStream } from "./backup";
+import { calculateRecipeCost, type RecipeCostLine } from "./recipe-cost";
 import {
   currentUser,
   hasTrustedOrigin,
@@ -32,7 +35,6 @@ const app = new Hono<{
   Bindings: Bindings;
   Variables: { authUser: AuthUser };
 }>();
-const MAX_SALE_BODY_BYTES = 1_000_000;
 const MAX_LOGIN_BODY_BYTES = 16_384;
 const PUBLIC_AUTH_ROUTES = new Set([
   "POST /api/auth/login",
@@ -150,6 +152,14 @@ app.use("/api/*", async (context, next) => {
   await next();
 });
 
+app.use("/api/backups*", async (context, next) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Acesso negado." }, 403);
+  await next();
+});
+
+app.route("/api/admin", catalogAdmin);
+
 app.get("/api/catalog/products", async (context) => {
   try {
     const result = await listProducts(
@@ -163,55 +173,533 @@ app.get("/api/catalog/products", async (context) => {
   }
 });
 
-app.post("/api/sales", async (context) => {
+function validBusinessDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return (
+    Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
+app.get("/api/erp/finance", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  const from = context.req.query("from") ?? "";
+  const to = context.req.query("to") ?? "";
+  if (!validBusinessDate(from) || !validBusinessDate(to) || from > to)
+    return context.json({ error: "Informe um período válido." }, 400);
+  try {
+    const result = await context.env.DB.prepare(
+      `SELECT l.entry_type, COALESCE(SUM(l.amount_cents), 0) AS total
+       FROM ledger_entries l
+       LEFT JOIN sales s ON s.ledger_id = l.ledger_id
+       LEFT JOIN sale_cancellations c ON c.sale_id = s.sale_id
+       WHERE l.occurred_on BETWEEN ? AND ? AND l.entry_type IN ('sale', 'purchase', 'expense')
+         AND (l.entry_type <> 'sale' OR c.sale_id IS NULL)
+       GROUP BY l.entry_type`,
+    )
+      .bind(from, to)
+      .all<{ entry_type: string; total: number }>();
+    return context.json({ data: result.results }, 200, {
+      "cache-control": "private, no-store",
+    });
+  } catch (error) {
+    console.error("Falha ao consultar financeiro.", error);
+    return context.json({ error: "Financeiro indisponível." }, 503);
+  }
+});
+
+app.get("/api/finance/entries", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Acesso negado." }, 403);
+  const from = context.req.query("from") ?? "";
+  const to = context.req.query("to") ?? "";
+  const type = context.req.query("type") ?? "";
+  if (
+    !validBusinessDate(from) ||
+    !validBusinessDate(to) ||
+    from > to ||
+    (type && !["sale", "purchase", "expense", "adjustment"].includes(type))
+  )
+    return context.json({ error: "Período ou tipo inválido." }, 422);
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT l.ledger_id, l.entry_type, l.occurred_on, l.amount_cents, l.description, l.category, l.actor_user_id,
+         CASE WHEN c.sale_id IS NOT NULL THEN 1 ELSE 0 END AS cancelled
+       FROM ledger_entries l LEFT JOIN sales s ON s.ledger_id = l.ledger_id
+       LEFT JOIN sale_cancellations c ON c.sale_id = s.sale_id
+       WHERE l.occurred_on BETWEEN ? AND ? AND (? = '' OR l.entry_type = ?)
+       ORDER BY l.occurred_on DESC, l.recorded_at DESC, l.ledger_id DESC LIMIT 501`,
+    )
+      .bind(from, to, type, type)
+      .all();
+    return context.json(
+      {
+        data: results.slice(0, 500),
+        truncated: results.length > 500,
+        limit: 500,
+      },
+      200,
+      { "cache-control": "private, no-store" },
+    );
+  } catch (error) {
+    console.error("Falha ao consultar lançamentos.", error);
+    return context.json({ error: "Lançamentos indisponíveis." }, 503);
+  }
+});
+
+app.get("/api/erp/recipes", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Acesso negado." }, 403);
+  try {
+    const { results: recipes } = await context.env.DB.prepare(
+      "SELECT r.recipe_id, r.product_id, COALESCE(p.name, r.product_name) AS product_name, r.version, r.yield_units, r.source, r.instructions FROM recipes r LEFT JOIN products p ON p.product_id = r.product_id ORDER BY COALESCE(p.name, r.product_name) COLLATE NOCASE, r.version",
+    ).all<{ recipe_id: string; yield_units: number }>();
+    const { results: lines } = await context.env.DB.prepare(
+      `SELECT rl.recipe_id, rl.line_id, rl.ingredient_id, i.name AS ingredient_name,
+              rl.quantity, rl.unit, rl.stage, i.base_unit, q.base_unit AS quote_unit,
+              q.pack_quantity, q.pack_price_cents, q.status AS quote_status
+       FROM recipe_lines rl JOIN ingredients i ON i.ingredient_id = rl.ingredient_id
+       LEFT JOIN ingredient_quotes q ON q.ingredient_id = i.ingredient_id AND q.is_current = 1
+       ORDER BY rl.recipe_id, i.name COLLATE NOCASE, rl.line_id`,
+    ).all<RecipeCostLine & { recipe_id: string }>();
+    const grouped = new Map<string, RecipeCostLine[]>();
+    for (const line of lines)
+      grouped.set(line.recipe_id, [
+        ...(grouped.get(line.recipe_id) ?? []),
+        line,
+      ]);
+    return context.json(
+      {
+        data: recipes.map((recipe) => {
+          const recipeLines = grouped.get(recipe.recipe_id) ?? [];
+          try {
+            return {
+              ...recipe,
+              ...calculateRecipeCost(recipeLines, recipe.yield_units),
+            };
+          } catch (error) {
+            if (
+              !(error instanceof Error) ||
+              error.message !== "CUSTO_EXCESSIVO"
+            )
+              throw error;
+            return {
+              ...recipe,
+              quality: "Pendente",
+              cost_error: "CUSTO_EXCESSIVO",
+              batch_cost_cents: null,
+              unit_cost_cents: null,
+              pending_ingredients: ["Custo excede o limite permitido"],
+              lines: recipeLines.map((line) => ({ ...line, cost_cents: null })),
+            };
+          }
+        }),
+      },
+      200,
+      { "cache-control": "private, no-store" },
+    );
+  } catch (error) {
+    console.error("Falha ao consultar receitas.", error);
+    return context.json({ error: "Receitas indisponíveis." }, 503);
+  }
+});
+
+app.get("/api/erp/ingredients", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT i.ingredient_id, i.name, i.base_unit, i.pack_quantity, i.supplier,
+              q.pack_price_cents, q.status, q.quoted_on
+       FROM ingredients i LEFT JOIN ingredient_quotes q
+         ON q.ingredient_id = i.ingredient_id AND q.is_current = 1
+       ORDER BY i.name COLLATE NOCASE`,
+    ).all();
+    return context.json({ data: results }, 200, {
+      "cache-control": "private, no-store",
+    });
+  } catch (error) {
+    console.error("Falha ao consultar ingredientes.", error);
+    return context.json({ error: "Ingredientes indisponíveis." }, 503);
+  }
+});
+
+app.get("/api/erp/catalog/products", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT p.product_id, p.barcode, p.auxiliary_code, p.name,
+              c.name AS category, p.unit, p.sale_price_cents,
+              p.unit_cost_cents, p.active
+       FROM products p JOIN categories c ON c.category_id = p.category_id
+       WHERE p.active = 1 ORDER BY p.name COLLATE NOCASE`,
+    ).all();
+    return context.json({ data: results });
+  } catch (error) {
+    console.error("Falha ao consultar catálogo financeiro do ERP.", error);
+    return context.json({ error: "Catálogo indisponível." }, 503);
+  }
+});
+
+app.post("/api/erp/product-price", async (context) => {
+  const user = context.get("authUser");
+  if (user.role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  if (!hasTrustedOrigin(context.req.raw, context.env as AuthBindings))
+    return context.json({ error: "Solicitação inválida." }, 403);
+  let body: unknown;
+  try {
+    body = await context.req.json();
+  } catch {
+    return context.json({ error: "Corpo JSON inválido." }, 400);
+  }
+  if (
+    !body ||
+    typeof body !== "object" ||
+    typeof (body as Record<string, unknown>).operationId !== "string" ||
+    !/^[0-9a-f-]{36}$/i.test((body as Record<string, string>).operationId) ||
+    typeof (body as Record<string, unknown>).productId !== "string" ||
+    !/^[A-Za-z0-9_-]{1,120}$/.test(
+      (body as Record<string, string>).productId,
+    ) ||
+    !("basePriceCents" in (body as Record<string, unknown>)) ||
+    ((body as Record<string, unknown>).basePriceCents !== null &&
+      (!Number.isSafeInteger(
+        (body as Record<string, unknown>).basePriceCents,
+      ) ||
+        Number((body as Record<string, unknown>).basePriceCents) < 0)) ||
+    !Number.isSafeInteger((body as Record<string, unknown>).salePriceCents) ||
+    Number((body as Record<string, unknown>).salePriceCents) < 0 ||
+    typeof (body as Record<string, unknown>).occurredAt !== "string" ||
+    !Number.isFinite(Date.parse((body as Record<string, string>).occurredAt))
+  )
+    return context.json({ error: "Ajuste de preço inválido." }, 422);
+  const operation = body as {
+    operationId: string;
+    productId: string;
+    basePriceCents: number | null;
+    salePriceCents: number;
+    occurredAt: string;
+  };
+  try {
+    const existing = await context.env.DB.prepare(
+      "SELECT product_id, new_price_cents FROM product_price_changes WHERE operation_id = ?",
+    )
+      .bind(operation.operationId)
+      .first<{ product_id: string; new_price_cents: number }>();
+    if (existing) {
+      if (
+        existing.product_id !== operation.productId ||
+        existing.new_price_cents !== operation.salePriceCents
+      )
+        return context.json(
+          { error: "operationId já foi usado por outra alteração." },
+          409,
+        );
+      return context.json({ status: "already_applied" });
+    }
+    const product = await context.env.DB.prepare(
+      "SELECT sale_price_cents FROM products WHERE product_id = ?",
+    )
+      .bind(operation.productId)
+      .first<{ sale_price_cents: number | null }>();
+    if (!product)
+      return context.json({ error: "Produto não encontrado." }, 404);
+    if (product.sale_price_cents !== operation.basePriceCents)
+      return context.json(
+        {
+          error:
+            "O preço foi alterado em outro dispositivo; revise o conflito.",
+        },
+        409,
+      );
+    const now = new Date().toISOString();
+    const results = await context.env.DB.batch([
+      context.env.DB.prepare(
+        "UPDATE products SET sale_price_cents = ?, updated_at = ? WHERE product_id = ? AND sale_price_cents IS ?",
+      ).bind(
+        operation.salePriceCents,
+        now,
+        operation.productId,
+        operation.basePriceCents,
+      ),
+      context.env.DB.prepare(
+        "INSERT INTO product_price_changes (operation_id, product_id, old_price_cents, new_price_cents, actor_user_id, occurred_at, recorded_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1",
+      ).bind(
+        operation.operationId,
+        operation.productId,
+        operation.basePriceCents,
+        operation.salePriceCents,
+        user.id,
+        operation.occurredAt,
+        now,
+      ),
+    ]);
+    if (results.some((result) => !result.success))
+      return context.json(
+        { error: "A alteração de preço não foi aplicada." },
+        503,
+      );
+    if (results[0]?.meta.changes !== 1 || results[1]?.meta.changes !== 1)
+      return context.json(
+        {
+          error:
+            "O preço foi alterado em outro dispositivo; revise o conflito.",
+        },
+        409,
+      );
+    await invalidateCatalogCache(context.env.CATALOG_CACHE);
+    return context.json({ status: "applied" });
+  } catch (error) {
+    console.error("Falha ao registrar ajuste de preço no ERP.", error);
+    return context.json({ error: "Não foi possível salvar o preço." }, 503);
+  }
+});
+
+app.get("/api/pdv/catalog", async (context) => {
+  try {
+    const { results: products } = await context.env.DB.prepare(
+      `SELECT p.product_id, p.barcode, p.auxiliary_code, p.name,
+              c.name AS category, p.unit, p.sale_price_cents, p.unit_cost_cents,
+              p.active
+         FROM products p JOIN categories c ON c.category_id = p.category_id
+        WHERE p.active = 1 ORDER BY p.name COLLATE NOCASE`,
+    ).all();
+    const { results: parameterRows } = await context.env.DB.prepare(
+      "SELECT name, value FROM parameters WHERE name IN ('pos_debit_rate', 'pos_credit_rate')",
+    ).all<{ name: string; value: string }>();
+    const parameters = new Map(
+      parameterRows.map((row) => [row.name, row.value]),
+    );
+    const paymentFees = {
+      Dinheiro: "0",
+      Débito: parameters.get("pos_debit_rate") ?? "0.0139",
+      Crédito: parameters.get("pos_credit_rate") ?? "0.0334",
+      Pix: "0",
+    };
+    const serialized = JSON.stringify({ products, paymentFees });
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(serialized),
+    );
+    const catalogVersion = [...new Uint8Array(digest)]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    const headers = new Headers({
+      "cache-control": "private, no-cache",
+      etag: `"${catalogVersion}"`,
+    });
+    if (context.req.header("if-none-match") === headers.get("etag"))
+      return new Response(null, { status: 304, headers });
+    return context.json(
+      {
+        catalogVersion,
+        fetchedAt: new Date().toISOString(),
+        paymentFees,
+        data: products,
+      },
+      200,
+      Object.fromEntries(headers.entries()),
+    );
+  } catch (error) {
+    console.error("Falha ao consultar catálogo offline do PDV.", error);
+    return context.json({ error: "Catálogo indisponível." }, 503);
+  }
+});
+
+app.post("/api/pdv/operations", async (context) => {
   const user = context.get("authUser");
   if (!hasTrustedOrigin(context.req.raw, context.env as AuthBindings))
     return context.json({ error: "Solicitação inválida." }, 403);
-  const idempotencyKey = context.req.header("idempotency-key") ?? "";
-  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
-    return context.json(
-      { error: "Informe uma chave de idempotência válida." },
-      400,
-    );
-  }
   const contentLength = Number(context.req.header("content-length") ?? "0");
-  if (contentLength > MAX_SALE_BODY_BYTES) {
-    try {
-      await context.req.raw.body?.cancel();
-    } catch {
-      // A runtime may already have consumed or locked the request stream.
-    }
-    return context.json({ error: "Corpo da venda excede 1 MB." }, 413);
-  }
-  let requestBytes: Uint8Array | null;
+  if (contentLength > 5_000_000)
+    return context.json({ error: "Lote excede 5 MB." }, 413);
+  let bytes: Uint8Array | null;
   try {
-    requestBytes = await readBodyWithinLimit(
-      context.req.raw.body,
-      MAX_SALE_BODY_BYTES,
-    );
+    bytes = await readBodyWithinLimit(context.req.raw.body, 5_000_000);
   } catch {
-    return context.json(
-      { error: "Não foi possível ler o corpo da venda." },
-      400,
-    );
+    return context.json({ error: "Não foi possível ler o lote." }, 400);
   }
-  if (!requestBytes) {
-    return context.json({ error: "Corpo da venda excede 1 MB." }, 413);
+  if (!bytes) return context.json({ error: "Lote excede 5 MB." }, 413);
+  let operation: OperationEnvelope;
+  try {
+    operation = JSON.parse(
+      new TextDecoder().decode(bytes),
+    ) as OperationEnvelope;
+  } catch {
+    return context.json({ error: "Corpo JSON inválido." }, 400);
   }
-  const requestBody = new TextDecoder().decode(requestBytes);
-  const coordinator = context.env.SALE_COORDINATOR.getByName(idempotencyKey);
+  if (
+    !operation ||
+    typeof operation.deviceId !== "string" ||
+    !/^[0-9a-f-]{36}$/i.test(operation.deviceId)
+  )
+    return context.json({ error: "Dispositivo inválido." }, 422);
+  const coordinator = context.env.SALE_COORDINATOR.getByName(
+    `pdv-device:${operation.deviceId}`,
+  );
   const response = await coordinator.fetch(
-    new Request("https://sale-coordinator.local/", {
+    new Request("https://sale-coordinator.local/operations", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "idempotency-key": idempotencyKey,
         "x-actor-user-id": user.id,
       },
-      body: requestBody,
+      body: JSON.stringify(operation),
     }),
   );
-  return new Response(response.body, response);
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "private, no-store");
+  return new Response(response.body, { status: response.status, headers });
+});
+
+app.get("/api/pdv/sales", async (context) => {
+  const from = context.req.query("from") ?? "";
+  const to = context.req.query("to") ?? "";
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(from) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(to) ||
+    from > to ||
+    Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`) >
+      366 * 86400000
+  )
+    return context.json(
+      { error: "Informe um período válido de até 366 dias." },
+      400,
+    );
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT s.sale_id, s.gross_cents, s.fee_cents, s.net_cents, s.customer, s.notes,
+              s.created_at, s.client_created_at, s.device_id, l.occurred_on,
+              l.actor_user_id, c.reason AS cancellation_reason,
+              (SELECT MAX(payment_version) FROM sale_payment_adjustments a WHERE a.sale_id = s.sale_id) AS payment_version
+       FROM sales s JOIN ledger_entries l ON l.ledger_id = s.ledger_id
+       LEFT JOIN sale_cancellations c ON c.sale_id = s.sale_id
+       WHERE l.occurred_on BETWEEN ? AND ? ORDER BY l.occurred_at DESC LIMIT 500`,
+    )
+      .bind(from, to)
+      .all();
+    const saleRows = results as Array<{
+      sale_id: string;
+      gross_cents: number;
+      payment_version: number | null;
+      [key: string]: unknown;
+    }>;
+    const saleIds = saleRows.map((sale) => sale.sale_id);
+    const sales: Array<Record<string, unknown>> = [];
+    if (saleIds.length) {
+      const chunks = Array.from(
+        { length: Math.ceil(saleIds.length / 80) },
+        (_, index) => saleIds.slice(index * 80, index * 80 + 80),
+      );
+      const queryResults = await Promise.all(
+        chunks.map(async (ids) => {
+          const placeholders = ids.map(() => "?").join(",");
+          return Promise.all([
+            context.env.DB.prepare(
+              `SELECT sale_id, product_name_snapshot, category_snapshot, quantity, unit_price_cents, unit_cost_cents, line_total_cents FROM sale_items WHERE sale_id IN (${placeholders}) ORDER BY sale_id, position`,
+            )
+              .bind(...ids)
+              .all<Record<string, unknown> & { sale_id: string }>(),
+            context.env.DB.prepare(
+              `SELECT sale_id, method, method_label, amount_cents, fee_rate, fee_cents, part_number, payment_version FROM sale_payments WHERE sale_id IN (${placeholders}) ORDER BY sale_id, position`,
+            )
+              .bind(...ids)
+              .all<
+                Record<string, unknown> & {
+                  sale_id: string;
+                  payment_version: number;
+                }
+              >(),
+            context.env.DB.prepare(
+              `SELECT a.sale_id, a.payment_version, l.method, l.method_label, l.amount_cents, l.fee_rate, l.fee_cents, l.part_number, l.position FROM sale_payment_adjustments a JOIN sale_payment_adjustment_lines l ON l.adjustment_id = a.adjustment_id WHERE a.sale_id IN (${placeholders}) ORDER BY a.sale_id, a.payment_version, l.position`,
+            )
+              .bind(...ids)
+              .all<
+                Record<string, unknown> & {
+                  sale_id: string;
+                  payment_version: number;
+                }
+              >(),
+          ]);
+        }),
+      );
+      const itemResults = queryResults.flatMap(([items]) => items.results);
+      const basePaymentResults = queryResults.flatMap(
+        ([, payments]) => payments.results,
+      );
+      const adjustedPaymentResults = queryResults.flatMap(
+        ([, , payments]) => payments.results,
+      );
+      const itemsBySale = new Map<string, Record<string, unknown>[]>();
+      const basePaymentsBySale = new Map<string, Record<string, unknown>[]>();
+      const adjustedByVersion = new Map<string, Record<string, unknown>[]>();
+      for (const item of itemResults)
+        itemsBySale.set(item.sale_id, [
+          ...(itemsBySale.get(item.sale_id) ?? []),
+          item,
+        ]);
+      for (const payment of basePaymentResults)
+        basePaymentsBySale.set(payment.sale_id, [
+          ...(basePaymentsBySale.get(payment.sale_id) ?? []),
+          payment,
+        ]);
+      for (const payment of adjustedPaymentResults) {
+        const key = `${payment.sale_id}:${payment.payment_version}`;
+        adjustedByVersion.set(key, [
+          ...(adjustedByVersion.get(key) ?? []),
+          payment,
+        ]);
+      }
+      for (const sale of saleRows) {
+        const version = sale.payment_version ?? 1;
+        const payments =
+          version === 1
+            ? (basePaymentsBySale.get(sale.sale_id) ?? [])
+            : (adjustedByVersion.get(`${sale.sale_id}:${version}`) ?? []);
+        const currentFees = payments.reduce(
+          (sum, payment) => sum + Number(payment.fee_cents),
+          0,
+        );
+        sales.push({
+          ...sale,
+          fee_cents: currentFees,
+          net_cents: Number(sale.gross_cents) - currentFees,
+          payments,
+          items: itemsBySale.get(sale.sale_id) ?? [],
+        });
+      }
+    }
+    const { results: rateRows } = await context.env.DB.prepare(
+      "SELECT name, value FROM parameters WHERE name IN ('pos_debit_rate', 'pos_credit_rate')",
+    ).all<{ name: string; value: string }>();
+    const rates = new Map(rateRows.map((row) => [row.name, row.value]));
+    const paymentFees = {
+      Dinheiro: "0",
+      Débito: rates.get("pos_debit_rate") ?? "0.0139",
+      Crédito: rates.get("pos_credit_rate") ?? "0.0334",
+      Pix: "0",
+    };
+    return context.json({ sales, paymentFees }, 200, {
+      "cache-control": "private, no-store",
+    });
+  } catch (error) {
+    console.error("Falha ao consultar histórico de vendas.", error);
+    return context.json({ error: "Histórico indisponível." }, 503);
+  }
+});
+
+app.post("/api/sales", async (context) => {
+  if (!hasTrustedOrigin(context.req.raw, context.env as AuthBindings))
+    return context.json({ error: "Solicitação inválida." }, 403);
+  return context.json(
+    {
+      error:
+        "Este endpoint foi substituído pelo protocolo de operações offline do PDV.",
+    },
+    410,
+  );
 });
 
 app.get("/api/backups", async (context) => {
@@ -353,6 +841,9 @@ app.post("/__local/import", async (context) => {
     return context.json({ error: "Corpo não é JSON válido." }, 400);
   }
   try {
+    if (context.req.query("mode") === "preview") {
+      return context.json(await previewImport(context.env.DB, payload));
+    }
     const result = await importBundle(context.env.DB, payload);
     await invalidateCatalogCache(context.env.CATALOG_CACHE);
     return context.json(result);

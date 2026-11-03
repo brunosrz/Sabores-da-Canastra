@@ -1,0 +1,10 @@
+{
+  "name": "@sabores/i18n",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./runtime": "./src/paraglide/runtime.js",
+    "./server": "./src/paraglide/server.js"
+  }
+}

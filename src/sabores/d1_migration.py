@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
 import re
 import sqlite3
+import os
+import shutil
+import tempfile
+from typing import Iterator
 from zoneinfo import ZoneInfo
 
 from .workbook import validate_workbook
@@ -58,6 +63,58 @@ def _stable_ingredient_id(name: str) -> str:
     import uuid
 
     return str(uuid.uuid5(uuid.UUID(INGREDIENT_NAMESPACE), name.casefold().strip()))
+
+
+def _source_fingerprint(path: Path, component_names: set[str] | None = None) -> dict:
+    """Hash SQLite data files; the shared-memory index is transient and excluded."""
+    files = [path]
+    wal_path = Path(f"{path}-wal")
+    if wal_path.is_file():
+        files.append(wal_path)
+    components = []
+    for source in files:
+        if component_names is not None and source.name not in component_names:
+            continue
+        if not source.exists():
+            if component_names is not None and source.name in component_names:
+                components.append({"name": source.name, "missing": True})
+            continue
+        before = source.stat()
+        content = source.read_bytes()
+        after = source.stat()
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or len(content) != after.st_size:
+            raise MigrationValidationError([f"Arquivo de origem mudou durante a leitura: {source.name}"])
+        components.append({"name": source.name, "sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content), "mtime_ns": after.st_mtime_ns})
+    stable_components = [
+        {
+            key: component[key]
+            for key in ("name", "sha256", "size_bytes", "missing")
+            if key in component
+        }
+        for component in components
+    ]
+    canonical = json.dumps(stable_components, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "sha256": components[0]["sha256"] if len(components) == 1 else hashlib.sha256(canonical).hexdigest(),
+        "size_bytes": sum(item.get("size_bytes", 0) for item in components),
+        "components": components,
+    }
+
+
+@contextmanager
+def _validated_sqlite_snapshot(path: Path) -> Iterator[tuple[Path, dict]]:
+    """Copy a consistent SQLite/WAL pair and remove it on every exit path."""
+    with tempfile.TemporaryDirectory(prefix="sabores-d1-source-") as directory:
+        snapshot = Path(directory) / path.name
+        fingerprint = _source_fingerprint(path)
+        shutil.copy2(path, snapshot)
+        source_wal = Path(f"{path}-wal")
+        if source_wal.is_file():
+            shutil.copy2(source_wal, Path(f"{snapshot}-wal"))
+        final_fingerprint = _source_fingerprint(path)
+        if final_fingerprint["sha256"] != fingerprint["sha256"]:
+            raise MigrationValidationError(["SQLite de origem mudou durante a cópia; nenhum pacote foi produzido."])
+        yield snapshot, fingerprint
 
 
 def _instant(value: str | None) -> str | None:
@@ -496,19 +553,29 @@ def build_import_bundle(sqlite_path: str | Path, workbook_path: str | Path) -> d
         raise MigrationValidationError([f"SQLite não encontrado: {sqlite_path}"])
     if not workbook_path.is_file():
         raise MigrationValidationError([f"Workbook não encontrado: {workbook_path}"])
+    workbook_fingerprint = _source_fingerprint(workbook_path)
     captured_at = _utc_now()
     errors: list[str] = []
     workbook_config, workbook_counts, workbook_errors = _read_workbook(workbook_path, captured_at)
     errors.extend(workbook_errors)
-    db = sqlite3.connect(f"file:{sqlite_path.resolve().as_posix()}?mode=ro", uri=True)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA foreign_keys=ON")
-    try:
-        sqlite_config, sqlite_counts = _sqlite_config(db, captured_at, errors)
-        config = _merge_config(workbook_config, sqlite_config)
-        history = _financial_history(db, captured_at, errors)
-    finally:
-        db.close()
+    with _validated_sqlite_snapshot(sqlite_path) as (snapshot_path, sqlite_fingerprint):
+        db = sqlite3.connect(f"file:{snapshot_path.resolve().as_posix()}?mode=ro", uri=True)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys=ON")
+        try:
+            db.execute("BEGIN")
+            sqlite_config, sqlite_counts = _sqlite_config(db, captured_at, errors)
+            config = _merge_config(workbook_config, sqlite_config)
+            history = _financial_history(db, captured_at, errors)
+            source_financial_counts = {}
+            for kind in ("Venda", "Compra", "Gasto"):
+                row = db.execute(
+                    "SELECT COUNT(*), COALESCE(SUM(amount_cents), 0) FROM entries WHERE kind=?",
+                    (kind,),
+                ).fetchone()
+                source_financial_counts[kind] = (int(row[0]), int(row[1]))
+        finally:
+            db.close()
     tables = {**config, **history}
     row_counts = {name: len(rows) for name, rows in tables.items()}
     expected = {**workbook_counts, **sqlite_counts}
@@ -528,14 +595,7 @@ def build_import_bundle(sqlite_path: str | Path, workbook_path: str | Path) -> d
             })
     financial_reconciliation = {}
     for kind in ("Venda", "Compra", "Gasto"):
-        source_total = 0
-        source_count = 0
-        source = sqlite3.connect(f"file:{sqlite_path.resolve().as_posix()}?mode=ro", uri=True)
-        try:
-            row = source.execute("SELECT COUNT(*),COALESCE(SUM(amount_cents),0) FROM entries WHERE kind=?", (kind,)).fetchone()
-            source_count, source_total = int(row[0]), int(row[1])
-        finally:
-            source.close()
+        source_count, source_total = source_financial_counts[kind]
         mapped_type = {"Venda": "sale", "Compra": "purchase", "Gasto": "expense"}[kind]
         mapped_total = sum(int(row["amountCents"]) for row in history["ledgerEntries"] if row["entryType"] == mapped_type)
         mapped_count = {"Venda": len(history["saleItems"]), "Compra": len(history["purchaseItems"]),
@@ -563,6 +623,9 @@ def build_import_bundle(sqlite_path: str | Path, workbook_path: str | Path) -> d
     import_id = hashlib.sha256(f"{CONTRACT}:{CONTRACT_VERSION}:{source_digest}".encode()).hexdigest()
     for ledger_entry in history["ledgerEntries"]:
         ledger_entry["importId"] = import_id
+    workbook_changed = workbook_fingerprint != _source_fingerprint(workbook_path)
+    if workbook_changed:
+        raise MigrationValidationError(["Planilha de origem foi alterada durante a geração; nenhum pacote foi produzido."])
     reconciliation["financial"] = financial_reconciliation
     return {
         "contract": CONTRACT,
@@ -570,7 +633,14 @@ def build_import_bundle(sqlite_path: str | Path, workbook_path: str | Path) -> d
         "import_id": import_id,
         "source": {"sqlite_name": sqlite_path.name, "workbook_name": workbook_path.name,
                    "workbook_sha256": workbook_digest, "sqlite_data_sha256": hashlib.sha256(stable_bytes).hexdigest(),
+                   "sqlite_file_sha256": sqlite_fingerprint["sha256"],
                    "source_digest": source_digest, "timezone": "America/Sao_Paulo", "captured_at": captured_at},
+        "provenance": {
+            "timezone": "America/Sao_Paulo",
+            "captured_at": captured_at,
+            "source_files": {"sqlite": sqlite_fingerprint, "workbook": workbook_fingerprint},
+            "totals": {name: {"source_cents": line["source_cents"], "mapped_cents": line["mapped_cents"], "matches": line["matches"]} for name, line in financial_reconciliation.items()},
+        },
         "row_counts": row_counts,
         "reconciliation": reconciliation,
         "tables": tables,
@@ -580,6 +650,41 @@ def build_import_bundle(sqlite_path: str | Path, workbook_path: str | Path) -> d
 def write_import_bundle(bundle: dict, destination: str | Path) -> Path:
     path = Path(destination)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload = json.dumps(bundle, ensure_ascii=False, indent=2) + "\n"
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as temporary:
+            temp_path = Path(temporary.name)
+            temporary.write(payload)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
     return path
 
+
+def compare_import_bundles(current: dict, previous: dict) -> dict:
+    """Summarize normalized row and financial total changes between bundles."""
+    current_tables = current.get("tables", {})
+    previous_tables = previous.get("tables", {})
+    table_names = sorted(set(current_tables) | set(previous_tables))
+    return {
+        "previous_import_id": previous.get("import_id"),
+        "current_import_id": current.get("import_id"),
+        "same_import": previous.get("import_id") == current.get("import_id"),
+        "tables": {name: {"before": len(previous_tables.get(name, [])), "after": len(current_tables.get(name, [])), "delta": len(current_tables.get(name, [])) - len(previous_tables.get(name, []))} for name in table_names},
+        "financial": {
+            kind: {
+                metric: {
+                    "before": previous.get("reconciliation", {}).get("financial", {}).get(kind, {}).get(metric, 0),
+                    "after": current.get("reconciliation", {}).get("financial", {}).get(kind, {}).get(metric, 0),
+                    "delta": current.get("reconciliation", {}).get("financial", {}).get(kind, {}).get(metric, 0)
+                    - previous.get("reconciliation", {}).get("financial", {}).get(kind, {}).get(metric, 0),
+                }
+                for metric in ("source_cents", "mapped_cents")
+            }
+            for kind in sorted(set(previous.get("reconciliation", {}).get("financial", {})) | set(current.get("reconciliation", {}).get("financial", {})))
+        },
+    }

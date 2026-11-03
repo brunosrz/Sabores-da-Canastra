@@ -1,10 +1,9 @@
 # Sabores da Canastra ERP
 
-Aplicação web independente para operação administrativa do bar, planejada para
-`erp.brunosrz.com`. O bootstrap configura a base técnica; cadastro de produtos,
-ingredientes, receitas, estoque, custos e demais fluxos serão entregues em
-etapas posteriores. O domínio ainda não está publicado e o app não está ligado
-a dados de produção.
+Aplicação web independente para operação administrativa do bar em
+`erp.brunosrz.com`. O esqueleto mobile-first fornece autenticação compartilhada,
+tema claro/escuro e navegação inferior para os módulos administrativos que
+serão implementados por etapas.
 
 ## Desenvolvimento local
 

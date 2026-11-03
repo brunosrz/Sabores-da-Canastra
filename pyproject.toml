@@ -14,7 +14,9 @@ test = ["pytest>=8"]
 
 [dependency-groups]
 dev = [
+    "pre-commit==4.7.0",
     "pytest>=8",
+    "ruff==0.17.3",
     "scons>=4.11.1",
 ]
 

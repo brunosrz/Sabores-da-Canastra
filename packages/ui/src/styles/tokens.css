@@ -1,0 +1,131 @@
+@theme {
+  --font-sans: "Mulish", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Alfa Slab One", Georgia, serif;
+  --font-accent: "Berkshire Swash", Georgia, serif;
+}
+
+:root {
+  --app-header-height: 3.75rem;
+  color-scheme: light;
+  --surface: #fff3e5;
+  --surface-raised: #fff9f1;
+  --text: #000000;
+  --text-muted: #404040;
+  --border: #807a73;
+  --accent: #fe8800;
+  --accent-soft: #fca336;
+  --on-accent: #000000;
+  --price-text: #9a4a00;
+  --focus-ring: #075eb8;
+  --danger: #a20f20;
+  --success: #126241;
+  --warning: #815000;
+  --surface-overlay: rgb(255 249 241 / 96%);
+  --appbar-height: 4.25rem;
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --keyboard-inset: 0px;
+  --cat-pizzas: #cf0134;
+  --on-cat-pizzas: #ffffff;
+  --cat-lanches: #cf4712;
+  --on-cat-lanches: #ffffff;
+  --cat-porcoes: #570aa0;
+  --on-cat-porcoes: #ffffff;
+  --cat-novidades: #b60a0a;
+  --on-cat-novidades: #ffffff;
+  --cat-promocao: #150ab6;
+  --on-cat-promocao: #ffffff;
+  --cat-limitado: #08795f;
+  --on-cat-limitado: #ffffff;
+  --cat-salgados: #874513;
+  --on-cat-salgados: #ffffff;
+  --cat-bebidas: #145d8d;
+  --on-cat-bebidas: #ffffff;
+  --cat-doces: #713b69;
+  --on-cat-doces: #ffffff;
+  --cat-molhos: #6b5320;
+  --on-cat-molhos: #ffffff;
+  --cat-outros: #404040;
+  --on-cat-outros: #ffffff;
+
+  /* Compatibility aliases used by existing screens while they adopt components. */
+  --sea-ink: var(--text);
+  --sea-ink-soft: var(--text-muted);
+  --lagoon: var(--accent-soft);
+  --lagoon-deep: var(--price-text);
+  --palm: var(--accent);
+  --sand: var(--surface);
+  --foam: var(--surface-raised);
+  --surface-strong: var(--surface-raised);
+  --line: color-mix(in srgb, var(--text) 22%, transparent);
+  --inset-glint: rgb(255 255 255 / 82%);
+  --kicker: var(--price-text);
+  --bg-base: var(--surface-raised);
+  --header-bg: var(--surface-overlay);
+  --chip-bg: var(--surface-raised);
+  --chip-line: var(--border);
+  --link-bg-hover: color-mix(
+    in srgb,
+    var(--accent-soft) 20%,
+    var(--surface-raised)
+  );
+  --hero-a: color-mix(in srgb, var(--accent) 16%, transparent);
+  --hero-b: rgb(24 24 24 / 7%);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #181818;
+  --surface-raised: #1d1d1d;
+  --text: #ffffff;
+  --text-muted: #eeeeee;
+  --border: #858585;
+  --accent: #fca336;
+  --accent-soft: #fca336;
+  --on-accent: #000000;
+  --price-text: #fca336;
+  --focus-ring: #8fc7ff;
+  --danger: #ff8888;
+  --success: #76d5a7;
+  --warning: #ffd17a;
+  --surface-overlay: rgb(24 24 24 / 97%);
+  --on-cat-pizzas: #ffffff;
+  --on-cat-lanches: #ffffff;
+  --on-cat-porcoes: #ffffff;
+  --on-cat-novidades: #ffffff;
+  --on-cat-promocao: #ffffff;
+  --on-cat-limitado: #ffffff;
+  --sea-ink: var(--text);
+  --sea-ink-soft: var(--text-muted);
+  --lagoon-deep: var(--price-text);
+  --sand: #1d1d1d;
+  --foam: #181818;
+  --surface-strong: #1d1d1d;
+  --line: rgb(238 238 238 / 22%);
+  --inset-glint: rgb(255 255 255 / 6%);
+  --kicker: var(--price-text);
+  --bg-base: #181818;
+  --header-bg: var(--surface-overlay);
+  --chip-bg: #1d1d1d;
+  --chip-line: rgb(238 238 238 / 22%);
+  --link-bg-hover: #292929;
+  --hero-a: rgb(254 136 0 / 12%);
+  --hero-b: rgb(238 238 238 / 4%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    color-scheme: dark;
+    --surface: #181818;
+    --surface-raised: #1d1d1d;
+    --text: #ffffff;
+    --text-muted: #eeeeee;
+    --price-text: #fca336;
+    --surface-overlay: rgb(24 24 24 / 97%);
+    --sea-ink: var(--text);
+    --sea-ink-soft: var(--text-muted);
+    --bg-base: #181818;
+    --header-bg: var(--surface-overlay);
+  }
+}
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));

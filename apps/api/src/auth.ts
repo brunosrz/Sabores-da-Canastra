@@ -4,7 +4,12 @@ const LOGIN_ATTEMPT_LIMIT = 10;
 const ACCOUNT_LOGIN_ATTEMPT_LIMIT = 100;
 const MIN_PBKDF2_ITERATIONS = 100_000;
 
-export type AuthUser = { id: string; username: string; role: string };
+export type AuthUser = {
+  id: string;
+  username: string;
+  role: "owner" | "operator";
+  expiresAt?: string;
+};
 type ConfiguredUser = AuthUser & {
   salt: string;
   hash: string;
@@ -53,7 +58,7 @@ function databaseUser(value: unknown): ConfiguredUser {
     !/^[A-Za-z0-9_-]{1,80}$/.test((value as ConfiguredUser).id) ||
     typeof (value as ConfiguredUser).username !== "string" ||
     !/^[A-Za-z0-9._-]{1,80}$/.test((value as ConfiguredUser).username) ||
-    typeof (value as ConfiguredUser).role !== "string" ||
+    !["owner", "operator"].includes((value as ConfiguredUser).role) ||
     typeof (value as ConfiguredUser).salt !== "string" ||
     typeof (value as ConfiguredUser).hash !== "string" ||
     !Number.isSafeInteger((value as ConfiguredUser).iterations) ||
@@ -358,7 +363,10 @@ export async function login(
     );
   }
   return Response.json(
-    { user: { id: user.id, username: user.username, role: user.role } },
+    {
+      user: { id: user.id, username: user.username, role: user.role },
+      expiresAt,
+    },
     {
       headers: {
         "set-cookie": sessionCookie(request, bindings, token, SESSION_SECONDS),
@@ -378,7 +386,7 @@ export async function currentUser(
   const now = new Date().toISOString();
   const row = await bindings.DB.prepare(
     `SELECT u.user_id AS id, u.username, u.role, c.salt, c.password_hash AS hash,
-      c.iterations, s.credential_fingerprint
+      c.iterations, s.credential_fingerprint, s.expires_at AS expiresAt
     FROM auth_sessions s JOIN auth_users u ON u.user_id = s.user_id
     JOIN users c ON c.user_id = u.user_id
     WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
@@ -397,6 +405,7 @@ export async function currentUser(
     id: configured.id,
     username: configured.username,
     role: configured.role,
+    expiresAt: row.expiresAt,
   };
 }
 
@@ -412,7 +421,10 @@ export async function sessionResponse(
         { status: 401, headers: { "cache-control": "no-store" } },
       );
     return Response.json(
-      { user },
+      {
+        user: { id: user.id, username: user.username, role: user.role },
+        expiresAt: user.expiresAt,
+      },
       { headers: { "cache-control": "no-store" } },
     );
   } catch {

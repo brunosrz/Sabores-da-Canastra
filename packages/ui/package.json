@@ -1,0 +1,40 @@
+{
+  "name": "@sabores/ui",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint src test",
+    "typecheck": "tsc --noEmit",
+    "format:check": "prettier --check src test eslint.config.js package.json tsconfig.json vitest.config.ts ../i18n/src/catalog.ts ../i18n/src/index.ts ../i18n/src/preferences.ts ../i18n/messages ../i18n/project.inlang/settings.json ../i18n/project.inlang/paraglide.config.js ../i18n/package.json"
+  },
+  "peerDependencies": {
+    "@tanstack/react-router": "1.170.46",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^10.14.0",
+    "globals": "^17.13.0",
+    "jsdom": "^27.1.0",
+    "prettier": "3.9.10",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "5.0.5",
+    "vitest-axe": "^0.1.0"
+  },
+  "dependencies": {
+    "motion": "13.2.0",
+    "@sabores/i18n": "workspace:*"
+  }
+}

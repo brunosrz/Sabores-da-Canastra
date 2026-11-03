@@ -10,19 +10,64 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AjustesRouteImport } from './routes/ajustes'
+import { Route as CatalogoRouteImport } from './routes/catalogo'
+import { Route as EstoqueRouteImport } from './routes/estoque'
+import { Route as FinanceiroRouteImport } from './routes/financeiro'
+import { Route as ProdutosRouteImport } from './routes/produtos'
+import { Route as ReceitasRouteImport } from './routes/receitas'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
+import { Route as ApiAdminSplatRouteImport } from './routes/api.admin.$'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthSessionRouteImport } from './routes/api.auth.session'
+import { Route as ApiErpFinanceRouteImport } from './routes/api.erp.finance'
+import { Route as ApiErpIngredientsRouteImport } from './routes/api.erp.ingredients'
+import { Route as ApiErpRecipesRouteImport } from './routes/api.erp.recipes'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AjustesRoute = AjustesRouteImport.update({
+  id: '/ajustes',
+  path: '/ajustes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CatalogoRoute = CatalogoRouteImport.update({
+  id: '/catalogo',
+  path: '/catalogo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EstoqueRoute = EstoqueRouteImport.update({
+  id: '/estoque',
+  path: '/estoque',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinanceiroRoute = FinanceiroRouteImport.update({
+  id: '/financeiro',
+  path: '/financeiro',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProdutosRoute = ProdutosRouteImport.update({
+  id: '/produtos',
+  path: '/produtos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReceitasRoute = ReceitasRouteImport.update({
+  id: '/receitas',
+  path: '/receitas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdminSplatRoute = ApiAdminSplatRouteImport.update({
+  id: '/api/admin/$',
+  path: '/api/admin/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
@@ -40,59 +85,144 @@ const ApiAuthSessionRoute = ApiAuthSessionRouteImport.update({
   path: '/api/auth/session',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiErpFinanceRoute = ApiErpFinanceRouteImport.update({
+  id: '/api/erp/finance',
+  path: '/api/erp/finance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiErpIngredientsRoute = ApiErpIngredientsRouteImport.update({
+  id: '/api/erp/ingredients',
+  path: '/api/erp/ingredients',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiErpRecipesRoute = ApiErpRecipesRouteImport.update({
+  id: '/api/erp/recipes',
+  path: '/api/erp/recipes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/ajustes': typeof AjustesRoute
+  '/catalogo': typeof CatalogoRoute
+  '/estoque': typeof EstoqueRoute
+  '/financeiro': typeof FinanceiroRoute
+  '/produtos': typeof ProdutosRoute
+  '/receitas': typeof ReceitasRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/admin/$': typeof ApiAdminSplatRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/erp/finance': typeof ApiErpFinanceRoute
+  '/api/erp/ingredients': typeof ApiErpIngredientsRoute
+  '/api/erp/recipes': typeof ApiErpRecipesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/ajustes': typeof AjustesRoute
+  '/catalogo': typeof CatalogoRoute
+  '/estoque': typeof EstoqueRoute
+  '/financeiro': typeof FinanceiroRoute
+  '/produtos': typeof ProdutosRoute
+  '/receitas': typeof ReceitasRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/admin/$': typeof ApiAdminSplatRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/erp/finance': typeof ApiErpFinanceRoute
+  '/api/erp/ingredients': typeof ApiErpIngredientsRoute
+  '/api/erp/recipes': typeof ApiErpRecipesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/ajustes': typeof AjustesRoute
+  '/catalogo': typeof CatalogoRoute
+  '/estoque': typeof EstoqueRoute
+  '/financeiro': typeof FinanceiroRoute
+  '/produtos': typeof ProdutosRoute
+  '/receitas': typeof ReceitasRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/admin/$': typeof ApiAdminSplatRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/erp/finance': typeof ApiErpFinanceRoute
+  '/api/erp/ingredients': typeof ApiErpIngredientsRoute
+  '/api/erp/recipes': typeof ApiErpRecipesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/ajustes'
+    | '/catalogo'
+    | '/estoque'
+    | '/financeiro'
+    | '/produtos'
+    | '/receitas'
     | '/api/health'
+    | '/api/admin/$'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/erp/finance'
+    | '/api/erp/ingredients'
+    | '/api/erp/recipes'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/ajustes'
+    | '/catalogo'
+    | '/estoque'
+    | '/financeiro'
+    | '/produtos'
+    | '/receitas'
     | '/api/health'
+    | '/api/admin/$'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/erp/finance'
+    | '/api/erp/ingredients'
+    | '/api/erp/recipes'
   id:
     | '__root__'
     | '/'
+    | '/ajustes'
+    | '/catalogo'
+    | '/estoque'
+    | '/financeiro'
+    | '/produtos'
+    | '/receitas'
     | '/api/health'
+    | '/api/admin/$'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/erp/finance'
+    | '/api/erp/ingredients'
+    | '/api/erp/recipes'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AjustesRoute: typeof AjustesRoute
+  CatalogoRoute: typeof CatalogoRoute
+  EstoqueRoute: typeof EstoqueRoute
+  FinanceiroRoute: typeof FinanceiroRoute
+  ProdutosRoute: typeof ProdutosRoute
+  ReceitasRoute: typeof ReceitasRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiAdminSplatRoute: typeof ApiAdminSplatRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSessionRoute: typeof ApiAuthSessionRoute
+  ApiErpFinanceRoute: typeof ApiErpFinanceRoute
+  ApiErpIngredientsRoute: typeof ApiErpIngredientsRoute
+  ApiErpRecipesRoute: typeof ApiErpRecipesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -104,11 +234,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ajustes': {
+      id: '/ajustes'
+      path: '/ajustes'
+      fullPath: '/ajustes'
+      preLoaderRoute: typeof AjustesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/catalogo': {
+      id: '/catalogo'
+      path: '/catalogo'
+      fullPath: '/catalogo'
+      preLoaderRoute: typeof CatalogoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/estoque': {
+      id: '/estoque'
+      path: '/estoque'
+      fullPath: '/estoque'
+      preLoaderRoute: typeof EstoqueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/financeiro': {
+      id: '/financeiro'
+      path: '/financeiro'
+      fullPath: '/financeiro'
+      preLoaderRoute: typeof FinanceiroRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/produtos': {
+      id: '/produtos'
+      path: '/produtos'
+      fullPath: '/produtos'
+      preLoaderRoute: typeof ProdutosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/receitas': {
+      id: '/receitas'
+      path: '/receitas'
+      fullPath: '/receitas'
+      preLoaderRoute: typeof ReceitasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/admin/$': {
+      id: '/api/admin/$'
+      path: '/api/admin/$'
+      fullPath: '/api/admin/$'
+      preLoaderRoute: typeof ApiAdminSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/login': {
@@ -132,15 +311,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSessionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/erp/finance': {
+      id: '/api/erp/finance'
+      path: '/api/erp/finance'
+      fullPath: '/api/erp/finance'
+      preLoaderRoute: typeof ApiErpFinanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/erp/ingredients': {
+      id: '/api/erp/ingredients'
+      path: '/api/erp/ingredients'
+      fullPath: '/api/erp/ingredients'
+      preLoaderRoute: typeof ApiErpIngredientsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/erp/recipes': {
+      id: '/api/erp/recipes'
+      path: '/api/erp/recipes'
+      fullPath: '/api/erp/recipes'
+      preLoaderRoute: typeof ApiErpRecipesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AjustesRoute: AjustesRoute,
+  CatalogoRoute: CatalogoRoute,
+  EstoqueRoute: EstoqueRoute,
+  FinanceiroRoute: FinanceiroRoute,
+  ProdutosRoute: ProdutosRoute,
+  ReceitasRoute: ReceitasRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiAdminSplatRoute: ApiAdminSplatRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSessionRoute: ApiAuthSessionRoute,
+  ApiErpFinanceRoute: ApiErpFinanceRoute,
+  ApiErpIngredientsRoute: ApiErpIngredientsRoute,
+  ApiErpRecipesRoute: ApiErpRecipesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

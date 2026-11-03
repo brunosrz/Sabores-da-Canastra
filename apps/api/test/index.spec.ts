@@ -42,8 +42,45 @@ function databaseWithSession() {
     }),
   } as unknown as D1Database;
 }
+function catalogDatabase() {
+  return {
+    prepare: (query: string) => {
+      const statement = {
+        bind: () => statement,
+        first: async () => ({
+          id: "test-user",
+          username: "test-user",
+          role: "owner",
+          salt: "AAAAAAAAAAAAAAAAAAAAAA",
+          hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          iterations: 100_000,
+          credential_fingerprint: await testCredentialFingerprint(),
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        }),
+        all: async () => ({
+          results: query.includes("unit_cost_cents")
+            ? [{ product_id: "p1", unit_cost_cents: 230 }]
+            : [{ product_id: "p1", sale_price_cents: 500 }],
+        }),
+      };
+      return statement;
+    },
+  } as unknown as D1Database;
+}
 
 describe("rotas locais da API", () => {
+  it("fornece custos somente no catálogo autenticado do ERP", async () => {
+    const response = await app.request(
+      "https://api.example.test/api/erp/catalog/products",
+      { headers: { cookie: sessionCookie } },
+      { DB: catalogDatabase() },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      data: [{ product_id: "p1", unit_cost_cents: 230 }],
+    });
+  });
+
   it("responde saúde sem acessar D1", async () => {
     const response = await app.request(
       "http://127.0.0.1:3000/health",
@@ -177,7 +214,7 @@ describe("rotas locais da API", () => {
     });
   });
 
-  it("limita o corpo da venda lendo o stream e cancela acima de 1 MB", async () => {
+  it("desativa o endpoint legado de venda antes de aceitar payload", async () => {
     const getByName = vi.fn();
     const response = await app.request(
       "https://api.example.test/api/sales",
@@ -196,7 +233,7 @@ describe("rotas locais da API", () => {
         AUTH_ALLOWED_ORIGINS: "http://localhost:5174",
       },
     );
-    expect(response.status).toBe(413);
+    expect(response.status).toBe(410);
     expect(getByName).not.toHaveBeenCalled();
   });
 

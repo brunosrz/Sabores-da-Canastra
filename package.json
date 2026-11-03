@@ -24,17 +24,29 @@
     "format:check:api": "pnpm --filter @sabores/api format:check",
     "typecheck:api": "pnpm --filter @sabores/api typecheck",
     "test:api": "pnpm --filter @sabores/api test",
+    "test:sync": "pnpm --filter @sabores/pdv-sync test",
+    "lint:sync": "pnpm --filter @sabores/pdv-sync lint",
+    "typecheck:sync": "pnpm --filter @sabores/pdv-sync typecheck",
+    "format:check:sync": "pnpm --filter @sabores/pdv-sync format:check",
+    "test:ui": "pnpm --filter @sabores/ui test",
+    "lint:ui": "pnpm --filter @sabores/ui lint",
+    "typecheck:ui": "pnpm --filter @sabores/ui typecheck",
+    "format:check:ui": "pnpm --filter @sabores/ui format:check",
     "db:migrate:local": "pnpm --filter @sabores/api db:migrate:local",
     "db:import:local": "pnpm --filter @sabores/api db:import:local",
     "build:web": "pnpm build:erp && pnpm build:pdv",
-    "lint:web": "pnpm lint:erp && pnpm lint:pdv",
-    "format:check:web": "pnpm format:check:erp && pnpm format:check:pdv",
-    "typecheck:web": "pnpm typecheck:erp && pnpm typecheck:pdv",
-    "test:web": "pnpm test:erp && pnpm test:pdv",
-    "lint:docs": "pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml AGENTS.md README.md docs/json-contract.md docs/arquitetura-web.md apps/erp/README.md apps/pdv/README.md apps/api/README.md"
+    "lint:web": "pnpm lint:ui && pnpm lint:erp && pnpm lint:pdv",
+    "format:check:web": "pnpm format:check:ui && pnpm format:check:erp && pnpm format:check:pdv",
+    "typecheck:web": "pnpm typecheck:ui && pnpm typecheck:erp && pnpm typecheck:pdv",
+    "test:web": "pnpm test:ui && pnpm test:erp && pnpm test:pdv",
+    "lint:docs": "pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml AGENTS.md README.md docs/json-contract.md docs/arquitetura-web.md docs/migracao-d1.md docs/protocolo-sincronizacao-pdv.md apps/erp/README.md apps/pdv/README.md apps/api/README.md",
+    "i18n:compile": "paraglide-js compile --project ./packages/i18n/project.inlang --outdir ./packages/i18n/src/paraglide",
+    "postinstall": "pnpm i18n:compile"
   },
   "devDependencies": {
+    "@inlang/paraglide-js": "3.0.0",
     "@resvg/resvg-js": "^2.6.2",
+    "prettier": "3.9.10",
     "svgo": "^4.1.0"
   }
 }

@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { createIdempotentSale, validateSale, type SaleInput } from "./sales";
+import { applyPdvOperation } from "./pdv-operations";
 
 export class SaleCoordinator extends DurableObject<Env> {
   private queue: Promise<Response> = Promise.resolve(new Response(null));
@@ -14,58 +14,71 @@ export class SaleCoordinator extends DurableObject<Env> {
   }
 
   private async process(request: Request): Promise<Response> {
-    if (request.method !== "POST")
-      return Response.json({ error: "Method not allowed" }, { status: 405 });
-    const key = request.headers.get("idempotency-key") ?? "";
+    if (
+      request.method !== "POST" ||
+      new URL(request.url).pathname !== "/operations"
+    )
+      return Response.json({ error: "Not found" }, { status: 404 });
     const actorUserId = request.headers.get("x-actor-user-id") ?? "";
-    if (!/^[A-Za-z0-9_-]{1,80}$/.test(actorUserId)) {
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(actorUserId))
       return Response.json({ error: "Não autenticado." }, { status: 401 });
-    }
-    if (!/^[A-Za-z0-9._:-]{8,128}$/.test(key)) {
-      return Response.json(
-        { error: "Informe uma chave de idempotência válida." },
-        { status: 400 },
-      );
-    }
-    let payload: unknown;
+    let operation: unknown;
     try {
-      payload = await request.json();
+      operation = await request.json();
     } catch {
       return Response.json({ error: "Corpo JSON inválido." }, { status: 400 });
     }
-    let validSale: boolean;
     try {
-      validSale = await validateSale(payload, this.env.DB);
-    } catch (error) {
-      console.error("Falha ao validar produtos da venda no D1.", error);
-      return Response.json(
-        { error: "Não foi possível validar os produtos da venda." },
-        { status: 503 },
-      );
-    }
-    if (!validSale)
-      return Response.json(
-        { error: "Dados da venda inválidos ou totais divergentes." },
-        { status: 422 },
-      );
-    try {
-      const outcome = await createIdempotentSale(
+      const outcome = await applyPdvOperation(
         this.env.DB,
-        key,
-        payload as SaleInput,
+        operation,
         actorUserId,
       );
-      return Response.json(outcome, { status: outcome.replayed ? 200 : 201 });
+      const status =
+        outcome.status === "rejected_duplicate"
+          ? 409
+          : outcome.replayed
+            ? 200
+            : 201;
+      return Response.json(outcome, { status });
     } catch (error) {
-      if (error instanceof Error && error.message === "IDEMPOTENCY_CONFLICT") {
-        return Response.json(
-          { error: "A chave já foi usada com dados diferentes." },
-          { status: 409 },
-        );
-      }
-      console.error("Falha ao registrar venda no D1.", error);
+      const code = error instanceof Error ? error.message : "";
+      const clientErrors: Record<string, [number, string]> = {
+        INVALID_OPERATION: [422, "Operação inválida."],
+        INVALID_HASH: [422, "Hash da operação inválido."],
+        PRODUCT_SNAPSHOT_MISMATCH: [
+          422,
+          "Produto indisponível ou catálogo mudou; atualize e revise a venda.",
+        ],
+        ACTOR_MISMATCH: [
+          403,
+          "A operação pertence a outra conta. Entre com o usuário que a iniciou.",
+        ],
+        OPERATION_ID_CONFLICT: [
+          409,
+          "ID da operação já usado com outro conteúdo.",
+        ],
+        SALE_NOT_FOUND: [404, "Venda não encontrada no servidor."],
+        SALE_ALREADY_CANCELLED: [409, "A venda já foi cancelada."],
+        PAYMENT_VERSION_CONFLICT: [
+          409,
+          "Os pagamentos mudaram; atualize o histórico e tente novamente.",
+        ],
+        PAYMENT_TOTAL_MISMATCH: [
+          422,
+          "Os pagamentos precisam reconciliar com o total da venda.",
+        ],
+        PAYMENT_RATE_INVALID: [
+          422,
+          "Taxa de pagamento diferente da configuração do ERP.",
+        ],
+      };
+      const known = clientErrors[code];
+      if (known)
+        return Response.json({ error: known[1], code }, { status: known[0] });
+      console.error("Falha ao persistir operação do PDV.", error);
       return Response.json(
-        { error: "Não foi possível registrar a venda." },
+        { error: "Não foi possível registrar a operação." },
         { status: 503 },
       );
     }

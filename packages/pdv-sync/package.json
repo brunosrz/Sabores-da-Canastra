@@ -1,0 +1,22 @@
+{
+  "name": "@sabores/pdv-sync",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint src test",
+    "typecheck": "tsc --noEmit",
+    "format:check": "prettier --check src test eslint.config.js package.json tsconfig.json"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "prettier": "3.9.10",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "5.0.5"
+  }
+}

@@ -184,7 +184,8 @@ let priceSync: Promise<{ applied: number; pending: number }> | undefined;
 
 export function syncPriceQueue() {
 	if (!priceSync) {
-		priceSync = runPriceSync().finally(() => {
+		const run = () => (navigator.locks ? navigator.locks.request('sabores-erp-price-sync', runPriceSync) : runPriceSync());
+		priceSync = run().finally(() => {
 			priceSync = undefined;
 		});
 	}
@@ -195,11 +196,13 @@ async function runPriceSync() {
 	if (!navigator.onLine)
 		return {
 			applied: 0,
-			pending: (await listPriceOperations()).filter((item) => item.state === 'pending').length,
+			pending: (await listPriceOperations()).filter((item) => item.state === 'pending' || item.state === 'blocked_auth').length,
 		};
 	const session = await loadErpSession();
 	let applied = 0;
-	for (const operation of await listPriceOperations()) {
+	const queued = await listPriceOperations();
+	queued.sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || a.operationId.localeCompare(b.operationId));
+	for (const operation of queued) {
 		if (operation.state === 'blocked_auth' && session && operation.actorUserId === session.user.id && session.user.role === 'owner') {
 			await request('operations', 'readwrite', (store) => store.put({ ...operation, state: 'pending', error: undefined }));
 			operation.state = 'pending';
@@ -249,6 +252,8 @@ async function runPriceSync() {
 			continue;
 		}
 		if (!response.ok) break;
+		const result = (await response.json().catch(() => null)) as { status?: unknown } | null;
+		if (result?.status !== 'applied' && result?.status !== 'already_applied') break;
 		await request('operations', 'readwrite', (store) => store.put({ ...operation, state: 'synced' }));
 		applied += 1;
 	}

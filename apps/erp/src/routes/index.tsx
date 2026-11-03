@@ -10,7 +10,7 @@ const areas = [
 	{ id: 'financeiro', title: 'Financeiro', description: 'Custos, despesas, vendas e resultados', icon: 'R$' },
 ];
 
-function ErpHome() {
+export function ErpHome() {
 	return (
 		<div className="erp-home">
 			<section className="erp-welcome" id="inicio">

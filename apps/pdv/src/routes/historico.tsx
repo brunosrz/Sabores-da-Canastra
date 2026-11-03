@@ -42,7 +42,7 @@ const day = () =>
 const money = (cents: number) => (cents / 100).toLocaleString(formatLocale(), { style: 'currency', currency: 'BRL' });
 const METHODS: PaymentMethod[] = ['Dinheiro', 'Débito', 'Crédito', 'Pix'];
 
-function SalesHistory() {
+export function SalesHistory() {
 	const user = useAuthUser();
 	const [from, setFrom] = useState(day());
 	const [to, setTo] = useState(day());

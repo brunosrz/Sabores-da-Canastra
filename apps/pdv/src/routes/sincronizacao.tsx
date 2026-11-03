@@ -6,7 +6,7 @@ import { listQueue, syncQueue, type QueuedOperation } from '../offline/store';
 
 export const Route = createFileRoute('/sincronizacao')({ component: SyncQueuePage });
 
-function SyncQueuePage() {
+export function SyncQueuePage() {
 	const [rows, setRows] = useState<QueuedOperation[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [notice, setNotice] = useState('');

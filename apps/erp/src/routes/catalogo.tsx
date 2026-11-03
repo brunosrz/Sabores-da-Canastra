@@ -33,7 +33,7 @@ async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
 	if (!response.ok) throw new Error(body.error ?? `Falha na operação (${response.status}).`);
 	return body;
 }
-function CatalogPage() {
+export function CatalogPage() {
 	const [products, setProducts] = useState<Product[]>([]);
 	const [categories, setCategories] = useState<Category[]>([]);
 	const [search, setSearch] = useState('');

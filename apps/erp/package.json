@@ -11,11 +11,11 @@
 		"build": "vite build",
 		"preview": "vite preview --host 127.0.0.1 --port 3001",
 		"lint": "eslint .",
-		"format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"test/**/*.ts\" eslint.config.js index.html package.json tsconfig.json tsr.config.json vite.config.ts vitest.config.mts worker-configuration.d.ts wrangler.jsonc",
+		"format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"test/**/*.ts\" eslint.config.js index.html package.json tsconfig.json tsr.config.json vite.config.ts vite.native.config.ts capacitor.config.ts vitest.config.mts worker-configuration.d.ts wrangler.jsonc",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"cf-typegen": "wrangler types --include-runtime=false",
-		"mobile:prepare": "vite build && node ../../scripts/prepare-capacitor-assets.mjs erp",
+		"mobile:prepare": "vite build --config vite.native.config.ts",
 		"mobile:sync:android": "pnpm mobile:prepare && cap sync android",
 		"mobile:sync:ios": "pnpm mobile:prepare && cap sync ios"
 	},

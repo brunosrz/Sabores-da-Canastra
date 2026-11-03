@@ -1,4 +1,5 @@
 import { t } from '@sabores/i18n';
+import { Capacitor } from '@capacitor/core';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { listQueue, syncQueue } from '../offline/store';
 
@@ -28,7 +29,7 @@ export function PdvRuntime({ children }: { children: ReactNode }) {
 		window.addEventListener('offline', offlineHandler);
 		if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
 		void syncQueue(refreshQueue).then(refreshQueue);
-		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+		if (import.meta.env.PROD && !Capacitor.isNativePlatform() && 'serviceWorker' in navigator) {
 			void navigator.serviceWorker
 				.register('/sw.js', { updateViaCache: 'none' })
 				.then((activeRegistration) => {

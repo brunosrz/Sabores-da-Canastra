@@ -48,7 +48,7 @@ const centsFromInput = (value: string) => {
 };
 const textMoney = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 
-function PdvHome() {
+export function PdvHome() {
 	const user = useAuthUser();
 	const [products, setProducts] = useState<CachedProduct[]>([]);
 	const [basket, setBasket] = useState<BasketLine[]>([]);

@@ -51,6 +51,16 @@ pnpm test:pdv
 pnpm build:pdv
 ```
 
+## Pacote nativo em desenvolvimento
+
+`pnpm --filter @sabores/pdv mobile:prepare` gera o cliente em `dist/native`,
+sem handlers do Worker. `mobile:sync:android` e `mobile:sync:ios` copiam os
+arquivos para os projetos Capacitor. O build web permanece separado.
+
+O pacote abre a tela de acesso localmente, mas o transporte autenticado entre
+WebView, Cloudflare Access e backend ainda não está implementado. A compilação
+do pacote não comprova login ou operação offline em aparelho real.
+
 O backend de negócio é compartilhado com o ERP e tem o único acesso ao D1. A
 tela de login protege o conteúdo e a API valida a sessão em todas as rotas de
 dados. O navegador não recebe credenciais internas. O SQLite do sistema Python

@@ -27,6 +27,16 @@ rotas de autenticação ao backend pelo Service Binding.
 - Cloudflare Vite plugin e Wrangler para desenvolvimento local e futuros
   ambientes preview/produção.
 
+## Pacote nativo em desenvolvimento
+
+`pnpm --filter @sabores/erp mobile:prepare` gera o cliente em `dist/native`,
+sem handlers do Worker. `mobile:sync:android` e `mobile:sync:ios` copiam os
+arquivos para os projetos Capacitor. O build web permanece separado.
+
+O pacote abre a tela de acesso localmente, mas o transporte autenticado entre
+WebView, Cloudflare Access e backend ainda não está implementado. A compilação
+do pacote não comprova login ou operação offline em aparelho real.
+
 ## Verificações
 
 ```sh

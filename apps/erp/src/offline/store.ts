@@ -1,3 +1,5 @@
+import Dexie from 'dexie';
+
 export type ErpProduct = {
 	product_id: string;
 	name: string;
@@ -25,6 +27,7 @@ export type PriceOperation = {
 
 const DATABASE = 'sabores-erp-offline-v1';
 let database: Promise<IDBDatabase> | undefined;
+let dexiePromise: Promise<Dexie> | undefined;
 function openDatabase() {
 	if (typeof indexedDB === 'undefined') return Promise.reject(new Error('Armazenamento offline indisponível.'));
 	database ??= new Promise((resolve, reject) => {
@@ -35,10 +38,33 @@ function openDatabase() {
 			db.createObjectStore('operations', { keyPath: 'operationId' });
 			db.createObjectStore('metadata', { keyPath: 'key' });
 		};
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error ?? new Error('Falha ao abrir o banco offline.'));
+		request.onsuccess = () => {
+			const db = request.result;
+			db.onversionchange = () => {
+				db.close();
+				database = undefined;
+				dexiePromise = undefined;
+			};
+			resolve(db);
+		};
+		request.onerror = () => {
+			database = undefined;
+			reject(request.error ?? new Error('Falha ao abrir o banco offline.'));
+		};
 	});
 	return database;
+}
+
+async function openDexieDatabase() {
+	await openDatabase();
+	if (!dexiePromise) {
+		const instance = new Dexie(DATABASE);
+		dexiePromise = instance.open().catch((error: unknown) => {
+			dexiePromise = undefined;
+			throw error;
+		});
+	}
+	return dexiePromise;
 }
 function request<T>(storeName: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>) {
 	return openDatabase().then(
@@ -68,7 +94,7 @@ export const clearErpSession = () => request('metadata', 'readwrite', (store) =>
 export const hasPendingLogout = () => request('metadata', 'readonly', (store) => store.get('pendingLogout')).then(Boolean);
 export const setPendingLogout = () => request('metadata', 'readwrite', (store) => store.put({ key: 'pendingLogout', value: true }));
 export const clearPendingLogout = () => request('metadata', 'readwrite', (store) => store.delete('pendingLogout'));
-export const loadProducts = () => request<ErpProduct[]>('products', 'readonly', (store) => store.getAll());
+export const loadProducts = async () => (await openDexieDatabase()).table<ErpProduct, string>('products').toArray();
 export async function refreshProducts() {
 	const response = await fetch('/api/erp/catalog/products', {
 		credentials: 'same-origin',
@@ -108,7 +134,7 @@ export function mergePendingPrices(products: ErpProduct[], operations: PriceOper
 		return latest ? { ...product, sale_price_cents: latest.salePriceCents } : product;
 	});
 }
-export const listPriceOperations = () => request<PriceOperation[]>('operations', 'readonly', (store) => store.getAll());
+export const listPriceOperations = async () => (await openDexieDatabase()).table<PriceOperation, string>('operations').toArray();
 export async function discardPriceConflict(operationId: string) {
 	const db = await openDatabase();
 	await new Promise<void>((resolve, reject) => {

@@ -62,6 +62,11 @@ dos sites dependem dos Workers, portanto login, API, dados offline e distribuiç
 nativa ainda precisam ser integrados e validados. Copiar assets com Capacitor
 não comprova que o aplicativo instalado funciona nem gera um pacote assinado.
 
+ERP e PDV usam Dexie para leitura dos catálogos e das filas já existentes; o
+PDV também usa Dexie para rascunhos. As operações atômicas continuam no
+IndexedDB existente. A abertura preserva os bancos legados e não sincroniza,
+por si só, dispositivos ou origens distintas.
+
 ### Desenvolvimento web
 
 Requisitos: Node.js compatível com o `engines` do projeto e pnpm. Na raiz:

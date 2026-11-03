@@ -1,3 +1,4 @@
+import { apiFetch } from '@sabores/ui/platform';
 import { t } from '@sabores/i18n';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -8,7 +9,7 @@ import { withAuthMutation } from './auth-coordination';
 async function finishPendingLogout() {
 	if (!(await hasPendingLogout())) return true;
 	try {
-		const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+		const response = await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
 		if (!response.ok) return false;
 		await clearPendingLogout();
 		return true;
@@ -39,7 +40,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 					return null;
 				}
 				try {
-					const response = await fetch('/api/auth/session', {
+					const response = await apiFetch('/api/auth/session', {
 						credentials: 'same-origin',
 						cache: 'no-store',
 					});
@@ -74,7 +75,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		try {
 			await withAuthMutation(async () => {
 				if (!(await finishPendingLogout())) throw new Error(t('logout pendente'));
-				const response = await fetch('/api/auth/login', {
+				const response = await apiFetch('/api/auth/login', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
 					credentials: 'same-origin',

@@ -57,9 +57,11 @@ pnpm build:pdv
 sem handlers do Worker. `mobile:sync:android` e `mobile:sync:ios` copiam os
 arquivos para os projetos Capacitor. O build web permanece separado.
 
-O pacote abre a tela de acesso localmente, mas o transporte autenticado entre
-WebView, Cloudflare Access e backend ainda não está implementado. A compilação
-do pacote não comprova login ou operação offline em aparelho real.
+O pacote abre a tela de acesso localmente e possui transporte HTTP nativo para
+o domínio do PDV. A autenticação com Cloudflare Access e o backend ainda não
+está validada nem configurada para o cliente nativo. A compilação do pacote
+não comprova login ou operação offline em aparelho real. Para usar preview no
+build, defina `VITE_NATIVE_API_ORIGIN=https://pdv-preview.brunosrz.com`.
 
 O backend de negócio é compartilhado com o ERP e tem o único acesso ao D1. A
 tela de login protege o conteúdo e a API valida a sessão em todas as rotas de

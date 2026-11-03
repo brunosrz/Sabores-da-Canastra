@@ -1,3 +1,4 @@
+import { apiFetch } from '@sabores/ui/platform';
 import { canSyncOperation, operationIdentity, operationPayloadHash, type OperationEnvelope, type OperationType } from '@sabores/pdv-sync';
 import Dexie from 'dexie';
 
@@ -117,7 +118,7 @@ export async function updateCatalog(): Promise<{
 	const meta = await requestValue<{ key: string; value: string } | undefined>('metadata', 'readonly', (store) => store.get('catalog'));
 	const headers = new Headers();
 	if (meta?.value) headers.set('if-none-match', `"${meta.value}"`);
-	const response = await fetch('/api/pdv/catalog', {
+	const response = await apiFetch('/api/pdv/catalog', {
 		credentials: 'same-origin',
 		cache: 'no-store',
 		headers,
@@ -332,7 +333,7 @@ export async function syncQueue(onChange?: () => void, actorUserId?: string) {
 			onChange?.();
 			let response: Response;
 			try {
-				response = await fetch('/api/pdv/operations', {
+				response = await apiFetch('/api/pdv/operations', {
 					method: 'POST',
 					credentials: 'same-origin',
 					headers: { 'content-type': 'application/json' },

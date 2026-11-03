@@ -1,3 +1,4 @@
+import { apiFetch } from '@sabores/ui/platform';
 import { t } from '@sabores/i18n';
 import { createContext, useContext, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,7 +24,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		queryKey: ['auth', 'session'],
 		queryFn: async (): Promise<OfflineAuthSession | null> => {
 			try {
-				const response = await fetch('/api/auth/session', {
+				const response = await apiFetch('/api/auth/session', {
 					credentials: 'same-origin',
 					cache: 'no-store',
 				});
@@ -61,7 +62,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		setError('');
 		const form = new FormData(formElement);
 		try {
-			const response = await fetch('/api/auth/login', {
+			const response = await apiFetch('/api/auth/login', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				credentials: 'same-origin',
@@ -95,7 +96,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		queryClient.clear();
 		queryClient.setQueryData(['auth', 'session'], null);
 		try {
-			const response = await fetch('/api/auth/logout', {
+			const response = await apiFetch('/api/auth/logout', {
 				method: 'POST',
 				credentials: 'same-origin',
 			});

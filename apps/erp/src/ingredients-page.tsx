@@ -1,3 +1,4 @@
+import { apiFetch } from '@sabores/ui/platform';
 import { t, formatLocale } from '@sabores/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { PageHeader } from '@sabores/ui';
@@ -26,7 +27,7 @@ const empty = (): Ingredient => ({
 	quoted_on: null,
 });
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-	const response = await fetch(`/api/admin/ingredients${path}`, { credentials: 'same-origin', cache: 'no-store', ...init });
+	const response = await apiFetch(`/api/admin/ingredients${path}`, { credentials: 'same-origin', cache: 'no-store', ...init });
 	const body = (await response.json()) as T & { error?: string };
 	if (!response.ok) throw new Error(body.error ?? 'Não foi possível concluir a operação.');
 	return body;

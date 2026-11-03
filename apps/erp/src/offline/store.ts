@@ -1,3 +1,4 @@
+import { apiFetch } from '@sabores/ui/platform';
 import Dexie from 'dexie';
 
 export type ErpProduct = {
@@ -97,7 +98,7 @@ export const setPendingLogout = () => request('metadata', 'readwrite', (store) =
 export const clearPendingLogout = () => request('metadata', 'readwrite', (store) => store.delete('pendingLogout'));
 export const loadProducts = async () => (await openDexieDatabase()).table<ErpProduct, string>('products').toArray();
 export async function refreshProducts() {
-	const response = await fetch('/api/erp/catalog/products', {
+	const response = await apiFetch('/api/erp/catalog/products', {
 		credentials: 'same-origin',
 		cache: 'no-store',
 	});
@@ -222,7 +223,7 @@ async function runPriceSync() {
 		}
 		let response: Response;
 		try {
-			response = await fetch('/api/erp/product-price', {
+			response = await apiFetch('/api/erp/product-price', {
 				method: 'POST',
 				credentials: 'same-origin',
 				headers: { 'content-type': 'application/json' },

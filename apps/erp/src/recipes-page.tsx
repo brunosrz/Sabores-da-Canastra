@@ -1,3 +1,4 @@
+import { apiFetch } from '@sabores/ui/platform';
 import { t } from '@sabores/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { PageHeader, Price } from '@sabores/ui';
@@ -31,7 +32,7 @@ const empty = (): Recipe => ({
 	lines: [],
 });
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-	const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...init });
+	const response = await apiFetch(path, { credentials: 'same-origin', cache: 'no-store', ...init });
 	const body = (await response.json()) as T & { error?: string };
 	if (!response.ok) throw new Error(body.error ?? 'Operação indisponível.');
 	return body;

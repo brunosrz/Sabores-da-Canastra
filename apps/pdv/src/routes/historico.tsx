@@ -1,3 +1,4 @@
+import { apiFetch } from '@sabores/ui/platform';
 import { t, formatLocale } from '@sabores/i18n';
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -70,7 +71,7 @@ export function SalesHistory() {
 		setBusy(true);
 		setError('');
 		try {
-			const response = await fetch(`/api/pdv/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+			const response = await apiFetch(`/api/pdv/sales?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
 				credentials: 'same-origin',
 				cache: 'no-store',
 			});

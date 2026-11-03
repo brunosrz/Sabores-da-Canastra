@@ -3,7 +3,6 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
 	feeCents,
-	lineTotalCents,
 	operationIdentity,
 	operationPayloadHash,
 	quantityMilli,
@@ -15,6 +14,7 @@ import {
 } from '@sabores/pdv-sync';
 import { useAuthUser } from '../auth-gate';
 import { exactCodeMatch, searchProducts } from '../sale-search';
+import { basketAmount, lineAmount, normalizedQuantity } from '../sale-totals';
 import {
 	clearDraft,
 	commitSaleAndClearDraft,
@@ -143,10 +143,8 @@ function PdvHome() {
 		});
 	}, [draftId, basket, customer, notes, partCount, payments, customSplit, splitAmounts, paymentBasis]);
 
-	const total = useMemo(
-		() => basket.reduce((sum, line) => sum + (lineTotalCents(line.quantity, line.product.sale_price_cents ?? 0) ?? 0), 0),
-		[basket],
-	);
+	const calculatedTotal = useMemo(() => basketAmount(basket), [basket]);
+	const total = calculatedTotal ?? 0;
 	const splits = useMemo(() => {
 		if (!customSplit) return splitEqual(total, partCount);
 		const amounts = splitAmounts.map(centsFromInput);
@@ -177,7 +175,7 @@ function PdvHome() {
 		setBasket((current) => {
 			const existing = current.find((line) => line.product.product_id === product.product_id);
 			if (existing) {
-				const sum = (quantityMilli(existing.quantity) ?? 0) + (quantityMilli(quantity) ?? 0);
+				const sum = (quantityMilli(normalizedQuantity(existing.quantity)) ?? 0) + (quantityMilli(quantity) ?? 0);
 				return current.map((line) => (line.product.product_id === product.product_id ? { ...line, quantity: String(sum / 1000) } : line));
 			}
 			return [...current, { product, quantity }];
@@ -200,7 +198,7 @@ function PdvHome() {
 		const normalized = selectedQuantity.trim().replace(',', '.');
 		const quantity = quantityMilli(normalized);
 		const existing = basket.find((line) => line.product.product_id === selectedProduct.product_id);
-		const existingQuantity = existing ? quantityMilli(existing.quantity) : 0;
+		const existingQuantity = existing ? quantityMilli(normalizedQuantity(existing.quantity)) : 0;
 		if (!quantity || existingQuantity === null || !Number.isSafeInteger(quantity + existingQuantity)) {
 			setMessage(t('Quantidade inválida'));
 			return;
@@ -237,7 +235,7 @@ function PdvHome() {
 	}
 
 	function openPayment() {
-		if (!basket.length) return;
+		if (!basket.length || calculatedTotal === null) return;
 		if (paymentBasis === total) {
 			setMessage('');
 			setPaymentOpen(true);
@@ -260,6 +258,10 @@ function PdvHome() {
 
 	async function finalizeSale() {
 		if (busy || finalizing.current || !user) return;
+		if (calculatedTotal === null) {
+			setMessage(t('Quantidade inválida'));
+			return;
+		}
 		if (basket.some((line) => line.product.sale_price_cents == null)) {
 			setMessage(t('Preço pendente'));
 			return;
@@ -300,10 +302,10 @@ function PdvHome() {
 					productId: line.product.product_id,
 					name: line.product.name,
 					category: line.product.category,
-					quantity: line.quantity,
+					quantity: normalizedQuantity(line.quantity),
 					unitPriceCents: line.product.sale_price_cents ?? 0,
 					unitCostCents: line.product.unit_cost_cents ?? null,
-					lineTotalCents: lineTotalCents(line.quantity, line.product.sale_price_cents ?? 0) ?? 0,
+					lineTotalCents: lineAmount(line) ?? 0,
 					position,
 				})),
 				splits: splits.map((part) => ({ ...part })),
@@ -536,10 +538,11 @@ function PdvHome() {
 										className="demo-input pdv-quantity"
 										inputMode="decimal"
 										value={line.quantity}
+										aria-invalid={lineAmount(line) === null}
 										onChange={(event) => setQuantity(line.product.product_id, event.target.value)}
 									/>
 								</label>
-								<b>{money(lineTotalCents(line.quantity, line.product.sale_price_cents ?? 0) ?? 0)}</b>
+								<b>{lineAmount(line) === null ? t('Quantidade inválida') : money(lineAmount(line)!)}</b>
 								<button
 									type="button"
 									aria-label={t('Remover {p0}', { p0: line.product.name })}
@@ -567,11 +570,11 @@ function PdvHome() {
 							<h3>{t('Subtotal')}</h3>
 							<small>{t('Pagamento definido ao finalizar')}</small>
 						</div>
-						<strong>{money(total)}</strong>
+						<strong>{calculatedTotal === null ? t('Quantidade inválida') : money(total)}</strong>
 					</div>
-					<button type="button" className="pdv-confirm" onClick={openPayment} disabled={!basket.length}>
+					<button type="button" className="pdv-confirm" onClick={openPayment} disabled={!basket.length || calculatedTotal === null}>
 						{t('Finalizar venda · ')}
-						{money(total)}
+						{calculatedTotal === null ? t('Quantidade inválida') : money(total)}
 					</button>
 					{message ? (
 						<p role="status" className="pdv-message">

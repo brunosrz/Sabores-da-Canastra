@@ -193,6 +193,49 @@ async function authenticatedCookie(role = "owner") {
 }
 
 describe("bindings Cloudflare locais", () => {
+  it("restringe receitas ao proprietário e calcula custo da cotação atual", async () => {
+    const suffix = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const ingredient = `ingredient-${suffix}`;
+    const recipe = `recipe-${suffix}`;
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, created_at, updated_at) VALUES (?, ?, 'g', '1000', ?, ?)",
+      ).bind(ingredient, `Ingrediente ${suffix}`, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, status, is_current, created_at) VALUES (?, ?, 900, '1000', 'g', 'Confirmado', 1, ?)",
+      ).bind(`quote-${suffix}`, ingredient, now),
+      bindings.DB.prepare(
+        "INSERT INTO recipes (recipe_id, product_name, version, yield_units, created_at, updated_at) VALUES (?, ?, '1', 2, ?, ?)",
+      ).bind(recipe, `Receita ${suffix}`, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, '250', 'g')",
+      ).bind(`line-${suffix}`, recipe, ingredient),
+    ]);
+    const url = "https://api.example.test/api/erp/recipes";
+    expect((await app.request(url, {}, bindings)).status).toBe(401);
+    expect(
+      (
+        await app.request(
+          url,
+          { headers: { cookie: await authenticatedCookie("operator") } },
+          bindings,
+        )
+      ).status,
+    ).toBe(403);
+    const response = await app.request(
+      url,
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{ data: Array<{ recipe_id: string }> }>();
+    expect(body.data.find((row) => row.recipe_id === recipe)).toMatchObject({
+      batch_cost_cents: 225,
+      unit_cost_cents: 113,
+      pending_ingredients: [],
+    });
+  });
   it("protege backup e lançamentos de operadores e valida datas", async () => {
     const operator = await authenticatedCookie("operator");
     const owner = await authenticatedCookie();

@@ -89,6 +89,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 					expiresAt: string;
 				};
 				await saveErpSession({ user: body.user, expiresAt: body.expiresAt });
+				queryClient.clear();
 				queryClient.setQueryData(['auth', 'session'], body.user);
 				formElement.reset();
 			}
@@ -110,6 +111,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 			setBusy(false);
 			return;
 		} finally {
+			queryClient.clear();
 			queryClient.setQueryData(['auth', 'session'], null);
 			setBusy(false);
 		}

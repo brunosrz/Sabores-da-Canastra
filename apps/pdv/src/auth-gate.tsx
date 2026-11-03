@@ -77,6 +77,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 			} else {
 				const body = (await response.json()) as OfflineAuthSession;
 				await saveAuthSession(body);
+				queryClient.clear();
 				queryClient.setQueryData(['auth', 'session'], body);
 				formElement.reset();
 			}
@@ -90,6 +91,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	async function signOut() {
 		setBusy(true);
 		await clearAuthSession();
+		queryClient.clear();
 		queryClient.setQueryData(['auth', 'session'], null);
 		try {
 			const response = await fetch('/api/auth/logout', {

@@ -69,6 +69,7 @@ function PdvHome() {
 	const [deviceId, setDeviceId] = useState('');
 	const [fees, setFees] = useState(DEFAULT_FEES);
 	const searchInput = useRef<HTMLInputElement>(null);
+	const finalizing = useRef(false);
 
 	useEffect(() => {
 		void (async () => {
@@ -180,6 +181,10 @@ function PdvHome() {
 	}
 
 	function selectProduct(product: CachedProduct) {
+		if (product.sale_price_cents == null) {
+			setMessage(t('Preço pendente'));
+			return;
+		}
 		addProduct(product);
 		setSearch('');
 		requestAnimationFrame(() => searchInput.current?.focus());
@@ -222,7 +227,11 @@ function PdvHome() {
 	}
 
 	async function finalizeSale() {
-		if (busy || !user) return;
+		if (busy || finalizing.current || !user) return;
+		if (basket.some((line) => line.product.sale_price_cents == null)) {
+			setMessage(t('Preço pendente'));
+			return;
+		}
 		if (!basket.length || paymentTotal !== total || !splits) {
 			setMessage(t('Inclua itens e confira se os pagamentos reconciliam com o total.'));
 			return;
@@ -240,6 +249,7 @@ function PdvHome() {
 				return;
 			}
 		}
+		finalizing.current = true;
 		setBusy(true);
 		setMessage('');
 		try {
@@ -311,6 +321,7 @@ function PdvHome() {
 		} catch (error) {
 			setMessage(error instanceof Error ? error.message : t('Não foi possível salvar a venda neste dispositivo.'));
 		} finally {
+			finalizing.current = false;
 			setBusy(false);
 		}
 	}

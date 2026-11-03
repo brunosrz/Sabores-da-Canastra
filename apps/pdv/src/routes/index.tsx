@@ -13,6 +13,7 @@ import {
 	type SalePayment,
 } from '@sabores/pdv-sync';
 import { useAuthUser } from '../auth-gate';
+import { exactCodeMatch, searchProducts } from '../sale-search';
 import {
 	clearDraft,
 	commitSaleAndClearDraft,
@@ -55,6 +56,7 @@ function PdvHome() {
 	const [customSplit, setCustomSplit] = useState(false);
 	const [splitAmounts, setSplitAmounts] = useState<string[]>(['0,00']);
 	const [search, setSearch] = useState('');
+	const [selectedResult, setSelectedResult] = useState(-1);
 	const [customer, setCustomer] = useState('');
 	const [notes, setNotes] = useState('');
 	const [catalogState, setCatalogState] = useState('Carregando catálogo local…');
@@ -165,13 +167,7 @@ function PdvHome() {
 		const fee = amount === null ? null : feeCents(amount, rate);
 		return sum + (fee ?? 0);
 	}, 0);
-	const visibleProducts = products
-		.filter((product) =>
-			`${product.barcode ?? ''} ${product.auxiliary_code ?? ''} ${product.name} ${product.category}`
-				.toLocaleLowerCase()
-				.includes(search.trim().toLocaleLowerCase()),
-		)
-		.slice(0, 100);
+	const visibleProducts = searchProducts(products, search);
 
 	function addProduct(product: CachedProduct) {
 		setBasket((current) => {
@@ -191,6 +187,7 @@ function PdvHome() {
 		}
 		addProduct(product);
 		setSearch('');
+		setSelectedResult(-1);
 		requestAnimationFrame(() => searchInput.current?.focus());
 	}
 
@@ -394,19 +391,41 @@ function PdvHome() {
 						id="product-search"
 						className="demo-input pdv-search"
 						value={search}
-						onChange={(event) => setSearch(event.target.value)}
+						onChange={(event) => {
+							setSearch(event.target.value);
+							setSelectedResult(-1);
+						}}
 						onKeyDown={(event) => {
-							if (event.key === 'Enter' && visibleProducts[0]) {
+							if (event.key === 'ArrowDown' && visibleProducts.length) {
 								event.preventDefault();
-								selectProduct(visibleProducts[0]);
+								setSelectedResult((index) => Math.min(index + 1, visibleProducts.length - 1));
+							} else if (event.key === 'ArrowUp' && visibleProducts.length) {
+								event.preventDefault();
+								setSelectedResult((index) => Math.max(index - 1, 0));
+							} else if (event.key === 'Enter') {
+								event.preventDefault();
+								const product = visibleProducts[selectedResult] ?? exactCodeMatch(visibleProducts, search);
+								if (product) selectProduct(product);
 							}
 						}}
+						role="combobox"
+						aria-expanded={visibleProducts.length > 0}
+						aria-controls="product-search-results"
+						aria-activedescendant={visibleProducts[selectedResult] ? `product-result-${selectedResult}` : undefined}
 						placeholder={t('Código de barras, auxiliar ou nome')}
 						autoComplete="off"
 					/>
-					<div className="pdv-product-list" role="list">
-						{visibleProducts.map((product) => (
-							<button type="button" className="pdv-product" key={product.product_id} onClick={() => selectProduct(product)}>
+					<div className="pdv-product-list" role="listbox" id="product-search-results" aria-label={t('Produtos')}>
+						{visibleProducts.map((product, index) => (
+							<button
+								type="button"
+								role="option"
+								aria-selected={selectedResult === index}
+								id={`product-result-${index}`}
+								className="pdv-product"
+								key={product.product_id}
+								onClick={() => selectProduct(product)}
+							>
 								<span>
 									<strong>{product.name}</strong>
 									<small>
@@ -420,7 +439,7 @@ function PdvHome() {
 								<span className="pdv-product-prices">
 									<b>
 										{t('Venda ')}
-										{money(product.sale_price_cents ?? 0)}
+										{product.sale_price_cents == null ? t('Preço pendente') : money(product.sale_price_cents)}
 									</b>
 									<small>
 										{t('Custo ')}

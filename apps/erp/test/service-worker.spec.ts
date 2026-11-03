@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
-describe.each(['../erp/public/sw.js', '../pdv/public/sw.js'])('service worker %s', (file) => {
+describe.each([
+	['../erp/public/sw.js', '/receitas'],
+	['../pdv/public/sw.js', '/historico'],
+])('service worker %s', (file, route) => {
 	it('recupera o shell depois de reiniciar sem rede', async () => {
 		const stores = new Map<string, Map<string, Response>>();
 		const caches = {
@@ -59,7 +62,7 @@ describe.each(['../erp/public/sw.js', '../pdv/public/sw.js'])('service worker %s
 		const restarted = boot();
 		let result: Promise<Response> = Promise.resolve(Response.error());
 		restarted.get('fetch')!({
-			request: { method: 'GET', url: 'https://example.test/', mode: 'navigate' },
+			request: { method: 'GET', url: `https://example.test${route}`, mode: 'navigate' },
 			respondWith: (promise: Promise<Response>) => {
 				result = promise;
 			},

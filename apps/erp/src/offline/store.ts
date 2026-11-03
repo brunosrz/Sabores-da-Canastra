@@ -77,18 +77,7 @@ export async function refreshProducts() {
 	if (!response.ok) throw new Error(`Catálogo indisponível (${response.status}).`);
 	const body = (await response.json()) as { data: ErpProduct[] };
 	const operations = await listPriceOperations();
-	const pendingByProduct = new Map<string, PriceOperation[]>();
-	for (const operation of operations) {
-		if (operation.state === 'synced' || operation.state === 'conflict') continue;
-		const queued = pendingByProduct.get(operation.productId) ?? [];
-		queued.push(operation);
-		pendingByProduct.set(operation.productId, queued);
-	}
-	const mergedProducts = body.data.map((product) => {
-		const queued = pendingByProduct.get(product.product_id) ?? [];
-		const latest = queued.at(-1);
-		return latest ? { ...product, sale_price_cents: latest.salePriceCents } : product;
-	});
+	const mergedProducts = mergePendingPrices(body.data, operations);
 	const db = await openDatabase();
 	await new Promise<void>((resolve, reject) => {
 		const tx = db.transaction('products', 'readwrite');
@@ -99,6 +88,22 @@ export async function refreshProducts() {
 		tx.onerror = () => reject(tx.error ?? new Error('Falha ao atualizar catálogo local.'));
 	});
 	return mergedProducts;
+}
+export function mergePendingPrices(products: ErpProduct[], operations: PriceOperation[]) {
+	const pendingByProduct = new Map<string, PriceOperation[]>();
+	for (const operation of operations) {
+		if (operation.state === 'synced' || operation.state === 'conflict') continue;
+		const queued = pendingByProduct.get(operation.productId) ?? [];
+		queued.push(operation);
+		pendingByProduct.set(operation.productId, queued);
+	}
+	return products.map((product) => {
+		const queued = pendingByProduct.get(product.product_id) ?? [];
+		const latest = [...queued]
+			.sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || a.operationId.localeCompare(b.operationId))
+			.at(-1);
+		return latest ? { ...product, sale_price_cents: latest.salePriceCents } : product;
+	});
 }
 export const listPriceOperations = () => request<PriceOperation[]>('operations', 'readonly', (store) => store.getAll());
 export async function discardPriceConflict(operationId: string) {

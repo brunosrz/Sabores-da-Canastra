@@ -23,7 +23,7 @@ def test_comparison_rejects_invalid_financial_structure(tmp_path):
 
 	path = tmp_path / "invalid.json"
 	path.write_text(json.dumps({"contract": "test", "contract_version": 1, "tables": {}, "reconciliation": {"financial": []}}), encoding="utf-8")
-	with pytest.raises(ValueError, match="reconciliation.financial"):
+	with pytest.raises(ValueError, match=r"reconciliation\.financial"):
 		_load_comparison_bundle(path, {"contract": "test", "contract_version": 1})
 
 

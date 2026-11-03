@@ -6,6 +6,7 @@ import {
 	lineTotalCents,
 	operationIdentity,
 	operationPayloadHash,
+	quantityMilli,
 	splitEqual,
 	validateOperationPayload,
 	type PaymentMethod,
@@ -57,6 +58,8 @@ function PdvHome() {
 	const [splitAmounts, setSplitAmounts] = useState<string[]>(['0,00']);
 	const [search, setSearch] = useState('');
 	const [selectedResult, setSelectedResult] = useState(-1);
+	const [selectedProduct, setSelectedProduct] = useState<CachedProduct | null>(null);
+	const [selectedQuantity, setSelectedQuantity] = useState('1');
 	const [customer, setCustomer] = useState('');
 	const [notes, setNotes] = useState('');
 	const [catalogState, setCatalogState] = useState('Carregando catálogo local…');
@@ -72,6 +75,7 @@ function PdvHome() {
 	const [deviceId, setDeviceId] = useState('');
 	const [fees, setFees] = useState(DEFAULT_FEES);
 	const searchInput = useRef<HTMLInputElement>(null);
+	const quantityInput = useRef<HTMLInputElement>(null);
 	const finalizing = useRef(false);
 
 	useEffect(() => {
@@ -169,14 +173,14 @@ function PdvHome() {
 	}, 0);
 	const visibleProducts = searchProducts(products, search);
 
-	function addProduct(product: CachedProduct) {
+	function addProduct(product: CachedProduct, quantity: string) {
 		setBasket((current) => {
 			const existing = current.find((line) => line.product.product_id === product.product_id);
-			if (existing)
-				return current.map((line) =>
-					line.product.product_id === product.product_id ? { ...line, quantity: String(Number(line.quantity) + 1) } : line,
-				);
-			return [...current, { product, quantity: '1' }];
+			if (existing) {
+				const sum = (quantityMilli(existing.quantity) ?? 0) + (quantityMilli(quantity) ?? 0);
+				return current.map((line) => (line.product.product_id === product.product_id ? { ...line, quantity: String(sum / 1000) } : line));
+			}
+			return [...current, { product, quantity }];
 		});
 	}
 
@@ -185,7 +189,24 @@ function PdvHome() {
 			setMessage(t('Preço pendente'));
 			return;
 		}
-		addProduct(product);
+		setSelectedProduct(product);
+		setSelectedQuantity('1');
+		setMessage('');
+		requestAnimationFrame(() => quantityInput.current?.focus());
+	}
+
+	function confirmSelectedProduct() {
+		if (!selectedProduct) return;
+		const normalized = selectedQuantity.trim().replace(',', '.');
+		const quantity = quantityMilli(normalized);
+		const existing = basket.find((line) => line.product.product_id === selectedProduct.product_id);
+		const existingQuantity = existing ? quantityMilli(existing.quantity) : 0;
+		if (!quantity || existingQuantity === null || !Number.isSafeInteger(quantity + existingQuantity)) {
+			setMessage(t('Quantidade inválida'));
+			return;
+		}
+		addProduct(selectedProduct, normalized);
+		setSelectedProduct(null);
 		setSearch('');
 		setSelectedResult(-1);
 		requestAnimationFrame(() => searchInput.current?.focus());
@@ -415,6 +436,41 @@ function PdvHome() {
 						placeholder={t('Código de barras, auxiliar ou nome')}
 						autoComplete="off"
 					/>
+					{selectedProduct ? (
+						<form
+							onSubmit={(event) => {
+								event.preventDefault();
+								confirmSelectedProduct();
+							}}
+							className="pdv-section-heading"
+						>
+							<label>
+								<strong>{selectedProduct.name}</strong>
+								<span> {t('Quantidade')} </span>
+								<input
+									ref={quantityInput}
+									className="demo-input"
+									inputMode="decimal"
+									value={selectedQuantity}
+									onChange={(event) => setSelectedQuantity(event.target.value)}
+								/>
+							</label>
+							<button type="submit" className="demo-button">
+								{t('Adicionar')}
+							</button>
+							<button
+								type="button"
+								className="demo-button demo-button-secondary"
+								onClick={() => {
+									setSelectedProduct(null);
+									searchInput.current?.focus();
+								}}
+							>
+								{t('Cancelar')}
+							</button>
+							{message ? <span role="alert">{message}</span> : null}
+						</form>
+					) : null}
 					<div className="pdv-product-list" role="listbox" id="product-search-results" aria-label={t('Produtos')}>
 						{visibleProducts.map((product, index) => (
 							<button

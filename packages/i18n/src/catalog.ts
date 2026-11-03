@@ -4,6 +4,9 @@ export const catalog: Record<
   string,
   (inputs: Record<string, unknown>) => string
 > = {
+  Quantidade: () => m.msg_f001abcde101(),
+  Adicionar: () => m.msg_f001abcde102(),
+  "Quantidade inválida": () => m.msg_f001abcde103(),
   "session unavailable": () => m.msg_d37e56460175(),
   "logout pendente": () => m.msg_7af30ebf60b9(),
   "Não foi possível entrar. Verifique a conexão e tente novamente.": () =>

@@ -60,6 +60,7 @@ function PdvHome() {
 	const [catalogState, setCatalogState] = useState('Carregando catálogo local…');
 	const [busy, setBusy] = useState(false);
 	const [paymentOpen, setPaymentOpen] = useState(false);
+	const [paymentBasis, setPaymentBasis] = useState<number | null>(null);
 	const [receipt, setReceipt] = useState<{
 		sale: SaleCreatePayload;
 		occurredAt: string;
@@ -83,6 +84,7 @@ function PdvHome() {
 					payments?: PaymentDraft[];
 					customSplit?: boolean;
 					splitAmounts?: string[];
+					paymentBasis?: number | null;
 					draftId?: string;
 				}>(),
 				getDeviceId(),
@@ -100,6 +102,7 @@ function PdvHome() {
 				setPayments(draft.payments ?? [{ method: 'Dinheiro', partNumber: 1, amount: '0,00' }]);
 				setCustomSplit(draft.customSplit ?? false);
 				setSplitAmounts(draft.splitAmounts ?? ['0,00']);
+				setPaymentBasis(draft.paymentBasis ?? null);
 			}
 			setCatalogState(cached.length ? t('{p0} itens salvos neste dispositivo', { p0: cached.length }) : t('Nenhum catálogo local ainda'));
 			try {
@@ -130,8 +133,9 @@ function PdvHome() {
 			payments,
 			customSplit,
 			splitAmounts,
+			paymentBasis,
 		});
-	}, [draftId, basket, customer, notes, partCount, payments, customSplit, splitAmounts]);
+	}, [draftId, basket, customer, notes, partCount, payments, customSplit, splitAmounts, paymentBasis]);
 
 	const total = useMemo(
 		() => basket.reduce((sum, line) => sum + (lineTotalCents(line.quantity, line.product.sale_price_cents ?? 0) ?? 0), 0),
@@ -195,6 +199,7 @@ function PdvHome() {
 	}
 
 	function selectPartCount(value: number) {
+		setPaymentBasis(total);
 		setPartCount(value);
 		setCustomSplit(false);
 		const nextSplits = splitEqual(total, value) ?? [];
@@ -215,7 +220,16 @@ function PdvHome() {
 
 	function openPayment() {
 		if (!basket.length) return;
+		if (paymentBasis === total) {
+			setMessage('');
+			setPaymentOpen(true);
+			return;
+		}
 		const equalParts = splitEqual(total, partCount) ?? [];
+		setCustomSplit(false);
+		setSplitAmounts(equalParts.map((part) => textMoney(part.dueCents)));
+		setMessage(paymentBasis !== null ? t('O total mudou; confira novamente os pagamentos.') : '');
+		setPaymentBasis(total);
 		setPayments(
 			equalParts.map((part) => ({
 				method: 'Dinheiro',
@@ -308,6 +322,7 @@ function PdvHome() {
 			setPayments([{ method: 'Dinheiro', partNumber: 1, amount: '0,00' }]);
 			setCustomSplit(false);
 			setSplitAmounts(['0,00']);
+			setPaymentBasis(null);
 			setDraftId(crypto.randomUUID());
 			setMessage(
 				navigator.onLine
@@ -331,6 +346,7 @@ function PdvHome() {
 		setBasket([]);
 		setPayments([{ method: 'Dinheiro', partNumber: 1, amount: '0,00' }]);
 		setPartCount(1);
+		setPaymentBasis(null);
 		setCustomSplit(false);
 		setSplitAmounts(['0,00']);
 		setCustomer('');
@@ -556,6 +572,11 @@ function PdvHome() {
 										{t('× ')}
 									</button>
 								</div>
+								{message ? (
+									<p role="status" className="pdv-message">
+										{message}
+									</p>
+								) : null}
 								<p className="demo-muted">
 									{t('Taxas: débito ')}
 									{(Number(fees['Débito']) * 100).toLocaleString(formatLocale())}
@@ -591,7 +612,10 @@ function PdvHome() {
 										{money(total)}).
 									</p>
 								) : null}
-								{splits?.map((part) => (
+								{Array.from({ length: partCount }, (_, index) => ({
+									partNumber: index + 1,
+									dueCents: splits?.[index]?.dueCents ?? 0,
+								})).map((part) => (
 									<div className="pdv-payment-part" key={part.partNumber}>
 										<div className="pdv-section-heading">
 											<strong>
@@ -626,7 +650,7 @@ function PdvHome() {
 														{t('Forma ')}
 														<select
 															className="demo-select"
-															value={t(payment.method)}
+															value={payment.method}
 															onChange={(event) =>
 																setPayments((current) =>
 																	current.map((item, currentIndex) =>

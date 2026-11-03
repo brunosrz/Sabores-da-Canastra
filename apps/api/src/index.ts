@@ -256,12 +256,12 @@ app.get("/api/erp/recipes", async (context) => {
     return context.json({ error: "Acesso negado." }, 403);
   try {
     const { results: recipes } = await context.env.DB.prepare(
-      "SELECT recipe_id, product_name, version, yield_units, source, instructions FROM recipes ORDER BY product_name COLLATE NOCASE, version",
+      "SELECT r.recipe_id, r.product_id, COALESCE(p.name, r.product_name) AS product_name, r.version, r.yield_units, r.source, r.instructions FROM recipes r LEFT JOIN products p ON p.product_id = r.product_id ORDER BY COALESCE(p.name, r.product_name) COLLATE NOCASE, r.version",
     ).all<{ recipe_id: string; yield_units: number }>();
     const { results: lines } = await context.env.DB.prepare(
       `SELECT rl.recipe_id, rl.line_id, rl.ingredient_id, i.name AS ingredient_name,
               rl.quantity, rl.unit, rl.stage, i.base_unit, q.base_unit AS quote_unit,
-              q.pack_quantity, q.pack_price_cents
+              q.pack_quantity, q.pack_price_cents, q.status AS quote_status
        FROM recipe_lines rl JOIN ingredients i ON i.ingredient_id = rl.ingredient_id
        LEFT JOIN ingredient_quotes q ON q.ingredient_id = i.ingredient_id AND q.is_current = 1
        ORDER BY rl.recipe_id, i.name COLLATE NOCASE, rl.line_id`,

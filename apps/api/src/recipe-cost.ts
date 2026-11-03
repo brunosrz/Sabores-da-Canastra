@@ -6,6 +6,7 @@ export type RecipeCostLine = {
   quote_unit: string | null;
   pack_quantity: string | null;
   pack_price_cents: number | null;
+  quote_status?: string | null;
 };
 
 function decimal(value: string): [bigint, bigint] | null {
@@ -38,6 +39,7 @@ export function calculateRecipeCost(
   let numerator = 0n;
   let denominator = 1n;
   const pending: string[] = lines.length ? [] : ["Receita sem ingredientes"];
+  let quality = "Confirmado";
   const details = lines.map((line) => {
     const quantity = decimal(line.quantity);
     const pack =
@@ -50,11 +52,16 @@ export function calculateRecipeCost(
       line.unit !== line.quote_unit ||
       line.pack_price_cents === null ||
       !Number.isSafeInteger(line.pack_price_cents) ||
-      line.pack_price_cents < 0
+      line.pack_price_cents < 0 ||
+      line.quote_status === "Pendente" ||
+      line.quote_status === null
     ) {
       pending.push(line.ingredient_name);
       return { ...line, cost_cents: null };
     }
+    if (line.quote_status === "Desatualizado") quality = "Desatualizado";
+    else if (line.quote_status === "Estimado" && quality === "Confirmado")
+      quality = "Estimado";
     const n = quantity[0] * pack[1] * BigInt(line.pack_price_cents);
     const d = quantity[1] * pack[0];
     numerator = numerator * d + n * denominator;
@@ -65,6 +72,7 @@ export function calculateRecipeCost(
     return { ...line, cost_cents: round(n, d) };
   });
   return {
+    quality: pending.length ? "Pendente" : quality,
     batch_cost_cents: pending.length ? null : round(numerator, denominator),
     unit_cost_cents: pending.length
       ? null

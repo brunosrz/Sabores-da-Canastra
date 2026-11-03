@@ -29,13 +29,15 @@ admin.use(
 admin.onError((error, c) => {
   if (error instanceof SyntaxError)
     return c.json({ error: "JSON inválido." }, 400);
+  if (String(error).includes("RECIPE_UNIT_MISMATCH"))
+    return c.json({ error: "Unidade incompatível com o ingrediente." }, 422);
   if (String(error).includes("UNIQUE constraint"))
     return c.json({ error: "Nome ou código já cadastrado." }, 409);
   if (String(error).includes("FOREIGN KEY constraint"))
     return c.json(
       {
         error:
-          "Ingrediente utilizado em receita ou compra; remova os vínculos antes de excluir.",
+          "Cadastro utilizado em receita, compra ou planejamento; remova os vínculos antes de excluir.",
       },
       409,
     );
@@ -315,6 +317,148 @@ admin.delete("/ingredients/:id", async (c) => {
   ]);
   if (!result[1].meta.changes)
     return c.json({ error: "Ingrediente não encontrado." }, 404);
+  await invalidateCatalogCache(c.env.CATALOG_CACHE);
+  return c.json({ status: "deleted" });
+});
+
+type RecipeLineInput = {
+  ingredient_id: string;
+  quantity: string;
+  unit: string;
+  stage: string | null;
+};
+function recipeLineValid(value: unknown): value is RecipeLineInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const b = value as Record<string, unknown>;
+  return (
+    text(b.ingredient_id, 120) &&
+    typeof b.quantity === "string" &&
+    b.quantity.length <= 30 &&
+    /^\d+(?:\.\d{1,9})?$/.test(b.quantity) &&
+    units.has(String(b.unit)) &&
+    nullableText(b.stage, 200)
+  );
+}
+async function saveRecipe(
+  c: import("hono").Context<AdminEnv>,
+  create: boolean,
+) {
+  const b = await object(c.req.raw);
+  if (
+    !b ||
+    !text(b.product_name, 200) ||
+    !nullableText(b.product_id, 120) ||
+    (b.product_id !== null && !text(b.product_id, 120)) ||
+    !text(b.version, 80) ||
+    !Number.isSafeInteger(b.yield_units) ||
+    Number(b.yield_units) <= 0 ||
+    !nullableText(b.source, 500) ||
+    !nullableText(b.instructions, 10000) ||
+    !Array.isArray(b.lines) ||
+    b.lines.length < 1 ||
+    b.lines.length > 80 ||
+    !b.lines.every(recipeLineValid)
+  ) {
+    return c.json(
+      {
+        error:
+          "Receita exige nome, versão, rendimento inteiro positivo e de 1 a 80 ingredientes com quantidades não negativas.",
+      },
+      422,
+    );
+  }
+  const lines = b.lines as RecipeLineInput[];
+  const id = create ? crypto.randomUUID() : c.req.param("id");
+  if (
+    !create &&
+    !(await c.env.DB.prepare(
+      "SELECT recipe_id FROM recipes WHERE recipe_id = ?",
+    )
+      .bind(id)
+      .first())
+  )
+    return c.json({ error: "Receita não encontrada." }, 404);
+  const product =
+    b.product_id === null
+      ? null
+      : await c.env.DB.prepare("SELECT name FROM products WHERE product_id = ?")
+          .bind(b.product_id)
+          .first<{ name: string }>();
+  if (b.product_id !== null && !product)
+    return c.json({ error: "Produto inexistente.", field: "product_id" }, 422);
+  const uniqueIds = [...new Set(lines.map((line) => line.ingredient_id))];
+  const ingredients = await c.env.DB.prepare(
+    `SELECT ingredient_id, base_unit FROM ingredients WHERE ingredient_id IN (${uniqueIds.map(() => "?").join(",")})`,
+  )
+    .bind(...uniqueIds)
+    .all<{ ingredient_id: string; base_unit: string }>();
+  const unitById = new Map(
+    ingredients.results.map((i) => [i.ingredient_id, i.base_unit]),
+  );
+  if (lines.some((line) => unitById.get(line.ingredient_id) !== line.unit))
+    return c.json(
+      {
+        error: "Ingrediente inexistente ou unidade incompatível.",
+        field: "lines",
+      },
+      422,
+    );
+  const now = new Date().toISOString();
+  const header = create
+    ? c.env.DB.prepare(
+        "INSERT INTO recipes (product_name, product_id, version, yield_units, source, instructions, updated_at, recipe_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(
+        product?.name ?? String(b.product_name).trim(),
+        b.product_id,
+        b.version,
+        b.yield_units,
+        b.source,
+        b.instructions,
+        now,
+        id,
+        now,
+      )
+    : c.env.DB.prepare(
+        "UPDATE recipes SET product_name = ?, product_id = ?, version = ?, yield_units = ?, source = ?, instructions = ?, updated_at = ? WHERE recipe_id = ?",
+      ).bind(
+        product?.name ?? String(b.product_name).trim(),
+        b.product_id,
+        b.version,
+        b.yield_units,
+        b.source,
+        b.instructions,
+        now,
+        id,
+      );
+  await c.env.DB.batch([
+    header,
+    c.env.DB.prepare("DELETE FROM recipe_lines WHERE recipe_id = ?").bind(id),
+    ...lines.map((line) =>
+      c.env.DB.prepare(
+        "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit, stage) VALUES (?, ?, ?, ?, ?, ?)",
+      ).bind(
+        crypto.randomUUID(),
+        id,
+        line.ingredient_id,
+        line.quantity,
+        line.unit,
+        line.stage,
+      ),
+    ),
+  ]);
+  await invalidateCatalogCache(c.env.CATALOG_CACHE);
+  return c.json({ recipe_id: id }, create ? 201 : 200);
+}
+admin.post("/recipes", (c) => saveRecipe(c, true));
+admin.put("/recipes/:id", (c) => saveRecipe(c, false));
+admin.delete("/recipes/:id", async (c) => {
+  const id = c.req.param("id");
+  const result = await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM recipe_lines WHERE recipe_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM recipes WHERE recipe_id = ?").bind(id),
+  ]);
+  if (!result[1].meta.changes)
+    return c.json({ error: "Receita não encontrada." }, 404);
   await invalidateCatalogCache(c.env.CATALOG_CACHE);
   return c.json({ status: "deleted" });
 });

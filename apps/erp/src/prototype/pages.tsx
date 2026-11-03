@@ -194,69 +194,6 @@ export function ProductsPrototype() {
 	);
 }
 
-export function RecipesPage() {
-	type Recipe = {
-		recipe_id: string;
-		product_name: string;
-		version: string;
-		yield_units: number;
-		batch_cost_cents: number | null;
-		unit_cost_cents: number | null;
-		pending_ingredients: string[];
-		lines: Array<{ line_id: string; ingredient_name: string; quantity: string; unit: string; cost_cents: number | null }>;
-	};
-	const [recipes, setRecipes] = useState<Recipe[]>([]);
-	const [search, setSearch] = useState('');
-	const [status, setStatus] = useState('Carregando receitas…');
-	useEffect(() => {
-		const controller = new AbortController();
-		void fetch('/api/erp/recipes', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-			.then(async (response) => {
-				if (!response.ok) throw new Error('Não foi possível carregar as receitas.');
-				return response.json() as Promise<{ data: Recipe[] }>;
-			})
-			.then((body) => {
-				setRecipes(body.data);
-				setStatus(`${body.data.length} receitas cadastradas.`);
-			})
-			.catch(() => {
-				if (!controller.signal.aborted) setStatus('Receitas indisponíveis. Conecte-se e tente novamente.');
-			});
-		return () => controller.abort();
-	}, []);
-	return (
-		<PrototypeFrame title="Receitas" description="Fichas técnicas e custos das receitas cadastradas.">
-			<label>
-				Buscar receita <input className="demo-input" value={search} onChange={(event) => setSearch(event.target.value)} />
-			</label>
-			<p role="status">{status}</p>
-			<div className="erp-area-grid">
-				{recipes
-					.filter((recipe) => recipe.product_name.toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR')))
-					.map((recipe) => (
-						<Card key={recipe.recipe_id}>
-							<h2>{recipe.product_name}</h2>
-							<p>
-								Versão {recipe.version} · rendimento {recipe.yield_units}
-							</p>
-							<p>Custo do lote: {recipe.batch_cost_cents === null ? 'Pendente' : <Price cents={recipe.batch_cost_cents} />}</p>
-							<p>Custo por unidade: {recipe.unit_cost_cents === null ? 'Pendente' : <Price cents={recipe.unit_cost_cents} />}</p>
-							{recipe.pending_ingredients.length ? <p>Revisar: {recipe.pending_ingredients.join(', ')}</p> : null}
-							<ul>
-								{recipe.lines.map((line) => (
-									<li key={line.line_id}>
-										{line.ingredient_name}: {line.quantity} {line.unit} ·{' '}
-										{line.cost_cents === null ? 'Pendente' : <Price cents={line.cost_cents} />}
-									</li>
-								))}
-							</ul>
-						</Card>
-					))}
-			</div>
-		</PrototypeFrame>
-	);
-}
-
 export function InventoryPrototype() {
 	const [ingredients, setIngredients] = useState<
 		Array<{

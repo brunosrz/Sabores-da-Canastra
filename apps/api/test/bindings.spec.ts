@@ -193,6 +193,134 @@ async function authenticatedCookie(role = "owner") {
 }
 
 describe("bindings Cloudflare locais", () => {
+  it("mantém o vínculo da receita ao renomear produto e substitui linhas somente com dados válidos", async () => {
+    const cookie = await authenticatedCookie();
+    const call = (path: string, method: string, body?: unknown) =>
+      app.request(
+        `https://api.example.test/api/admin/${path}`,
+        {
+          method,
+          headers: {
+            cookie,
+            origin: "https://erp.example.test",
+            "content-type": "application/json",
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        },
+        { ...bindings, AUTH_ALLOWED_ORIGINS: "https://erp.example.test" },
+      );
+    const suffix = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const product = `product-${suffix}`;
+    const ingredient = `ingredient-${suffix}`;
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO categories (category_id, name, created_at) VALUES (?, ?, ?)",
+      ).bind(suffix, suffix, now),
+      bindings.DB.prepare(
+        "INSERT INTO products (product_id, name, category_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).bind(product, suffix, suffix, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, created_at, updated_at) VALUES (?, ?, 'g', '1000', ?, ?)",
+      ).bind(ingredient, suffix, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, status, is_current, created_at) VALUES (?, ?, 1000, '1000', 'g', 'Confirmado', 1, ?)",
+      ).bind(suffix, ingredient, now),
+    ]);
+    const payload = {
+      product_id: product,
+      product_name: suffix,
+      version: "1",
+      yield_units: 2,
+      source: null,
+      instructions: "Misturar",
+      lines: [
+        { ingredient_id: ingredient, quantity: "100", unit: "g", stage: null },
+      ],
+    };
+    for (const invalid of [
+      { lines: [] },
+      { yield_units: 0 },
+      { lines: [{ ...payload.lines[0], unit: "ml" }] },
+      { lines: [{ ...payload.lines[0], quantity: "-1" }] },
+      { product_id: "inexistente" },
+    ]) {
+      expect(
+        (await call("recipes", "POST", { ...payload, ...invalid })).status,
+      ).toBe(422);
+    }
+    const created = await call("recipes", "POST", payload);
+    expect(created.status).toBe(201);
+    const { recipe_id: id } = await created.json<{ recipe_id: string }>();
+    await bindings.DB.prepare(
+      "UPDATE products SET name = ? WHERE product_id = ?",
+    )
+      .bind(`Renomeado ${suffix}`, product)
+      .run();
+    const response = await app.request(
+      "https://api.example.test/api/erp/recipes",
+      { headers: { cookie } },
+      bindings,
+    );
+    const data = await response.json<{
+      data: {
+        recipe_id: string;
+        product_name: string;
+        unit_cost_cents: number;
+      }[];
+    }>();
+    expect(data.data.find((r) => r.recipe_id === id)).toMatchObject({
+      product_name: `Renomeado ${suffix}`,
+      unit_cost_cents: 50,
+    });
+    expect(
+      (
+        await call(`recipes/${id}`, "PUT", {
+          ...payload,
+          lines: [{ ...payload.lines[0], unit: "ml" }],
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT quantity FROM recipe_lines WHERE recipe_id = ?",
+      )
+        .bind(id)
+        .first(),
+    ).toEqual({ quantity: "100" });
+    expect(
+      (
+        await call(`recipes/${id}`, "PUT", {
+          ...payload,
+          yield_units: 4,
+          lines: [{ ...payload.lines[0], quantity: "250" }],
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT quantity FROM recipe_lines WHERE recipe_id = ?",
+      )
+        .bind(id)
+        .all(),
+    ).toMatchObject({ results: [{ quantity: "250" }] });
+    await expect(
+      bindings.DB.prepare(
+        "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, '1', 'ml')",
+      )
+        .bind(crypto.randomUUID(), id, ingredient)
+        .run(),
+    ).rejects.toThrow("RECIPE_UNIT_MISMATCH");
+    expect((await call(`recipes/${id}`, "DELETE")).status).toBe(200);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT COUNT(*) AS count FROM recipe_lines WHERE recipe_id = ?",
+      )
+        .bind(id)
+        .first(),
+    ).toEqual({ count: 0 });
+    expect((await call(`recipes/${id}`, "DELETE")).status).toBe(404);
+  });
   it("edita ingredientes atomicamente e preserva cotações ao recusar unidade ou exclusão referenciada", async () => {
     const owner = await authenticatedCookie();
     const operator = await authenticatedCookie("operator");

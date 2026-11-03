@@ -12,6 +12,26 @@ const line: RecipeCostLine = {
 };
 
 describe("custeio de receitas", () => {
+  it("propaga qualidade e não utiliza cotação pendente mesmo quando tem preço", () => {
+    expect(
+      calculateRecipeCost([{ ...line, quote_status: "Pendente" }], 1),
+    ).toMatchObject({ quality: "Pendente", unit_cost_cents: null });
+    expect(
+      calculateRecipeCost([{ ...line, quote_status: "Estimado" }], 1).quality,
+    ).toBe("Estimado");
+    expect(
+      calculateRecipeCost(
+        [
+          { ...line, quote_status: "Estimado" },
+          { ...line, quote_status: "Desatualizado" },
+        ],
+        1,
+      ).quality,
+    ).toBe("Desatualizado");
+    expect(
+      calculateRecipeCost([{ ...line, quote_status: "Confirmado" }], 1).quality,
+    ).toBe("Confirmado");
+  });
   it("soma valores exatos antes de arredondar lote e unidade", () => {
     const result = calculateRecipeCost([line, line], 2);
     expect(result.lines.map((item) => item.cost_cents)).toEqual([0, 0]);

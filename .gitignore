@@ -21,6 +21,8 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+*.jks
+*.keystore
 .local/
 node_modules/
 dist/

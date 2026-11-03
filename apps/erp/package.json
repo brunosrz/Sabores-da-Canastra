@@ -14,9 +14,16 @@
 		"format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"test/**/*.ts\" eslint.config.js index.html package.json tsconfig.json tsr.config.json vite.config.ts vitest.config.mts worker-configuration.d.ts wrangler.jsonc",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
-		"cf-typegen": "wrangler types --include-runtime=false"
+		"cf-typegen": "wrangler types --include-runtime=false",
+		"mobile:prepare": "vite build && node ../../scripts/prepare-capacitor-assets.mjs erp",
+		"mobile:sync:android": "pnpm mobile:prepare && cap sync android",
+		"mobile:sync:ios": "pnpm mobile:prepare && cap sync ios"
 	},
 	"dependencies": {
+		"@capacitor/android": "8.6.0",
+		"@capacitor/core": "8.6.0",
+		"@capacitor/ios": "8.6.0",
+		"@sabores/i18n": "workspace:*",
 		"@sabores/ui": "workspace:*",
 		"@tailwindcss/vite": "^4.1.18",
 		"@tanstack/react-devtools": "0.10.14",
@@ -28,12 +35,13 @@
 		"@tanstack/react-router-ssr-query": "1.167.3",
 		"@tanstack/react-start": "1.169.4",
 		"@tanstack/react-table": "9.3.1",
+		"dexie": "4.4.7",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
-		"tailwindcss": "^4.1.18",
-		"@sabores/i18n": "workspace:*"
+		"tailwindcss": "^4.1.18"
 	},
 	"devDependencies": {
+		"@capacitor/cli": "8.6.0",
 		"@cloudflare/vite-plugin": "^1.26.0",
 		"@cloudflare/workers-types": "5.20261101.1",
 		"@eslint/js": "^10.0.1",

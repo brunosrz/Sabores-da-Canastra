@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sabores da Canastra ERP</string>
+    <string name="title_activity_main">Sabores da Canastra ERP</string>
+    <string name="package_name">com.brunosrz.sabores.erp</string>
+    <string name="custom_url_scheme">com.brunosrz.sabores.erp</string>
+</resources>

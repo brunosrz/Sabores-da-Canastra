@@ -39,10 +39,14 @@
     "format:check:web": "pnpm format:check:ui && pnpm format:check:erp && pnpm format:check:pdv",
     "typecheck:web": "pnpm typecheck:ui && pnpm typecheck:erp && pnpm typecheck:pdv",
     "test:web": "pnpm test:ui && pnpm test:erp && pnpm test:pdv",
-    "lint:docs": "pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml AGENTS.md README.md docs/json-contract.md docs/arquitetura-web.md docs/migracao-d1.md docs/protocolo-sincronizacao-pdv.md apps/erp/README.md apps/pdv/README.md apps/api/README.md"
+    "lint:docs": "pnpm dlx markdownlint-cli2@0.23.3 --config .markdownlint-cli2.yaml AGENTS.md README.md docs/json-contract.md docs/arquitetura-web.md docs/migracao-d1.md docs/protocolo-sincronizacao-pdv.md apps/erp/README.md apps/pdv/README.md apps/api/README.md",
+    "i18n:compile": "paraglide-js compile --project ./packages/i18n/project.inlang --outdir ./packages/i18n/src/paraglide",
+    "postinstall": "pnpm i18n:compile"
   },
   "devDependencies": {
+    "@inlang/paraglide-js": "3.0.0",
     "@resvg/resvg-js": "^2.6.2",
+    "prettier": "3.9.10",
     "svgo": "^4.1.0"
   }
 }

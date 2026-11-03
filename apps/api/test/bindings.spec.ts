@@ -40,14 +40,17 @@ const payload = {
 };
 const testActorId = "test-ledger-actor";
 const backupTestUserId = "backup-test-user";
-async function backupCredentialFingerprint() {
+async function backupCredentialFingerprint(
+  userId = backupTestUserId,
+  role = "owner",
+) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(
       JSON.stringify([
-        backupTestUserId,
-        backupTestUserId,
-        "owner",
+        userId,
+        userId,
+        role,
         "AAAAAAAAAAAAAAAAAAAAAA",
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         100_000,
@@ -143,8 +146,8 @@ async function makeOfflineOperation(): Promise<OperationEnvelope> {
   return operation;
 }
 
-async function authenticatedCookie() {
-  const userId = backupTestUserId;
+async function authenticatedCookie(role = "owner") {
+  const userId = role === "owner" ? backupTestUserId : "operator-test-user";
   const token = crypto.randomUUID() + crypto.randomUUID();
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -158,16 +161,22 @@ async function authenticatedCookie() {
     .replaceAll("/", "_")
     .replace(/=+$/, "");
   await bindings.DB.prepare(
-    "INSERT INTO auth_users (user_id, username, role, active, created_at) VALUES (?, ?, 'owner', 1, ?) ON CONFLICT(user_id) DO UPDATE SET active = 1",
+    "INSERT INTO auth_users (user_id, username, role, active, created_at) VALUES (?, ?, ?, 1, ?) ON CONFLICT(user_id) DO UPDATE SET active = 1, role = excluded.role",
   )
-    .bind(userId, userId, new Date().toISOString())
+    .bind(userId, userId, role, new Date().toISOString())
     .run();
   await bindings.DB.prepare(
     `INSERT OR REPLACE INTO users
       (user_id, username, role, salt, password_hash, iterations, active, created_at, updated_at)
-     VALUES (?, ?, 'owner', 'AAAAAAAAAAAAAAAAAAAAAA', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 100000, 1, ?, ?)`,
+     VALUES (?, ?, ?, 'AAAAAAAAAAAAAAAAAAAAAA', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 100000, 1, ?, ?)`,
   )
-    .bind(userId, userId, new Date().toISOString(), new Date().toISOString())
+    .bind(
+      userId,
+      userId,
+      role,
+      new Date().toISOString(),
+      new Date().toISOString(),
+    )
     .run();
   await bindings.DB.prepare(
     "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, credential_fingerprint) VALUES (?, ?, ?, ?, ?)",
@@ -177,13 +186,501 @@ async function authenticatedCookie() {
       userId,
       new Date().toISOString(),
       new Date(Date.now() + 60_000).toISOString(),
-      await backupCredentialFingerprint(),
+      await backupCredentialFingerprint(userId, role),
     )
     .run();
   return `sabores_session=${token}`;
 }
 
 describe("bindings Cloudflare locais", () => {
+  it("rejeita datas inexistentes no financeiro e aceita dia bissexto real", async () => {
+    const cookie = await authenticatedCookie();
+    for (const query of [
+      "from=2026-02-31&to=2026-03-02",
+      "from=2026-01-01&to=2026-02-30",
+      "from=2026-03-01&to=2026-02-01",
+      "from=2026-2-1&to=2026-03-01",
+    ]) {
+      expect(
+        (
+          await app.request(
+            `https://api.example.test/api/erp/finance?${query}`,
+            { headers: { cookie } },
+            bindings,
+          )
+        ).status,
+      ).toBe(400);
+    }
+    expect(
+      (
+        await app.request(
+          "https://api.example.test/api/erp/finance?from=2024-02-29&to=2024-02-29",
+          { headers: { cookie } },
+          bindings,
+        )
+      ).status,
+    ).toBe(200);
+  });
+  it("identifica o lançamento cancelado sem removê-lo da auditoria", async () => {
+    const { applyPdvOperation } = await import("../src/pdv-operations");
+    const sale = await makeOfflineOperation();
+    await applyPdvOperation(bindings.DB, sale, testActorId);
+    const cancellation: OperationEnvelope = {
+      ...sale,
+      operationId: crypto.randomUUID(),
+      operationType: "sale.cancel",
+      payload: { saleId: sale.payload.saleId, reason: "Cancelamento de teste" },
+    };
+    cancellation.payloadHash = await operationPayloadHash(cancellation);
+    await applyPdvOperation(bindings.DB, cancellation, testActorId);
+    const occurredOn = (sale.payload as SaleCreatePayload).occurredOn;
+    const response = await app.request(
+      `https://api.example.test/api/finance/entries?from=${occurredOn}&to=${occurredOn}&type=sale`,
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{
+      data: { ledger_id: string; cancelled: number }[];
+    }>();
+    expect(
+      body.data.find(
+        (row) => row.ledger_id === `ledger_pdv_${sale.operationId}`,
+      ),
+    ).toMatchObject({ cancelled: 1 });
+  });
+  it("isola overflow de custo sem derrubar as outras receitas", async () => {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, created_at, updated_at) VALUES (?, ?, 'g', '0.000000001', ?, ?)",
+      ).bind(id, id, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, status, is_current, created_at) VALUES (?, ?, 9007199254740991, '0.000000001', 'g', 'Confirmado', 1, ?)",
+      ).bind(id, id, now),
+      ...["huge", "normal"].flatMap((kind) => [
+        bindings.DB.prepare(
+          "INSERT INTO recipes (recipe_id, product_name, version, yield_units, created_at, updated_at) VALUES (?, ?, '1', 1, ?, ?)",
+        ).bind(`${id}-${kind}`, `${id}-${kind}`, now, now),
+        bindings.DB.prepare(
+          "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, ?, 'g')",
+        ).bind(
+          `${id}-${kind}`,
+          `${id}-${kind}`,
+          id,
+          kind === "huge" ? "1000" : "0",
+        ),
+      ]),
+    ]);
+    const response = await app.request(
+      "https://api.example.test/api/erp/recipes",
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{
+      data: {
+        recipe_id: string;
+        cost_error?: string;
+        unit_cost_cents: number | null;
+      }[];
+    }>();
+    expect(body.data.find((r) => r.recipe_id === `${id}-huge`)).toMatchObject({
+      cost_error: "CUSTO_EXCESSIVO",
+      unit_cost_cents: null,
+    });
+    expect(body.data.find((r) => r.recipe_id === `${id}-normal`)).toMatchObject(
+      { unit_cost_cents: 0 },
+    );
+  });
+  it("mantém o vínculo da receita ao renomear produto e substitui linhas somente com dados válidos", async () => {
+    const cookie = await authenticatedCookie();
+    const call = (path: string, method: string, body?: unknown) =>
+      app.request(
+        `https://api.example.test/api/admin/${path}`,
+        {
+          method,
+          headers: {
+            cookie,
+            origin: "https://erp.example.test",
+            "content-type": "application/json",
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        },
+        { ...bindings, AUTH_ALLOWED_ORIGINS: "https://erp.example.test" },
+      );
+    const suffix = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const product = `product-${suffix}`;
+    const ingredient = `ingredient-${suffix}`;
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO categories (category_id, name, created_at) VALUES (?, ?, ?)",
+      ).bind(suffix, suffix, now),
+      bindings.DB.prepare(
+        "INSERT INTO products (product_id, name, category_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).bind(product, suffix, suffix, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, created_at, updated_at) VALUES (?, ?, 'g', '1000', ?, ?)",
+      ).bind(ingredient, suffix, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, status, is_current, created_at) VALUES (?, ?, 1000, '1000', 'g', 'Confirmado', 1, ?)",
+      ).bind(suffix, ingredient, now),
+    ]);
+    const payload = {
+      product_id: product,
+      product_name: suffix,
+      version: "1",
+      yield_units: 2,
+      source: null,
+      instructions: "Misturar",
+      lines: [
+        { ingredient_id: ingredient, quantity: "100", unit: "g", stage: null },
+      ],
+    };
+    for (const invalid of [
+      { lines: [] },
+      { yield_units: 0 },
+      { lines: [{ ...payload.lines[0], unit: "ml" }] },
+      { lines: [{ ...payload.lines[0], quantity: "-1" }] },
+      { product_id: "inexistente" },
+    ]) {
+      expect(
+        (await call("recipes", "POST", { ...payload, ...invalid })).status,
+      ).toBe(422);
+    }
+    const created = await call("recipes", "POST", payload);
+    expect(created.status).toBe(201);
+    const { recipe_id: id } = await created.json<{ recipe_id: string }>();
+    await bindings.DB.prepare(
+      "UPDATE products SET name = ? WHERE product_id = ?",
+    )
+      .bind(`Renomeado ${suffix}`, product)
+      .run();
+    const response = await app.request(
+      "https://api.example.test/api/erp/recipes",
+      { headers: { cookie } },
+      bindings,
+    );
+    const data = await response.json<{
+      data: {
+        recipe_id: string;
+        product_name: string;
+        unit_cost_cents: number;
+      }[];
+    }>();
+    expect(data.data.find((r) => r.recipe_id === id)).toMatchObject({
+      product_name: `Renomeado ${suffix}`,
+      unit_cost_cents: 50,
+    });
+    expect(
+      (
+        await call(`recipes/${id}`, "PUT", {
+          ...payload,
+          lines: [{ ...payload.lines[0], unit: "ml" }],
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT quantity FROM recipe_lines WHERE recipe_id = ?",
+      )
+        .bind(id)
+        .first(),
+    ).toEqual({ quantity: "100" });
+    expect(
+      (
+        await call(`recipes/${id}`, "PUT", {
+          ...payload,
+          yield_units: 4,
+          lines: [{ ...payload.lines[0], quantity: "250" }],
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT quantity FROM recipe_lines WHERE recipe_id = ?",
+      )
+        .bind(id)
+        .all(),
+    ).toMatchObject({ results: [{ quantity: "250" }] });
+    await expect(
+      bindings.DB.prepare(
+        "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, '1', 'ml')",
+      )
+        .bind(crypto.randomUUID(), id, ingredient)
+        .run(),
+    ).rejects.toThrow("RECIPE_UNIT_MISMATCH");
+    expect((await call(`recipes/${id}`, "DELETE")).status).toBe(200);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT COUNT(*) AS count FROM recipe_lines WHERE recipe_id = ?",
+      )
+        .bind(id)
+        .first(),
+    ).toEqual({ count: 0 });
+    expect((await call(`recipes/${id}`, "DELETE")).status).toBe(404);
+  });
+  it("edita ingredientes atomicamente e preserva cotações ao recusar unidade ou exclusão referenciada", async () => {
+    const owner = await authenticatedCookie();
+    const operator = await authenticatedCookie("operator");
+    const call = (
+      path: string,
+      method: string,
+      body?: unknown,
+      cookie = owner,
+      origin = "https://erp.example.test",
+    ) =>
+      app.request(
+        `https://api.example.test/api/admin/ingredients${path}`,
+        {
+          method,
+          headers: { cookie, origin, "content-type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        },
+        { ...bindings, AUTH_ALLOWED_ORIGINS: "https://erp.example.test" },
+      );
+    const payload = {
+      name: `Ingrediente ${crypto.randomUUID()}`,
+      base_unit: "g",
+      pack_quantity: "1000",
+      pack_price_cents: 1200,
+      supplier: "Fornecedor",
+      notes: null,
+      source: "Cotação",
+      status: "Confirmado",
+      quoted_on: "2026-11-02",
+    };
+    expect((await call("", "GET", undefined, operator)).status).toBe(403);
+    expect(
+      (await call("", "POST", payload, owner, "https://invalid.test")).status,
+    ).toBe(403);
+    for (const invalid of [
+      { pack_quantity: "0" },
+      { pack_quantity: "1e6" },
+      { base_unit: "kg" },
+      { quoted_on: "2026-02-30" },
+      { pack_price_cents: -1 },
+      { pack_price_cents: null },
+    ]) {
+      expect((await call("", "POST", { ...payload, ...invalid })).status).toBe(
+        422,
+      );
+    }
+    const created = await call("", "POST", payload);
+    expect(created.status).toBe(201);
+    const { ingredient_id: id } = await created.json<{
+      ingredient_id: string;
+    }>();
+    expect(
+      (await call(`/${id}`, "PUT", { ...payload, pack_price_cents: 1400 }))
+        .status,
+    ).toBe(200);
+    const quotes = await bindings.DB.prepare(
+      "SELECT pack_price_cents, is_current FROM ingredient_quotes WHERE ingredient_id = ? ORDER BY pack_price_cents",
+    )
+      .bind(id)
+      .all();
+    expect(quotes.results).toEqual([
+      { pack_price_cents: 1200, is_current: 0 },
+      { pack_price_cents: 1400, is_current: 1 },
+    ]);
+    const recipe = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO recipes (recipe_id, product_name, version, yield_units, created_at, updated_at) VALUES (?, 'Teste', '1', 1, ?, ?)",
+      ).bind(recipe, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, '1', 'g')",
+      ).bind(crypto.randomUUID(), recipe, id),
+    ]);
+    expect(
+      (await call(`/${id}`, "PUT", { ...payload, base_unit: "ml" })).status,
+    ).toBe(409);
+    expect((await call(`/${id}`, "DELETE")).status).toBe(409);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT COUNT(*) AS count FROM ingredient_quotes WHERE ingredient_id = ?",
+      )
+        .bind(id)
+        .first(),
+    ).toEqual({ count: 2 });
+    expect(
+      await bindings.DB.prepare(
+        "SELECT base_unit FROM ingredients WHERE ingredient_id = ?",
+      )
+        .bind(id)
+        .first(),
+    ).toEqual({ base_unit: "g" });
+    const another = await call("", "POST", {
+      ...payload,
+      name: `Remover ${crypto.randomUUID()}`,
+      status: "Pendente",
+      pack_price_cents: null,
+    });
+    const { ingredient_id: removable } = await another.json<{
+      ingredient_id: string;
+    }>();
+    expect((await call(`/${removable}`, "DELETE")).status).toBe(200);
+    expect((await call(`/${removable}`, "DELETE")).status).toBe(404);
+    expect((await call(`/${removable}`, "PUT", payload)).status).toBe(404);
+    const listing = await (
+      await call("", "GET")
+    ).json<{ data: { ingredient_id: string; pack_price_cents: number }[] }>();
+    expect(
+      listing.data.find((i) => i.ingredient_id === id)?.pack_price_cents,
+    ).toBe(1400);
+  });
+
+  it("valida cadastro completo, autorização e colisão de produtos", async () => {
+    const owner = await authenticatedCookie();
+    const operator = await authenticatedCookie("operator");
+    const api = (
+      path: string,
+      method = "GET",
+      body?: unknown,
+      cookie = owner,
+      origin = "https://erp.example.test",
+    ) =>
+      app.request(
+        `https://api.example.test/api/admin/${path}`,
+        {
+          method,
+          headers: { cookie, origin, "content-type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        },
+        { ...bindings, AUTH_ALLOWED_ORIGINS: "https://erp.example.test" },
+      );
+    expect((await api("products", "GET", undefined, operator)).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await api(
+          "categories",
+          "POST",
+          { name: "Teste" },
+          owner,
+          "https://invalid.test",
+        )
+      ).status,
+    ).toBe(403);
+    const categoryResponse = await api("categories", "POST", {
+      name: `Categoria ${crypto.randomUUID()}`,
+    });
+    expect(categoryResponse.status).toBe(201);
+    const category = await categoryResponse.json<{ category_id: string }>();
+    const product = {
+      name: `Produto ${crypto.randomUUID()}`,
+      category_id: category.category_id,
+      unit: "un",
+      barcode: crypto.randomUUID(),
+      auxiliary_code: null,
+      sale_price_cents: 1250,
+      unit_cost_cents: null,
+      active: 1,
+      notes: "Observação preservada",
+    };
+    const saved = await api("products", "POST", product);
+    expect(saved.status).toBe(201);
+    const { product_id } = await saved.json<{ product_id: string }>();
+    expect((await api("products", "POST", product)).status).toBe(409);
+    expect(
+      (await api(`products/${product_id}`, "PUT", { name: "Incompleto" }))
+        .status,
+    ).toBe(422);
+    expect(
+      (await api(`products/${product_id}`, "PUT", { ...product, active: 0 }))
+        .status,
+    ).toBe(200);
+    const row = await bindings.DB.prepare(
+      "SELECT active, notes FROM products WHERE product_id = ?",
+    )
+      .bind(product_id)
+      .first();
+    expect(row).toMatchObject({ active: 0, notes: "Observação preservada" });
+  });
+  it("restringe receitas ao proprietário e calcula custo da cotação atual", async () => {
+    const suffix = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const ingredient = `ingredient-${suffix}`;
+    const recipe = `recipe-${suffix}`;
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, created_at, updated_at) VALUES (?, ?, 'g', '1000', ?, ?)",
+      ).bind(ingredient, `Ingrediente ${suffix}`, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, status, is_current, created_at) VALUES (?, ?, 900, '1000', 'g', 'Confirmado', 1, ?)",
+      ).bind(`quote-${suffix}`, ingredient, now),
+      bindings.DB.prepare(
+        "INSERT INTO recipes (recipe_id, product_name, version, yield_units, created_at, updated_at) VALUES (?, ?, '1', 2, ?, ?)",
+      ).bind(recipe, `Receita ${suffix}`, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, '250', 'g')",
+      ).bind(`line-${suffix}`, recipe, ingredient),
+    ]);
+    const url = "https://api.example.test/api/erp/recipes";
+    expect((await app.request(url, {}, bindings)).status).toBe(401);
+    expect(
+      (
+        await app.request(
+          url,
+          { headers: { cookie: await authenticatedCookie("operator") } },
+          bindings,
+        )
+      ).status,
+    ).toBe(403);
+    const response = await app.request(
+      url,
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{ data: Array<{ recipe_id: string }> }>();
+    expect(body.data.find((row) => row.recipe_id === recipe)).toMatchObject({
+      batch_cost_cents: 225,
+      unit_cost_cents: 113,
+      pending_ingredients: [],
+    });
+  });
+  it("protege backup e lançamentos de operadores e valida datas", async () => {
+    const operator = await authenticatedCookie("operator");
+    const owner = await authenticatedCookie();
+    const request = (path: string, cookie: string) =>
+      app.request(
+        `https://api.example.test${path}`,
+        { headers: { cookie } },
+        bindings,
+      );
+    expect((await request("/api/backups", operator)).status).toBe(403);
+    expect(
+      (
+        await request(
+          "/api/finance/entries?from=2026-01-01&to=2026-12-31",
+          operator,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(
+          "/api/finance/entries?from=2026-02-30&to=2026-12-31",
+          owner,
+        )
+      ).status,
+    ).toBe(422);
+    const response = await request(
+      "/api/finance/entries?from=2026-01-01&to=2026-12-31",
+      owner,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      limit: 500,
+      truncated: false,
+    });
+  });
   it("recusa token legado no catálogo antes de consultar D1", async () => {
     const prepare = vi.fn();
     const response = await app.request(
@@ -331,6 +828,105 @@ describe("bindings Cloudflare locais", () => {
       .bind(`pdv:sale.create:${operation.operationId}`)
       .first<{ actor_user_id: string }>();
     expect(actor?.actor_user_id).toBe(testActorId);
+  });
+
+  it("restringe ingredientes e retorna cotação atual ao proprietário", async () => {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await bindings.DB.prepare(
+      "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, created_at, updated_at) VALUES (?, ?, 'g', '1000', ?, ?)",
+    )
+      .bind(id, `Ingrediente ${id}`, now, now)
+      .run();
+    await bindings.DB.prepare(
+      "INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, status, is_current, created_at) VALUES (?, ?, 1234, '1000', 'g', 'Confirmado', 1, ?)",
+    )
+      .bind(crypto.randomUUID(), id, now)
+      .run();
+    const url = "https://api.example.test/api/erp/ingredients";
+    expect((await app.request(url, {}, bindings)).status).toBe(401);
+    const response = await app.request(
+      url,
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{
+      data: Array<{ ingredient_id: string; pack_price_cents: number }>;
+    }>();
+    expect(body.data.find((item) => item.ingredient_id === id)).toMatchObject({
+      pack_price_cents: 1234,
+    });
+  });
+
+  it("retorna pagamentos corrigidos e taxas atuais no histórico", async () => {
+    const sale = await makeOfflineOperation();
+    if (sale.operationType !== "sale.create") throw new Error("tipo inválido");
+    const salePayload = sale.payload as SaleCreatePayload;
+    const date = salePayload.occurredOn;
+    const saleId = salePayload.saleId;
+    const stub = bindings.SALE_COORDINATOR.get(
+      bindings.SALE_COORDINATOR.idFromName(`pdv-device:${sale.deviceId}`),
+    );
+    const send = (body: OperationEnvelope) =>
+      stub.fetch(
+        new Request("https://coordinator.local/operations", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-actor-user-id": testActorId,
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+    expect((await send(sale)).status).toBe(201);
+    const adjustment: OperationEnvelope = {
+      ...sale,
+      operationId: crypto.randomUUID(),
+      operationType: "sale.adjust_payments",
+      payloadHash: "0".repeat(64),
+      payload: {
+        saleId: sale.payload.saleId,
+        basePaymentVersion: 1,
+        reason: "Correção",
+        payments: [
+          {
+            method: "Crédito",
+            methodLabel: null,
+            amountCents: 2500,
+            feeRate: "0.0334",
+            feeCents: 84,
+            partNumber: 1,
+            position: 0,
+          },
+        ],
+      },
+    };
+    adjustment.payloadHash = await operationPayloadHash(adjustment);
+    const adjustmentResponse = await send(adjustment);
+    expect(adjustmentResponse.status, await adjustmentResponse.text()).toBe(
+      201,
+    );
+    const response = await app.request(
+      `https://api.example.test/api/pdv/sales?from=${date}&to=${date}`,
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const data = await response.json<{
+      sales: Array<{
+        sale_id: string;
+        fee_cents: number;
+        net_cents: number;
+        payments: Array<{ method: string }>;
+      }>;
+    }>();
+    const result = data.sales.find((row) => row.sale_id === saleId);
+    expect(result).toMatchObject({
+      fee_cents: 84,
+      net_cents: 2416,
+      payments: [{ method: "Crédito" }],
+    });
   });
 
   it("recusa reuso de chave com payload diferente", async () => {

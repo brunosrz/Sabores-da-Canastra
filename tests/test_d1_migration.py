@@ -18,6 +18,15 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "apps" / "api" / "migrations" / "0001_initial_schema.sql"
 
 
+def test_comparison_rejects_invalid_financial_structure(tmp_path):
+	from sabores.cli import _load_comparison_bundle
+
+	path = tmp_path / "invalid.json"
+	path.write_text(json.dumps({"contract": "test", "contract_version": 1, "tables": {}, "reconciliation": {"financial": []}}), encoding="utf-8")
+	with pytest.raises(ValueError, match=r"reconciliation\.financial"):
+		_load_comparison_bundle(path, {"contract": "test", "contract_version": 1})
+
+
 @pytest.fixture
 def workbook(tmp_path):
 	from openpyxl import Workbook

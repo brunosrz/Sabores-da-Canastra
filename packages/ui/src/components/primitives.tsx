@@ -1,3 +1,4 @@
+import { t, formatLocale } from "@sabores/i18n";
 import { useId, type ComponentPropsWithoutRef, type ReactNode } from "react";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
@@ -19,7 +20,7 @@ export function Button({
       data-variant={variant}
       disabled={props.disabled || busy}
     >
-      {busy ? "Aguarde…" : props.children}
+      {busy ? t("Aguarde…") : props.children}
     </button>
   );
 }
@@ -36,7 +37,7 @@ export function IconButton({
   return (
     <button
       {...props}
-      aria-label={label}
+      aria-label={t(label)}
       className={`ui-icon-button ${className}`.trim()}
       type={props.type ?? "button"}
     >
@@ -63,7 +64,7 @@ export function TextField({
   return (
     <div className="ui-field-group">
       <label className="ui-field-label" htmlFor={id}>
-        {label}
+        {t(label)}
       </label>
       <input
         {...props}
@@ -79,7 +80,7 @@ export function TextField({
       )}
       {error && (
         <span className="ui-error" id={`${id}-error`}>
-          {error}
+          {t(error)}
         </span>
       )}
     </div>
@@ -109,7 +110,7 @@ export function SelectField({
   return (
     <div className="ui-field-group">
       <label className="ui-field-label" htmlFor={id}>
-        {label}
+        {t(label)}
       </label>
       <select
         {...props}
@@ -127,7 +128,7 @@ export function SelectField({
       )}
       {error && (
         <span className="ui-error" id={`${id}-error`}>
-          {error}
+          {t(error)}
         </span>
       )}
     </div>
@@ -144,7 +145,7 @@ export function TextareaField({
   return (
     <div className="ui-field-group">
       <label className="ui-field-label" htmlFor={id}>
-        {label}
+        {t(label)}
       </label>
       <textarea
         {...props}
@@ -160,7 +161,7 @@ export function TextareaField({
       )}
       {error && (
         <span className="ui-error" id={`${id}-error`}>
-          {error}
+          {t(error)}
         </span>
       )}
     </div>
@@ -186,8 +187,8 @@ export function PageHeader({
   return (
     <header className="ui-page-header">
       <div>
-        <h1>{title}</h1>
-        {description && <p>{description}</p>}
+        <h1>{t(title)}</h1>
+        {description && <p>{t(description)}</p>}
       </div>
       {actions}
     </header>
@@ -219,7 +220,7 @@ export function CategoryBadge({ category }: { category: string }) {
     categoryTokens[category.trim().toLocaleLowerCase("pt-BR")] ?? "outros";
   return (
     <span className="ui-category-badge" data-category={token}>
-      {category}
+      {t(category)}
     </span>
   );
 }
@@ -231,7 +232,7 @@ export function Price({
   cents: number;
   className?: string;
 }) {
-  const formatted = new Intl.NumberFormat("pt-BR", {
+  const formatted = new Intl.NumberFormat(formatLocale(), {
     style: "currency",
     currency: "BRL",
   }).format(cents / 100);
@@ -271,8 +272,8 @@ export function EmptyState({
   const titleId = useId();
   return (
     <section className="ui-state-card" aria-labelledby={titleId}>
-      <h2 id={titleId}>{title}</h2>
-      <p>{description}</p>
+      <h2 id={titleId}>{t(title)}</h2>
+      <p>{t(description)}</p>
       {action}
     </section>
   );
@@ -282,7 +283,7 @@ export function LoadingState({ label = "Carregando" }: { label?: string }) {
   return (
     <div className="ui-state-card" role="status" aria-live="polite">
       <span aria-hidden="true" className="ui-spinner" />
-      {label}
+      {t(label)}
     </div>
   );
 }
@@ -298,9 +299,9 @@ export function ErrorState({
 }) {
   return (
     <section className="ui-state-card" role="alert">
-      <h2>{title}</h2>
-      <p>{description}</p>
-      {onRetry && <Button onClick={onRetry}>Tentar novamente</Button>}
+      <h2>{t(title)}</h2>
+      <p>{t(description)}</p>
+      {onRetry && <Button onClick={onRetry}>{t("Tentar novamente")}</Button>}
     </section>
   );
 }
@@ -331,7 +332,7 @@ export function ResponsiveTable<Row extends Record<string, unknown>>({
             <tr>
               {columns.map((column) => (
                 <th key={String(column.key)} scope="col">
-                  {column.label}
+                  {t(column.label)}
                 </th>
               ))}
             </tr>
@@ -360,7 +361,7 @@ export function ResponsiveTable<Row extends Record<string, unknown>>({
             <dl>
               {columns.map((column) => (
                 <div className="ui-table-pair" key={String(column.key)}>
-                  <dt>{column.label}</dt>
+                  <dt>{t(column.label)}</dt>
                   <dd>
                     {column.render
                       ? column.render(row)

@@ -1,3 +1,4 @@
+import { t } from "@sabores/i18n";
 import { useTheme } from "./theme";
 
 export function ThemeToggle() {
@@ -13,11 +14,11 @@ export function ThemeToggle() {
   }
   return (
     <button
-      aria-label="Alternar tema claro e escuro"
+      aria-label={t("Alternar tema claro e escuro")}
       aria-pressed={theme === "dark"}
       className="ui-theme-toggle"
       onClick={toggleTheme}
-      title="Alternar tema claro e escuro"
+      title={t("Alternar tema claro e escuro")}
       type="button"
     >
       <svg

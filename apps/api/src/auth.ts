@@ -7,7 +7,7 @@ const MIN_PBKDF2_ITERATIONS = 100_000;
 export type AuthUser = {
   id: string;
   username: string;
-  role: string;
+  role: "owner" | "operator";
   expiresAt?: string;
 };
 type ConfiguredUser = AuthUser & {
@@ -58,7 +58,7 @@ function databaseUser(value: unknown): ConfiguredUser {
     !/^[A-Za-z0-9_-]{1,80}$/.test((value as ConfiguredUser).id) ||
     typeof (value as ConfiguredUser).username !== "string" ||
     !/^[A-Za-z0-9._-]{1,80}$/.test((value as ConfiguredUser).username) ||
-    typeof (value as ConfiguredUser).role !== "string" ||
+    !["owner", "operator"].includes((value as ConfiguredUser).role) ||
     typeof (value as ConfiguredUser).salt !== "string" ||
     typeof (value as ConfiguredUser).hash !== "string" ||
     !Number.isSafeInteger((value as ConfiguredUser).iterations) ||

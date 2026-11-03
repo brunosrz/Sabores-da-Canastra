@@ -32,3 +32,7 @@ coverage/
 .wrangler/
 *.cta.json
 apps/erp-start-scaffold/
+
+# Compiled Paraglide runtime and local inlang cache
+packages/i18n/src/paraglide/
+packages/i18n/project.inlang/cache/

@@ -1,3 +1,4 @@
+import { t, formatLocale } from '@sabores/i18n';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -36,7 +37,7 @@ type PaymentDraft = {
 	amount: string;
 };
 const METHODS: PaymentMethod[] = ['Dinheiro', 'Débito', 'Crédito', 'Pix'];
-const money = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const money = (cents: number) => (cents / 100).toLocaleString(formatLocale(), { style: 'currency', currency: 'BRL' });
 const centsFromInput = (value: string) => {
 	if (!/^\d*(?:[,.]\d{0,2})?$/.test(value)) return null;
 	const [whole = '0', fraction = ''] = value.replace(',', '.').split('.');
@@ -99,19 +100,22 @@ function PdvHome() {
 				setCustomSplit(draft.customSplit ?? false);
 				setSplitAmounts(draft.splitAmounts ?? ['0,00']);
 			}
-			setCatalogState(cached.length ? `${cached.length} itens salvos neste dispositivo` : 'Nenhum catálogo local ainda');
+			setCatalogState(cached.length ? t('{p0} itens salvos neste dispositivo', { p0: cached.length }) : t('Nenhum catálogo local ainda'));
 			try {
 				const result = await updateCatalog();
 				setProducts(result.products);
 				setFees(await getPaymentFees());
 				setCatalogState(
-					`${result.products.length} itens · atualizado ${new Date(result.fetchedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+					t('{p0} itens · atualizado {p1}', {
+						p0: result.products.length,
+						p1: new Date(result.fetchedAt).toLocaleTimeString(formatLocale(), { hour: '2-digit', minute: '2-digit' }),
+					}),
 				);
 			} catch {
-				if (!cached.length) setCatalogState('Conecte-se uma vez para carregar o catálogo neste dispositivo.');
-				else setCatalogState(`${cached.length} itens locais · pode estar desatualizado`);
+				if (!cached.length) setCatalogState(t('Conecte-se uma vez para carregar o catálogo neste dispositivo.'));
+				else setCatalogState(t('{p0} itens locais · pode estar desatualizado', { p0: cached.length }));
 			}
-		})().catch((error) => setMessage(error instanceof Error ? error.message : 'Não foi possível iniciar o PDV.'));
+		})().catch((error) => setMessage(error instanceof Error ? error.message : t('Não foi possível iniciar o PDV.')));
 	}, []);
 
 	useEffect(() => {
@@ -220,7 +224,7 @@ function PdvHome() {
 	async function finalizeSale() {
 		if (busy || !user) return;
 		if (!basket.length || paymentTotal !== total || !splits) {
-			setMessage('Inclua itens e confira se os pagamentos reconciliam com o total.');
+			setMessage(t('Inclua itens e confira se os pagamentos reconciliam com o total.'));
 			return;
 		}
 		for (const part of splits) {
@@ -232,7 +236,7 @@ function PdvHome() {
 						return sum + (paymentAmounts[paymentIndex] ?? 0);
 					}, 0) !== part.dueCents
 			) {
-				setMessage(`Os pagamentos da parte ${part.partNumber} precisam totalizar ${money(part.dueCents)}.`);
+				setMessage(t('Os pagamentos da parte {p0} precisam totalizar {p1}.', { p0: part.partNumber, p1: money(part.dueCents) }));
 				return;
 			}
 		}
@@ -281,7 +285,7 @@ function PdvHome() {
 			salePayload.saleId = operationIdentity('sale.create', operation.operationId).saleId;
 			operation.payloadHash = await operationPayloadHash(operation);
 			if (!validateOperationPayload(operation)) {
-				setMessage('A venda contém dados inválidos e não foi salva. Revise os itens e pagamentos.');
+				setMessage(t('A venda contém dados inválidos e não foi salva. Revise os itens e pagamentos.'));
 				return;
 			}
 			await commitSaleAndClearDraft(operation);
@@ -297,22 +301,22 @@ function PdvHome() {
 			setDraftId(crypto.randomUUID());
 			setMessage(
 				navigator.onLine
-					? 'Venda salva. Sincronizando com o servidor…'
-					: 'Venda salva neste dispositivo para sincronizar quando a internet voltar.',
+					? t('Venda salva. Sincronizando com o servidor…')
+					: t('Venda salva neste dispositivo para sincronizar quando a internet voltar.'),
 			);
 			if (navigator.onLine)
 				void syncQueue()
-					.then(() => setMessage('Sincronização concluída; confira o estado na fila.'))
-					.catch(() => setMessage('A venda ficou salva; a sincronização será retomada quando possível.'));
+					.then(() => setMessage(t('Sincronização concluída; confira o estado na fila.')))
+					.catch(() => setMessage(t('A venda ficou salva; a sincronização será retomada quando possível.')));
 		} catch (error) {
-			setMessage(error instanceof Error ? error.message : 'Não foi possível salvar a venda neste dispositivo.');
+			setMessage(error instanceof Error ? error.message : t('Não foi possível salvar a venda neste dispositivo.'));
 		} finally {
 			setBusy(false);
 		}
 	}
 
 	async function discardDraft() {
-		if (!window.confirm('Descartar os itens e os pagamentos deste rascunho?')) return;
+		if (!window.confirm(t('Descartar os itens e os pagamentos deste rascunho?'))) return;
 		setBasket([]);
 		setPayments([{ method: 'Dinheiro', partNumber: 1, amount: '0,00' }]);
 		setPartCount(1);
@@ -328,9 +332,9 @@ function PdvHome() {
 		<div className="pdv-page">
 			<section className="pdv-heading">
 				<div>
-					<p className="island-kicker">Frente de caixa</p>
-					<h1>Nova venda</h1>
-					<p className="demo-muted">{catalogState}</p>
+					<p className="island-kicker">{t('Frente de caixa')}</p>
+					<h1>{t('Nova venda')}</h1>
+					<p className="demo-muted">{t(catalogState)}</p>
 				</div>
 				<button
 					type="button"
@@ -339,22 +343,24 @@ function PdvHome() {
 						void updateCatalog()
 							.then((result) => {
 								setProducts(result.products);
-								setCatalogState(`${result.products.length} itens atualizados`);
+								setCatalogState(t('{p0} itens atualizados', { p0: result.products.length }));
 							})
 							.catch((error) => setMessage(error.message))
 					}
 				>
-					Atualizar catálogo
+					{t('Atualizar catálogo ')}
 				</button>
 			</section>
 			<div className="pdv-layout">
 				<section className="pdv-panel" aria-labelledby="catalog-heading">
 					<div className="pdv-section-heading">
-						<h2 id="catalog-heading">Produtos</h2>
-						<span className="demo-pill">{products.length} no dispositivo</span>
+						<h2 id="catalog-heading">{t('Produtos')}</h2>
+						<span className="demo-pill">
+							{products.length} {t(' no dispositivo')}
+						</span>
 					</div>
 					<label className="sr-only" htmlFor="product-search">
-						Buscar por código ou nome
+						{t('Buscar por código ou nome ')}
 					</label>
 					<input
 						ref={searchInput}
@@ -368,7 +374,7 @@ function PdvHome() {
 								selectProduct(visibleProducts[0]);
 							}
 						}}
-						placeholder="Código de barras, auxiliar ou nome"
+						placeholder={t('Código de barras, auxiliar ou nome')}
 						autoComplete="off"
 					/>
 					<div className="pdv-product-list" role="list">
@@ -377,22 +383,30 @@ function PdvHome() {
 								<span>
 									<strong>{product.name}</strong>
 									<small>
-										Barras: {product.barcode || '—'} · Auxiliar: {product.auxiliary_code || '—'}
+										{t('Barras: ')}
+										{product.barcode || '—'} {t(' · Auxiliar: ')}
+										{product.auxiliary_code || '—'}
 										{' · '}
-										{product.category}
+										{t(product.category)}
 									</small>
 								</span>
 								<span className="pdv-product-prices">
-									<b>Venda {money(product.sale_price_cents ?? 0)}</b>
-									<small>Custo {product.unit_cost_cents == null ? 'pendente' : money(product.unit_cost_cents)}</small>
+									<b>
+										{t('Venda ')}
+										{money(product.sale_price_cents ?? 0)}
+									</b>
+									<small>
+										{t('Custo ')}
+										{product.unit_cost_cents == null ? t('pendente') : money(product.unit_cost_cents)}
+									</small>
 								</span>
 							</button>
 						))}
 						{!visibleProducts.length ? (
 							<p className="demo-muted">
 								{products.length
-									? 'Nenhum produto corresponde à busca.'
-									: 'Carregue o catálogo quando estiver online para vender sem rede depois.'}
+									? t('Nenhum produto corresponde à busca.')
+									: t('Carregue o catálogo quando estiver online para vender sem rede depois.')}
 							</p>
 						) : null}
 					</div>
@@ -400,9 +414,9 @@ function PdvHome() {
 
 				<section className="pdv-panel" aria-labelledby="order-heading">
 					<div className="pdv-section-heading">
-						<h2 id="order-heading">Pedido</h2>
+						<h2 id="order-heading">{t('Pedido')}</h2>
 						<button type="button" className="demo-button demo-button-danger" onClick={() => void discardDraft()} disabled={!basket.length}>
-							Limpar rascunho
+							{t('Limpar rascunho ')}
 						</button>
 					</div>
 					<div className="pdv-basket">
@@ -410,10 +424,12 @@ function PdvHome() {
 							<div className="pdv-basket-row" key={line.product.product_id}>
 								<div>
 									<strong>{line.product.name}</strong>
-									<small>{money(line.product.sale_price_cents ?? 0)} por unidade</small>
+									<small>
+										{money(line.product.sale_price_cents ?? 0)} {t(' por unidade')}
+									</small>
 								</div>
 								<label>
-									Qtd.
+									{t('Qtd. ')}
 									<input
 										className="demo-input pdv-quantity"
 										inputMode="decimal"
@@ -424,76 +440,84 @@ function PdvHome() {
 								<b>{money(lineTotalCents(line.quantity, line.product.sale_price_cents ?? 0) ?? 0)}</b>
 								<button
 									type="button"
-									aria-label={`Remover ${line.product.name}`}
+									aria-label={t('Remover {p0}', { p0: line.product.name })}
 									onClick={() => setBasket((current) => current.filter((item) => item.product.product_id !== line.product.product_id))}
 								>
-									×
+									{t('× ')}
 								</button>
 							</div>
 						))}
-						{!basket.length ? <p className="demo-muted">Pesquise e toque em um produto para adicionar.</p> : null}
+						{!basket.length ? <p className="demo-muted">{t('Pesquise e toque em um produto para adicionar.')}</p> : null}
 					</div>
 					<div className="pdv-inline-fields">
 						<label>
-							Cliente (opcional)
+							{t('Cliente (opcional) ')}
 							<input className="demo-input" value={customer} onChange={(event) => setCustomer(event.target.value)} maxLength={200} />
 						</label>
 						<label>
-							Observação
+							{t('Observação ')}
 							<input className="demo-input" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={500} />
 						</label>
 					</div>
 
 					<div className="pdv-section-heading pdv-checkout-summary">
 						<div>
-							<h3>Subtotal</h3>
-							<small>Pagamento definido ao finalizar</small>
+							<h3>{t('Subtotal')}</h3>
+							<small>{t('Pagamento definido ao finalizar')}</small>
 						</div>
 						<strong>{money(total)}</strong>
 					</div>
 					<button type="button" className="pdv-confirm" onClick={openPayment} disabled={!basket.length}>
-						Finalizar venda · {money(total)}
+						{t('Finalizar venda · ')}
+						{money(total)}
 					</button>
 					{message ? (
 						<p role="status" className="pdv-message">
-							{message}
+							{t(message)}
 						</p>
 					) : null}
 					{receipt ? (
 						<div className="pdv-receipt-actions" role="status">
-							<span>Venda registrada no dispositivo.</span>
+							<span>{t('Venda registrada no dispositivo.')}</span>
 							<button type="button" className="demo-button demo-button-secondary" onClick={() => window.print()}>
-								Imprimir notinha
+								{t('Imprimir notinha ')}
 							</button>
-							<button type="button" aria-label="Fechar notinha" onClick={() => setReceipt(null)}>
-								×
+							<button type="button" aria-label={t('Fechar notinha')} onClick={() => setReceipt(null)}>
+								{t('× ')}
 							</button>
 						</div>
 					) : null}
 					{receipt ? (
 						<div className="pdv-print-receipt">
-							<strong>Sabores da Canastra</strong>
-							<span>Comprovante não fiscal</span>
-							<span>{new Date(receipt.occurredAt).toLocaleString('pt-BR')}</span>
+							<strong>{t('Sabores da Canastra')}</strong>
+							<span>{t('Comprovante não fiscal')}</span>
+							<span>{new Date(receipt.occurredAt).toLocaleString(formatLocale())}</span>
 							<hr />
 							{receipt.sale.items.map((item) => (
 								<div key={`${item.productId}-${item.position}`}>
 									<span>
-										{item.quantity} × {item.name}
+										{item.quantity} {t(' × ')}
+										{item.name}
 									</span>
 									<b>{money(item.lineTotalCents)}</b>
 								</div>
 							))}
 							<hr />
 							<div>
-								<strong>Total</strong>
+								<strong>{t('Total')}</strong>
 								<strong>{money(receipt.sale.items.reduce((sum, item) => sum + item.lineTotalCents, 0))}</strong>
 							</div>
-							{receipt.sale.customer ? <span>Cliente: {receipt.sale.customer}</span> : null}
+							{receipt.sale.customer ? (
+								<span>
+									{t('Cliente: ')}
+									{receipt.sale.customer}
+								</span>
+							) : null}
 							<span>
-								Pagamento: {receipt.sale.payments.map((payment) => `${payment.method} ${money(payment.amountCents)}`).join(' · ')}
+								{t('Pagamento: ')}
+								{receipt.sale.payments.map((payment) => t('{p0} {p1}', { p0: payment.method, p1: money(payment.amountCents) })).join(' · ')}
 							</span>
-							<span>Documento sem valor fiscal.</span>
+							<span>{t('Documento sem valor fiscal.')}</span>
 						</div>
 					) : null}
 					{paymentOpen ? (
@@ -514,23 +538,24 @@ function PdvHome() {
 							>
 								<div className="pdv-section-heading">
 									<div>
-										<p className="island-kicker">Concluir pedido</p>
-										<h2 id="checkout-title">Forma de pagamento</h2>
+										<p className="island-kicker">{t('Concluir pedido')}</p>
+										<h2 id="checkout-title">{t('Forma de pagamento')}</h2>
 									</div>
-									<button type="button" aria-label="Fechar pagamento" onClick={() => setPaymentOpen(false)}>
-										×
+									<button type="button" aria-label={t('Fechar pagamento')} onClick={() => setPaymentOpen(false)}>
+										{t('× ')}
 									</button>
 								</div>
 								<p className="demo-muted">
-									Taxas: débito {(Number(fees['Débito']) * 100).toLocaleString('pt-BR')}%; crédito{' '}
-									{(Number(fees['Crédito']) * 100).toLocaleString('pt-BR')}%.
+									{t('Taxas: débito ')}
+									{(Number(fees['Débito']) * 100).toLocaleString(formatLocale())}
+									{t('%; crédito')} {(Number(fees['Crédito']) * 100).toLocaleString(formatLocale())}%.
 								</p>
 								<label className="pdv-split-select">
-									Dividir em partes iguais
+									{t('Dividir em partes iguais ')}
 									<select className="demo-select" value={partCount} onChange={(event) => selectPartCount(Number(event.target.value))}>
 										{Array.from({ length: 10 }, (_, index) => (
 											<option key={index + 1} value={index + 1}>
-												{index + 1} {index ? 'partes' : 'parte'}
+												{index + 1} {index ? t('partes') : t('parte')}
 											</option>
 										))}
 									</select>
@@ -546,21 +571,25 @@ function PdvHome() {
 												if (next) setSplitAmounts((splitEqual(total, partCount) ?? []).map((part) => textMoney(part.dueCents)));
 											}}
 										/>{' '}
-										Definir valores diferentes por parte
+										{t('Definir valores diferentes por parte ')}
 									</label>
 								) : null}
 								{customSplit && !splits ? (
 									<p className="pdv-message" role="status">
-										A soma das partes precisa ser igual ao total da venda ({money(total)}).
+										{t('A soma das partes precisa ser igual ao total da venda (')}
+										{money(total)}).
 									</p>
 								) : null}
 								{splits?.map((part) => (
 									<div className="pdv-payment-part" key={part.partNumber}>
 										<div className="pdv-section-heading">
-											<strong>Parte {part.partNumber}</strong>
+											<strong>
+												{t('Parte ')}
+												{part.partNumber}
+											</strong>
 											{customSplit ? (
 												<label>
-													Valor da parte (R$)
+													{t('Valor da parte (R$) ')}
 													<input
 														className="demo-input pdv-part-amount"
 														inputMode="decimal"
@@ -576,17 +605,17 @@ function PdvHome() {
 												<span>{money(part.dueCents)}</span>
 											)}
 											<button type="button" className="demo-button demo-button-secondary" onClick={() => addPayment(part.partNumber)}>
-												+ Meio
+												{t('+ Meio ')}
 											</button>
 										</div>
 										{payments.map((payment, index) =>
 											payment.partNumber === part.partNumber ? (
 												<div className="pdv-payment-row" key={`${part.partNumber}-${index}`}>
 													<label>
-														Forma
+														{t('Forma ')}
 														<select
 															className="demo-select"
-															value={payment.method}
+															value={t(payment.method)}
 															onChange={(event) =>
 																setPayments((current) =>
 																	current.map((item, currentIndex) =>
@@ -601,12 +630,14 @@ function PdvHome() {
 															}
 														>
 															{METHODS.map((method) => (
-																<option key={method}>{method}</option>
+																<option key={method} value={method}>
+																	{t(method)}
+																</option>
 															))}
 														</select>
 													</label>
 													<label>
-														Valor (R$)
+														{t('Valor (R$) ')}
 														<input
 															className="demo-input"
 															inputMode="decimal"
@@ -622,11 +653,11 @@ function PdvHome() {
 													</label>
 													<button
 														type="button"
-														aria-label="Remover forma de pagamento"
+														aria-label={t('Remover forma de pagamento')}
 														onClick={() => setPayments((current) => current.filter((_, currentIndex) => currentIndex !== index))}
 														disabled={payments.filter((item) => item.partNumber === part.partNumber).length <= 1}
 													>
-														×
+														{t('× ')}
 													</button>
 												</div>
 											) : null,
@@ -635,21 +666,25 @@ function PdvHome() {
 								))}
 								<div className="pdv-total-summary">
 									<span>
-										Venda bruta <strong>{money(total)}</strong>
+										{t('Venda bruta ')}
+										<strong>{money(total)}</strong>
 									</span>
 									<span>
-										Taxas <strong>{money(feeTotal)}</strong>
+										{t('Taxas ')}
+										<strong>{money(feeTotal)}</strong>
 									</span>
 									<span>
-										Recebido líquido <strong>{money(total - feeTotal)}</strong>
+										{t('Recebido líquido ')}
+										<strong>{money(total - feeTotal)}</strong>
 									</span>
 									<span>
-										Pagamentos <strong>{money(Math.max(0, paymentTotal))}</strong>
+										{t('Pagamentos ')}
+										<strong>{money(Math.max(0, paymentTotal))}</strong>
 									</span>
 								</div>
 								<div className="pdv-actions">
 									<button type="button" className="demo-button demo-button-secondary" onClick={() => setPaymentOpen(false)}>
-										Voltar ao pedido
+										{t('Voltar ao pedido ')}
 									</button>
 									<button
 										type="button"
@@ -657,7 +692,7 @@ function PdvHome() {
 										onClick={() => void finalizeSale()}
 										disabled={busy || !basket.length || paymentTotal !== total || !splits}
 									>
-										{busy ? 'Salvando…' : 'Confirmar pagamento'}
+										{busy ? t('Salvando…') : t('Confirmar pagamento')}
 									</button>
 								</div>
 							</section>

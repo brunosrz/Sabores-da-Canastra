@@ -1,3 +1,4 @@
+import { t } from '@sabores/i18n';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { listQueue, syncQueue } from '../offline/store';
 
@@ -59,22 +60,22 @@ export function PdvRuntime({ children }: { children: ReactNode }) {
 	return (
 		<>
 			<div className="pdv-runtime-status" role="status" aria-live="polite">
-				<span className={online ? 'status-online' : 'status-offline'}>{online ? 'Online' : 'Offline'}</span>
-				<span>{pending ? `${pending} pendente${pending === 1 ? '' : 's'} na fila` : 'Fila em dia'}</span>
+				<span className={online ? 'status-online' : 'status-offline'}>{online ? t('Online') : t('Offline')}</span>
+				<span>{pending ? t('{p0} pendente{p1} na fila', { p0: pending, p1: pending === 1 ? '' : 's' }) : t('Fila em dia')}</span>
 			</div>
 			{!online ? (
 				<div role="status" className="offline-banner">
-					Sem internet. A venda será salva neste dispositivo e sincronizada quando a conexão voltar.
+					{t('Sem internet. A venda será salva neste dispositivo e sincronizada quando a conexão voltar. ')}
 				</div>
 			) : null}
 			{updateReady ? (
 				<div role="status" className="offline-banner">
-					Nova versão disponível.{' '}
+					{t('Nova versão disponível.')}{' '}
 					{pending ? (
-						'Sincronize as vendas pendentes antes de atualizar.'
+						t('Sincronize as vendas pendentes antes de atualizar.')
 					) : (
 						<button type="button" className="demo-button" onClick={acceptUpdate}>
-							Atualizar agora
+							{t('Atualizar agora ')}
 						</button>
 					)}
 				</div>

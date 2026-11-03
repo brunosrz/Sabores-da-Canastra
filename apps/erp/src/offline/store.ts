@@ -65,6 +65,9 @@ export const loadErpSession = () =>
 export const saveErpSession = (session: ErpSession) =>
 	request('metadata', 'readwrite', (store) => store.put({ key: 'session', value: session }));
 export const clearErpSession = () => request('metadata', 'readwrite', (store) => store.delete('session'));
+export const hasPendingLogout = () => request('metadata', 'readonly', (store) => store.get('pendingLogout')).then(Boolean);
+export const setPendingLogout = () => request('metadata', 'readwrite', (store) => store.put({ key: 'pendingLogout', value: true }));
+export const clearPendingLogout = () => request('metadata', 'readwrite', (store) => store.delete('pendingLogout'));
 export const loadProducts = () => request<ErpProduct[]>('products', 'readonly', (store) => store.getAll());
 export async function refreshProducts() {
 	const response = await fetch('/api/erp/catalog/products', {
@@ -73,31 +76,54 @@ export async function refreshProducts() {
 	});
 	if (!response.ok) throw new Error(`Catálogo indisponível (${response.status}).`);
 	const body = (await response.json()) as { data: ErpProduct[] };
-	const operations = await listPriceOperations();
+	const db = await openDatabase();
+	return new Promise<ErpProduct[]>((resolve, reject) => {
+		const tx = db.transaction(['products', 'operations'], 'readwrite');
+		const store = tx.objectStore('products');
+		const queued = tx.objectStore('operations').getAll();
+		let mergedProducts: ErpProduct[] = [];
+		queued.onsuccess = () => {
+			mergedProducts = mergePendingPrices(body.data, queued.result as PriceOperation[]);
+			store.clear();
+			mergedProducts.forEach((product) => store.put(product));
+		};
+		tx.oncomplete = () => resolve(mergedProducts);
+		tx.onerror = () => reject(tx.error ?? new Error('Falha ao atualizar catálogo local.'));
+		tx.onabort = () => reject(tx.error ?? new Error('Atualização do catálogo cancelada.'));
+	});
+}
+export function mergePendingPrices(products: ErpProduct[], operations: PriceOperation[]) {
 	const pendingByProduct = new Map<string, PriceOperation[]>();
 	for (const operation of operations) {
-		if (operation.state === 'synced') continue;
+		if (operation.state === 'synced' || operation.state === 'conflict') continue;
 		const queued = pendingByProduct.get(operation.productId) ?? [];
 		queued.push(operation);
 		pendingByProduct.set(operation.productId, queued);
 	}
-	const mergedProducts = body.data.map((product) => {
+	return products.map((product) => {
 		const queued = pendingByProduct.get(product.product_id) ?? [];
-		const latest = queued.at(-1);
+		const latest = [...queued]
+			.sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || a.operationId.localeCompare(b.operationId))
+			.at(-1);
 		return latest ? { ...product, sale_price_cents: latest.salePriceCents } : product;
 	});
-	const db = await openDatabase();
-	await new Promise<void>((resolve, reject) => {
-		const tx = db.transaction('products', 'readwrite');
-		const store = tx.objectStore('products');
-		store.clear();
-		mergedProducts.forEach((product) => store.put(product));
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error ?? new Error('Falha ao atualizar catálogo local.'));
-	});
-	return mergedProducts;
 }
 export const listPriceOperations = () => request<PriceOperation[]>('operations', 'readonly', (store) => store.getAll());
+export async function discardPriceConflict(operationId: string) {
+	const db = await openDatabase();
+	await new Promise<void>((resolve, reject) => {
+		const tx = db.transaction('operations', 'readwrite');
+		const store = tx.objectStore('operations');
+		const get = store.get(operationId);
+		get.onsuccess = () => {
+			if (get.result?.state === 'conflict') store.delete(operationId);
+		};
+		tx.oncomplete = () => resolve();
+		tx.onerror = () => reject(tx.error);
+		tx.onabort = () => reject(tx.error);
+	});
+	window.dispatchEvent(new Event('erp-price-queue-changed'));
+}
 export async function enqueuePriceChange(productId: string, salePriceCents: number) {
 	const operation: PriceOperation = {
 		operationId: crypto.randomUUID(),

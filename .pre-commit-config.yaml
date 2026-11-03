@@ -41,6 +41,17 @@ repos:
 
   - repo: local
     hooks:
+      - id: translation-key-order
+        name: Ordenação das chaves de tradução (uv)
+        entry: uv run python utils/sort_translation_keys.py --write
+        language: system
+        files: ^packages/i18n/messages/.*\.json$
+      - id: paraglide-compile
+        name: Compilar traduções Paraglide
+        entry: pnpm i18n:compile
+        language: system
+        files: ^packages/i18n/(messages/|project\.inlang/)
+        pass_filenames: false
       - id: uv-lock-check
         name: Check uv lockfile
         entry: uv lock --check
@@ -63,7 +74,7 @@ repos:
         language: node
         additional_dependencies: [prettier@3.9.10]
         types_or: [javascript, jsx, ts, tsx, json, yaml, markdown, css]
-        files: ^(apps/(erp|pdv|api)/(src|test)/|packages/(ui|pdv-sync)/(src|test)/|scripts/).+\.(js|jsx|ts|tsx|mjs|cjs|mts|css)$
+        files: ^(apps/(erp|pdv|api)/(src|test)/|packages/(ui|pdv-sync|i18n)/(src|test)/|scripts/).+\.(js|jsx|ts|tsx|mjs|cjs|mts|css)$
         exclude: (^|/)routeTree\.gen\.ts$|(^|/)worker-configuration\.d\.ts$
       - id: ui-lint
         name: Shared UI ESLint

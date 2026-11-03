@@ -1,8 +1,10 @@
 import { Hono } from "hono";
+import catalogAdmin from "./catalog-admin";
 import { importBundle, previewImport } from "./import";
 import type { OperationEnvelope } from "@sabores/pdv-sync";
 import { invalidateCatalogCache, listProducts } from "./catalog-cache";
 import { verifyBackupStream } from "./backup";
+import { calculateRecipeCost, type RecipeCostLine } from "./recipe-cost";
 import {
   currentUser,
   hasTrustedOrigin,
@@ -150,6 +152,14 @@ app.use("/api/*", async (context, next) => {
   await next();
 });
 
+app.use("/api/backups*", async (context, next) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Acesso negado." }, 403);
+  await next();
+});
+
+app.route("/api/admin", catalogAdmin);
+
 app.get("/api/catalog/products", async (context) => {
   try {
     const result = await listProducts(
@@ -160,6 +170,157 @@ app.get("/api/catalog/products", async (context) => {
   } catch (error) {
     console.error("Falha ao consultar catálogo no D1.", error);
     return context.json({ error: "Catálogo indisponível." }, 503);
+  }
+});
+
+function validBusinessDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return (
+    Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
+app.get("/api/erp/finance", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  const from = context.req.query("from") ?? "";
+  const to = context.req.query("to") ?? "";
+  if (!validBusinessDate(from) || !validBusinessDate(to) || from > to)
+    return context.json({ error: "Informe um período válido." }, 400);
+  try {
+    const result = await context.env.DB.prepare(
+      `SELECT l.entry_type, COALESCE(SUM(l.amount_cents), 0) AS total
+       FROM ledger_entries l
+       LEFT JOIN sales s ON s.ledger_id = l.ledger_id
+       LEFT JOIN sale_cancellations c ON c.sale_id = s.sale_id
+       WHERE l.occurred_on BETWEEN ? AND ? AND l.entry_type IN ('sale', 'purchase', 'expense')
+         AND (l.entry_type <> 'sale' OR c.sale_id IS NULL)
+       GROUP BY l.entry_type`,
+    )
+      .bind(from, to)
+      .all<{ entry_type: string; total: number }>();
+    return context.json({ data: result.results }, 200, {
+      "cache-control": "private, no-store",
+    });
+  } catch (error) {
+    console.error("Falha ao consultar financeiro.", error);
+    return context.json({ error: "Financeiro indisponível." }, 503);
+  }
+});
+
+app.get("/api/finance/entries", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Acesso negado." }, 403);
+  const from = context.req.query("from") ?? "";
+  const to = context.req.query("to") ?? "";
+  const type = context.req.query("type") ?? "";
+  if (
+    !validBusinessDate(from) ||
+    !validBusinessDate(to) ||
+    from > to ||
+    (type && !["sale", "purchase", "expense", "adjustment"].includes(type))
+  )
+    return context.json({ error: "Período ou tipo inválido." }, 422);
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT l.ledger_id, l.entry_type, l.occurred_on, l.amount_cents, l.description, l.category, l.actor_user_id,
+         CASE WHEN c.sale_id IS NOT NULL THEN 1 ELSE 0 END AS cancelled
+       FROM ledger_entries l LEFT JOIN sales s ON s.ledger_id = l.ledger_id
+       LEFT JOIN sale_cancellations c ON c.sale_id = s.sale_id
+       WHERE l.occurred_on BETWEEN ? AND ? AND (? = '' OR l.entry_type = ?)
+       ORDER BY l.occurred_on DESC, l.recorded_at DESC, l.ledger_id DESC LIMIT 501`,
+    )
+      .bind(from, to, type, type)
+      .all();
+    return context.json(
+      {
+        data: results.slice(0, 500),
+        truncated: results.length > 500,
+        limit: 500,
+      },
+      200,
+      { "cache-control": "private, no-store" },
+    );
+  } catch (error) {
+    console.error("Falha ao consultar lançamentos.", error);
+    return context.json({ error: "Lançamentos indisponíveis." }, 503);
+  }
+});
+
+app.get("/api/erp/recipes", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Acesso negado." }, 403);
+  try {
+    const { results: recipes } = await context.env.DB.prepare(
+      "SELECT r.recipe_id, r.product_id, COALESCE(p.name, r.product_name) AS product_name, r.version, r.yield_units, r.source, r.instructions FROM recipes r LEFT JOIN products p ON p.product_id = r.product_id ORDER BY COALESCE(p.name, r.product_name) COLLATE NOCASE, r.version",
+    ).all<{ recipe_id: string; yield_units: number }>();
+    const { results: lines } = await context.env.DB.prepare(
+      `SELECT rl.recipe_id, rl.line_id, rl.ingredient_id, i.name AS ingredient_name,
+              rl.quantity, rl.unit, rl.stage, i.base_unit, q.base_unit AS quote_unit,
+              q.pack_quantity, q.pack_price_cents, q.status AS quote_status
+       FROM recipe_lines rl JOIN ingredients i ON i.ingredient_id = rl.ingredient_id
+       LEFT JOIN ingredient_quotes q ON q.ingredient_id = i.ingredient_id AND q.is_current = 1
+       ORDER BY rl.recipe_id, i.name COLLATE NOCASE, rl.line_id`,
+    ).all<RecipeCostLine & { recipe_id: string }>();
+    const grouped = new Map<string, RecipeCostLine[]>();
+    for (const line of lines)
+      grouped.set(line.recipe_id, [
+        ...(grouped.get(line.recipe_id) ?? []),
+        line,
+      ]);
+    return context.json(
+      {
+        data: recipes.map((recipe) => {
+          const recipeLines = grouped.get(recipe.recipe_id) ?? [];
+          try {
+            return {
+              ...recipe,
+              ...calculateRecipeCost(recipeLines, recipe.yield_units),
+            };
+          } catch (error) {
+            if (
+              !(error instanceof Error) ||
+              error.message !== "CUSTO_EXCESSIVO"
+            )
+              throw error;
+            return {
+              ...recipe,
+              quality: "Pendente",
+              cost_error: "CUSTO_EXCESSIVO",
+              batch_cost_cents: null,
+              unit_cost_cents: null,
+              pending_ingredients: ["Custo excede o limite permitido"],
+              lines: recipeLines.map((line) => ({ ...line, cost_cents: null })),
+            };
+          }
+        }),
+      },
+      200,
+      { "cache-control": "private, no-store" },
+    );
+  } catch (error) {
+    console.error("Falha ao consultar receitas.", error);
+    return context.json({ error: "Receitas indisponíveis." }, 503);
+  }
+});
+
+app.get("/api/erp/ingredients", async (context) => {
+  if (context.get("authUser").role !== "owner")
+    return context.json({ error: "Permissão insuficiente." }, 403);
+  try {
+    const { results } = await context.env.DB.prepare(
+      `SELECT i.ingredient_id, i.name, i.base_unit, i.pack_quantity, i.supplier,
+              q.pack_price_cents, q.status, q.quoted_on
+       FROM ingredients i LEFT JOIN ingredient_quotes q
+         ON q.ingredient_id = i.ingredient_id AND q.is_current = 1
+       ORDER BY i.name COLLATE NOCASE`,
+    ).all();
+    return context.json({ data: results }, 200, {
+      "cache-control": "private, no-store",
+    });
+  } catch (error) {
+    console.error("Falha ao consultar ingredientes.", error);
+    return context.json({ error: "Ingredientes indisponíveis." }, 503);
   }
 });
 
@@ -469,7 +630,7 @@ app.get("/api/pdv/sales", async (context) => {
         ([, payments]) => payments.results,
       );
       const adjustedPaymentResults = queryResults.flatMap(
-        ([, payments]) => payments.results,
+        ([, , payments]) => payments.results,
       );
       const itemsBySale = new Map<string, Record<string, unknown>[]>();
       const basePaymentsBySale = new Map<string, Record<string, unknown>[]>();

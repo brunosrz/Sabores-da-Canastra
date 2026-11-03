@@ -25,3 +25,28 @@ it('preserva o ajuste pendente e impede que outra conta o sincronize', async () 
 	expect(await listPriceOperations()).toContainEqual(expect.objectContaining({ operationId: operation.operationId, state: 'synced' }));
 	vi.unstubAllGlobals();
 });
+
+it('compartilha uma sincronização em andamento entre chamadas concorrentes', async () => {
+	vi.stubGlobal('navigator', { onLine: true });
+	const fetchMock = vi.fn(async () => Response.json({ data: [{ product_id: 'p2', name: 'Produto', sale_price_cents: 100 }] }));
+	vi.stubGlobal('fetch', fetchMock);
+	await refreshProducts();
+	await saveErpSession({ user: { id: 'owner', username: 'owner', role: 'owner' }, expiresAt: '2099-01-01T00:00:00Z' });
+	const operation = await enqueuePriceChange('p2', 200);
+	let finish!: (response: Response) => void;
+	fetchMock.mockImplementation(
+		() =>
+			new Promise<Response>((resolve) => {
+				finish = resolve;
+			}),
+	);
+	fetchMock.mockClear();
+	const first = syncPriceQueue();
+	const second = syncPriceQueue();
+	await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+	finish(Response.json({ ok: true }));
+	await Promise.all([first, second]);
+	expect(fetchMock).toHaveBeenCalledTimes(1);
+	expect(await listPriceOperations()).toContainEqual(expect.objectContaining({ operationId: operation.operationId, state: 'synced' }));
+	vi.unstubAllGlobals();
+});

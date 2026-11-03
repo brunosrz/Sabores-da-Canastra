@@ -180,7 +180,18 @@ export async function enqueuePriceChange(productId: string, salePriceCents: numb
 	});
 	return operation;
 }
-export async function syncPriceQueue() {
+let priceSync: Promise<{ applied: number; pending: number }> | undefined;
+
+export function syncPriceQueue() {
+	if (!priceSync) {
+		priceSync = runPriceSync().finally(() => {
+			priceSync = undefined;
+		});
+	}
+	return priceSync;
+}
+
+async function runPriceSync() {
 	if (!navigator.onLine)
 		return {
 			applied: 0,

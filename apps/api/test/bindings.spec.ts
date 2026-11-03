@@ -193,6 +193,107 @@ async function authenticatedCookie(role = "owner") {
 }
 
 describe("bindings Cloudflare locais", () => {
+  it("rejeita datas inexistentes no financeiro e aceita dia bissexto real", async () => {
+    const cookie = await authenticatedCookie();
+    for (const query of [
+      "from=2026-02-31&to=2026-03-02",
+      "from=2026-01-01&to=2026-02-30",
+      "from=2026-03-01&to=2026-02-01",
+      "from=2026-2-1&to=2026-03-01",
+    ]) {
+      expect(
+        (
+          await app.request(
+            `https://api.example.test/api/erp/finance?${query}`,
+            { headers: { cookie } },
+            bindings,
+          )
+        ).status,
+      ).toBe(400);
+    }
+    expect(
+      (
+        await app.request(
+          "https://api.example.test/api/erp/finance?from=2024-02-29&to=2024-02-29",
+          { headers: { cookie } },
+          bindings,
+        )
+      ).status,
+    ).toBe(200);
+  });
+  it("identifica o lançamento cancelado sem removê-lo da auditoria", async () => {
+    const { applyPdvOperation } = await import("../src/pdv-operations");
+    const sale = await makeOfflineOperation();
+    await applyPdvOperation(bindings.DB, sale, testActorId);
+    const cancellation: OperationEnvelope = {
+      ...sale,
+      operationId: crypto.randomUUID(),
+      operationType: "sale.cancel",
+      payload: { saleId: sale.payload.saleId, reason: "Cancelamento de teste" },
+    };
+    cancellation.payloadHash = await operationPayloadHash(cancellation);
+    await applyPdvOperation(bindings.DB, cancellation, testActorId);
+    const occurredOn = (sale.payload as SaleCreatePayload).occurredOn;
+    const response = await app.request(
+      `https://api.example.test/api/finance/entries?from=${occurredOn}&to=${occurredOn}&type=sale`,
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{
+      data: { ledger_id: string; cancelled: number }[];
+    }>();
+    expect(
+      body.data.find(
+        (row) => row.ledger_id === `ledger_pdv_${sale.operationId}`,
+      ),
+    ).toMatchObject({ cancelled: 1 });
+  });
+  it("isola overflow de custo sem derrubar as outras receitas", async () => {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, created_at, updated_at) VALUES (?, ?, 'g', '0.000000001', ?, ?)",
+      ).bind(id, id, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, status, is_current, created_at) VALUES (?, ?, 9007199254740991, '0.000000001', 'g', 'Confirmado', 1, ?)",
+      ).bind(id, id, now),
+      ...["huge", "normal"].flatMap((kind) => [
+        bindings.DB.prepare(
+          "INSERT INTO recipes (recipe_id, product_name, version, yield_units, created_at, updated_at) VALUES (?, ?, '1', 1, ?, ?)",
+        ).bind(`${id}-${kind}`, `${id}-${kind}`, now, now),
+        bindings.DB.prepare(
+          "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, ?, 'g')",
+        ).bind(
+          `${id}-${kind}`,
+          `${id}-${kind}`,
+          id,
+          kind === "huge" ? "1000" : "0",
+        ),
+      ]),
+    ]);
+    const response = await app.request(
+      "https://api.example.test/api/erp/recipes",
+      { headers: { cookie: await authenticatedCookie() } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{
+      data: {
+        recipe_id: string;
+        cost_error?: string;
+        unit_cost_cents: number | null;
+      }[];
+    }>();
+    expect(body.data.find((r) => r.recipe_id === `${id}-huge`)).toMatchObject({
+      cost_error: "CUSTO_EXCESSIVO",
+      unit_cost_cents: null,
+    });
+    expect(body.data.find((r) => r.recipe_id === `${id}-normal`)).toMatchObject(
+      { unit_cost_cents: 0 },
+    );
+  });
   it("mantém o vínculo da receita ao renomear produto e substitui linhas somente com dados válidos", async () => {
     const cookie = await authenticatedCookie();
     const call = (path: string, method: string, body?: unknown) =>

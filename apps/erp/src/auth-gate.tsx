@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell, Button } from '@sabores/ui';
 import { clearErpSession, loadErpSession, saveErpSession, hasPendingLogout, setPendingLogout, clearPendingLogout } from './offline/store';
+import { withAuthMutation } from './auth-coordination';
 
 async function finishPendingLogout() {
 	if (!(await hasPendingLogout())) return true;
@@ -30,31 +31,32 @@ export function AuthGate({ children }: { children: ReactNode }) {
 	const queryClient = useQueryClient();
 	const session = useQuery({
 		queryKey: ['auth', 'session'],
-		queryFn: async (): Promise<User | null> => {
-			if (await hasPendingLogout()) {
-				await finishPendingLogout();
-				return null;
-			}
-			try {
-				const response = await fetch('/api/auth/session', {
-					credentials: 'same-origin',
-					cache: 'no-store',
-				});
-				if (response.status === 401) {
-					await clearErpSession();
+		queryFn: (): Promise<User | null> =>
+			withAuthMutation(async () => {
+				if (await hasPendingLogout()) {
+					await finishPendingLogout();
 					return null;
 				}
-				if (!response.ok) throw new Error('session unavailable');
-				const body = (await response.json()) as {
-					user?: User;
-					expiresAt?: string;
-				};
-				if (body.user && body.expiresAt) await saveErpSession({ user: body.user, expiresAt: body.expiresAt });
-				return body.user ?? null;
-			} catch {
-				return (await loadErpSession())?.user ?? null;
-			}
-		},
+				try {
+					const response = await fetch('/api/auth/session', {
+						credentials: 'same-origin',
+						cache: 'no-store',
+					});
+					if (response.status === 401) {
+						await clearErpSession();
+						return null;
+					}
+					if (!response.ok) throw new Error('session unavailable');
+					const body = (await response.json()) as {
+						user?: User;
+						expiresAt?: string;
+					};
+					if (body.user && body.expiresAt) await saveErpSession({ user: body.user, expiresAt: body.expiresAt });
+					return body.user ?? null;
+				} catch {
+					return (await loadErpSession())?.user ?? null;
+				}
+			}),
 		retry: false,
 		staleTime: 0,
 	});
@@ -69,31 +71,33 @@ export function AuthGate({ children }: { children: ReactNode }) {
 		setError('');
 		const form = new FormData(formElement);
 		try {
-			if (!(await finishPendingLogout())) throw new Error('logout pendente');
-			const response = await fetch('/api/auth/login', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				credentials: 'same-origin',
-				body: JSON.stringify({
-					username: form.get('username'),
-					password: form.get('password'),
-				}),
+			await withAuthMutation(async () => {
+				if (!(await finishPendingLogout())) throw new Error('logout pendente');
+				const response = await fetch('/api/auth/login', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					credentials: 'same-origin',
+					body: JSON.stringify({
+						username: form.get('username'),
+						password: form.get('password'),
+					}),
+				});
+				if (!response.ok) {
+					const body = (await response.json().catch(() => ({}))) as {
+						error?: string;
+					};
+					setError(body.error ?? 'Não foi possível entrar.');
+				} else {
+					const body = (await response.json()) as {
+						user: User;
+						expiresAt: string;
+					};
+					await saveErpSession({ user: body.user, expiresAt: body.expiresAt });
+					queryClient.clear();
+					queryClient.setQueryData(['auth', 'session'], body.user);
+					formElement.reset();
+				}
 			});
-			if (!response.ok) {
-				const body = (await response.json().catch(() => ({}))) as {
-					error?: string;
-				};
-				setError(body.error ?? 'Não foi possível entrar.');
-			} else {
-				const body = (await response.json()) as {
-					user: User;
-					expiresAt: string;
-				};
-				await saveErpSession({ user: body.user, expiresAt: body.expiresAt });
-				queryClient.clear();
-				queryClient.setQueryData(['auth', 'session'], body.user);
-				formElement.reset();
-			}
 		} catch {
 			setError('Não foi possível entrar. Verifique a conexão e tente novamente.');
 		} finally {
@@ -103,17 +107,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 	async function signOut() {
 		setBusy(true);
+		let logoutSaved = false;
 		try {
-			await setPendingLogout();
-			await clearErpSession();
-			if (!(await finishPendingLogout())) setError('Sessão encerrada neste dispositivo; o servidor será avisado quando houver conexão.');
+			await withAuthMutation(async () => {
+				await setPendingLogout();
+				logoutSaved = true;
+				await clearErpSession();
+				if (!(await finishPendingLogout())) setError('Sessão encerrada neste dispositivo; o servidor será avisado quando houver conexão.');
+			});
 		} catch {
 			setError('Não foi possível salvar a saída neste dispositivo. Tente novamente.');
 			setBusy(false);
 			return;
 		} finally {
-			queryClient.clear();
-			queryClient.setQueryData(['auth', 'session'], null);
+			if (logoutSaved) {
+				queryClient.clear();
+				queryClient.setQueryData(['auth', 'session'], null);
+			}
 			setBusy(false);
 		}
 	}

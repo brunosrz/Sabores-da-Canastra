@@ -173,18 +173,19 @@ app.get("/api/catalog/products", async (context) => {
   }
 });
 
+function validBusinessDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return (
+    Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
 app.get("/api/erp/finance", async (context) => {
   if (context.get("authUser").role !== "owner")
     return context.json({ error: "Permissão insuficiente." }, 403);
   const from = context.req.query("from") ?? "";
   const to = context.req.query("to") ?? "";
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(from) ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(to) ||
-    from > to ||
-    !Number.isFinite(Date.parse(`${from}T00:00:00Z`)) ||
-    !Number.isFinite(Date.parse(`${to}T00:00:00Z`))
-  )
+  if (!validBusinessDate(from) || !validBusinessDate(to) || from > to)
     return context.json({ error: "Informe um período válido." }, 400);
   try {
     const result = await context.env.DB.prepare(
@@ -213,26 +214,21 @@ app.get("/api/finance/entries", async (context) => {
   const from = context.req.query("from") ?? "";
   const to = context.req.query("to") ?? "";
   const type = context.req.query("type") ?? "";
-  const validDate = (value: string) => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-    const date = new Date(`${value}T00:00:00Z`);
-    return (
-      Number.isFinite(date.getTime()) &&
-      date.toISOString().slice(0, 10) === value
-    );
-  };
   if (
-    !validDate(from) ||
-    !validDate(to) ||
+    !validBusinessDate(from) ||
+    !validBusinessDate(to) ||
     from > to ||
     (type && !["sale", "purchase", "expense", "adjustment"].includes(type))
   )
     return context.json({ error: "Período ou tipo inválido." }, 422);
   try {
     const { results } = await context.env.DB.prepare(
-      `SELECT ledger_id, entry_type, occurred_on, amount_cents, description, category, actor_user_id
-       FROM ledger_entries WHERE occurred_on BETWEEN ? AND ? AND (? = '' OR entry_type = ?)
-       ORDER BY occurred_on DESC, recorded_at DESC, ledger_id DESC LIMIT 501`,
+      `SELECT l.ledger_id, l.entry_type, l.occurred_on, l.amount_cents, l.description, l.category, l.actor_user_id,
+         CASE WHEN c.sale_id IS NOT NULL THEN 1 ELSE 0 END AS cancelled
+       FROM ledger_entries l LEFT JOIN sales s ON s.ledger_id = l.ledger_id
+       LEFT JOIN sale_cancellations c ON c.sale_id = s.sale_id
+       WHERE l.occurred_on BETWEEN ? AND ? AND (? = '' OR l.entry_type = ?)
+       ORDER BY l.occurred_on DESC, l.recorded_at DESC, l.ledger_id DESC LIMIT 501`,
     )
       .bind(from, to, type, type)
       .all();
@@ -274,13 +270,30 @@ app.get("/api/erp/recipes", async (context) => {
       ]);
     return context.json(
       {
-        data: recipes.map((recipe) => ({
-          ...recipe,
-          ...calculateRecipeCost(
-            grouped.get(recipe.recipe_id) ?? [],
-            recipe.yield_units,
-          ),
-        })),
+        data: recipes.map((recipe) => {
+          const recipeLines = grouped.get(recipe.recipe_id) ?? [];
+          try {
+            return {
+              ...recipe,
+              ...calculateRecipeCost(recipeLines, recipe.yield_units),
+            };
+          } catch (error) {
+            if (
+              !(error instanceof Error) ||
+              error.message !== "CUSTO_EXCESSIVO"
+            )
+              throw error;
+            return {
+              ...recipe,
+              quality: "Pendente",
+              cost_error: "CUSTO_EXCESSIVO",
+              batch_cost_cents: null,
+              unit_cost_cents: null,
+              pending_ingredients: ["Custo excede o limite permitido"],
+              lines: recipeLines.map((line) => ({ ...line, cost_cents: null })),
+            };
+          }
+        }),
       },
       200,
       { "cache-control": "private, no-store" },

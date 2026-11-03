@@ -76,18 +76,21 @@ export async function refreshProducts() {
 	});
 	if (!response.ok) throw new Error(`Catálogo indisponível (${response.status}).`);
 	const body = (await response.json()) as { data: ErpProduct[] };
-	const operations = await listPriceOperations();
-	const mergedProducts = mergePendingPrices(body.data, operations);
 	const db = await openDatabase();
-	await new Promise<void>((resolve, reject) => {
-		const tx = db.transaction('products', 'readwrite');
+	return new Promise<ErpProduct[]>((resolve, reject) => {
+		const tx = db.transaction(['products', 'operations'], 'readwrite');
 		const store = tx.objectStore('products');
-		store.clear();
-		mergedProducts.forEach((product) => store.put(product));
-		tx.oncomplete = () => resolve();
+		const queued = tx.objectStore('operations').getAll();
+		let mergedProducts: ErpProduct[] = [];
+		queued.onsuccess = () => {
+			mergedProducts = mergePendingPrices(body.data, queued.result as PriceOperation[]);
+			store.clear();
+			mergedProducts.forEach((product) => store.put(product));
+		};
+		tx.oncomplete = () => resolve(mergedProducts);
 		tx.onerror = () => reject(tx.error ?? new Error('Falha ao atualizar catálogo local.'));
+		tx.onabort = () => reject(tx.error ?? new Error('Atualização do catálogo cancelada.'));
 	});
-	return mergedProducts;
 }
 export function mergePendingPrices(products: ErpProduct[], operations: PriceOperation[]) {
 	const pendingByProduct = new Map<string, PriceOperation[]>();

@@ -1,5 +1,5 @@
 import { Badge, Card, CategoryBadge, EmptyState, PageHeader, Price, ResponsiveTable } from '@sabores/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { enqueuePriceChange, listPriceOperations, loadProducts, refreshProducts, syncPriceQueue, type ErpProduct } from '../offline/store';
 
 function PrototypeFrame({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -20,7 +20,9 @@ export function ProductsPrototype() {
 	const [busy, setBusy] = useState(false);
 	useEffect(() => {
 		const reloadCatalog = () => {
-			void loadProducts().then(setProducts);
+			void loadProducts()
+				.then(setProducts)
+				.catch(() => setStatus('Não foi possível atualizar o catálogo local.'));
 		};
 		window.addEventListener('erp-catalog-changed', reloadCatalog);
 		void loadProducts()
@@ -261,13 +263,29 @@ export function FinancePrototype() {
 	const [to, setTo] = useState(today);
 	const [totals, setTotals] = useState<Record<string, number>>({});
 	const [entries, setEntries] = useState<
-		Array<{ ledger_id: string; occurred_on: string; entry_type: string; description: string; category: string; amount_cents: number }>
+		Array<{
+			ledger_id: string;
+			occurred_on: string;
+			entry_type: string;
+			description: string;
+			category: string;
+			amount_cents: number;
+			cancelled: number;
+		}>
 	>([]);
 	const [entryType, setEntryType] = useState('');
 	const [truncated, setTruncated] = useState(false);
 	const [loaded, setLoaded] = useState(false);
 	const [status, setStatus] = useState('Selecione o período e consulte.');
+	const latestRequest = useRef(0);
+	useEffect(
+		() => () => {
+			latestRequest.current += 1;
+		},
+		[],
+	);
 	async function loadFinance() {
+		const requestId = ++latestRequest.current;
 		setLoaded(false);
 		setStatus('Consultando…');
 		try {
@@ -282,13 +300,16 @@ export function FinancePrototype() {
 			if (!response.ok || !entryResponse.ok) throw new Error('Não foi possível consultar o financeiro.');
 			const body = (await response.json()) as { data: Array<{ entry_type: string; total: number }> };
 			const entryBody = (await entryResponse.json()) as { data: typeof entries; truncated: boolean };
+			if (requestId !== latestRequest.current) return;
 			setEntries(entryBody.data);
 			setTruncated(entryBody.truncated);
 			setTotals(Object.fromEntries(body.data.map((row) => [row.entry_type, row.total])));
 			setLoaded(true);
 			setStatus(`Período consultado: ${from} a ${to}.`);
 		} catch (error) {
+			if (requestId !== latestRequest.current) return;
 			setTotals({});
+			setEntries([]);
 			setStatus(error instanceof Error ? error.message : 'Financeiro indisponível.');
 		}
 	}
@@ -338,6 +359,7 @@ export function FinancePrototype() {
 								{entries.map((entry) => (
 									<li key={entry.ledger_id}>
 										{entry.occurred_on} · {entry.entry_type} · {entry.description} · {entry.category} · <Price cents={entry.amount_cents} />
+										{entry.cancelled ? <strong> · Venda cancelada</strong> : null}
 									</li>
 								))}
 							</ul>
@@ -346,7 +368,8 @@ export function FinancePrototype() {
 				</>
 			) : null}
 			<p className="demo-muted">
-				Vendas canceladas são excluídas. Compras e gastos refletem os lançamentos registrados; estes valores não representam lucro.
+				Os totais excluem vendas canceladas; seus lançamentos permanecem identificados na lista para auditoria. Compras e gastos refletem os
+				lançamentos registrados; estes valores não representam lucro.
 			</p>
 		</PrototypeFrame>
 	);

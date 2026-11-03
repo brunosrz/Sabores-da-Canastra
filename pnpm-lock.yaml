@@ -323,6 +323,9 @@ importers:
       "@tanstack/router-cli":
         specifier: ^1.132.0
         version: 1.167.46(supports-color@10.2.2)
+      "@testing-library/react":
+        specifier: 16.3.0
+        version: 16.3.0(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       "@types/node":
         specifier: ^22.10.2
         version: 22.20.5
@@ -341,9 +344,15 @@ importers:
       eslint-plugin-react-hooks:
         specifier: ^7.1.1
         version: 7.1.1(eslint@10.14.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      fake-indexeddb:
+        specifier: 6.2.4
+        version: 6.2.4
       globals:
         specifier: ^17.13.0
         version: 17.13.0
+      jsdom:
+        specifier: 27.1.0
+        version: 27.1.0(supports-color@10.2.2)
       prettier:
         specifier: 3.9.10
         version: 3.9.10
@@ -358,7 +367,7 @@ importers:
         version: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)
       vitest:
         specifier: 5.0.5
-        version: 5.0.5(@types/node@22.20.5)(jsdom@27.4.0(@noble/hashes@2.4.0)(supports-color@10.2.2))(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0))
+        version: 5.0.5(@types/node@22.20.5)(jsdom@27.1.0(supports-color@10.2.2))(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0))
       wrangler:
         specifier: 4.156.0
         version: 4.156.0(@cloudflare/workers-types@5.20261101.1)(@types/node@22.20.5)
@@ -2804,6 +2813,24 @@ packages:
       }
     engines: { node: ">=14", npm: ">=6", yarn: ">=1" }
 
+  "@testing-library/react@16.3.0":
+    resolution:
+      {
+        integrity: sha512-kFSyxiEDwv1WLl2fgsq6pPBbw5aWKrsY2/noi1Id0TK0UParSF62oFQFGHXIyaG4pp2tEub/Zlel+fjjZILDsw==,
+      }
+    engines: { node: ">=18" }
+    peerDependencies:
+      "@testing-library/dom": ^10.0.0
+      "@types/react": ^18.0.0 || ^19.0.0
+      "@types/react-dom": ^18.0.0 || ^19.0.0
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+      "@types/react-dom":
+        optional: true
+
   "@testing-library/react@16.3.3":
     resolution:
       {
@@ -3556,6 +3583,13 @@ packages:
         integrity: sha512-h1pQPR9XoeSMdntRNCjyTznaume4UpfXrULBnlkZ2CUM/G5eSa+pBByGldO5uR8dxbPC+OuJXsPPNf+JZ81ADg==,
       }
 
+  fake-indexeddb@6.2.4:
+    resolution:
+      {
+        integrity: sha512-INKeIKEtSViN4yVtEWEUqbsqmaIy7Ls+MfU0yxQVXg67pOJ/sH1ZxcVrP8XrKULUFohcPD9gnmym+qBfEybACw==,
+      }
+    engines: { node: ">=18" }
+
   fast-deep-equal@3.1.3:
     resolution:
       {
@@ -3712,6 +3746,13 @@ packages:
         integrity: sha512-p/LgFzRN5FeoD3DLS6bkUapeye6E4SI6yJs6KetENd18S+FBthqYq2amJUWpt5z0EQwwHemidjY5OqJGEKm5uA==,
       }
 
+  html-encoding-sniffer@4.0.0:
+    resolution:
+      {
+        integrity: sha512-Y22oTqIU4uuPgEemfz7NDJz6OeKf12Lsu+QC+s3BVpda64lTiMYCyGwg5ki4vFxkMwQdeZDl2adZoqUgdFuTgQ==,
+      }
+    engines: { node: ">=18" }
+
   html-encoding-sniffer@6.0.0:
     resolution:
       {
@@ -3732,6 +3773,13 @@ packages:
         integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==,
       }
     engines: { node: ">= 14" }
+
+  iconv-lite@0.6.3:
+    resolution:
+      {
+        integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==,
+      }
+    engines: { node: ">=0.10.0" }
 
   ignore@5.3.2:
     resolution:
@@ -3813,6 +3861,18 @@ packages:
         integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==,
       }
     hasBin: true
+
+  jsdom@27.1.0:
+    resolution:
+      {
+        integrity: sha512-Pcfm3eZ+eO4JdZCXthW9tCDT3nF4K+9dmeZ+5X39n+Kqz0DDIABRP5CAEOHRFZk8RGuC2efksTJxrjp8EXCunQ==,
+      }
+    engines: { node: ^20.19.0 || ^22.12.0 || >=24.0.0 }
+    peerDependencies:
+      canvas: ^3.0.0
+    peerDependenciesMeta:
+      canvas:
+        optional: true
 
   jsdom@27.4.0:
     resolution:
@@ -4430,6 +4490,12 @@ packages:
     engines: { node: ^20.19.0 || >=22.12.0 }
     hasBin: true
 
+  safer-buffer@2.1.2:
+    resolution:
+      {
+        integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==,
+      }
+
   sax@1.6.1:
     resolution:
       {
@@ -4946,6 +5012,14 @@ packages:
       {
         integrity: sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ==,
       }
+
+  whatwg-encoding@3.1.1:
+    resolution:
+      {
+        integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==,
+      }
+    engines: { node: ">=18" }
+    deprecated: Use @exodus/bytes instead for a more spec-conformant and faster implementation
 
   whatwg-mimetype@4.0.0:
     resolution:
@@ -6461,6 +6535,16 @@ snapshots:
       picocolors: 1.1.1
       redent: 3.0.0
 
+  "@testing-library/react@16.3.0(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)":
+    dependencies:
+      "@babel/runtime": 7.29.10
+      "@testing-library/dom": 10.4.2
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+    optionalDependencies:
+      "@types/react": 19.3.0
+      "@types/react-dom": 19.3.0(@types/react@19.3.0)
+
   "@testing-library/react@16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)":
     dependencies:
       "@babel/runtime": 7.29.10
@@ -6931,6 +7015,8 @@ snapshots:
 
   exsolve@1.2.0: {}
 
+  fake-indexeddb@6.2.4: {}
+
   fast-deep-equal@3.1.3: {}
 
   fast-json-stable-stringify@2.1.0: {}
@@ -7002,6 +7088,10 @@ snapshots:
 
   hookified@2.2.0: {}
 
+  html-encoding-sniffer@4.0.0:
+    dependencies:
+      whatwg-encoding: 3.1.1
+
   html-encoding-sniffer@6.0.0(@noble/hashes@2.4.0):
     dependencies:
       "@exodus/bytes": 1.16.0(@noble/hashes@2.4.0)
@@ -7021,6 +7111,10 @@ snapshots:
       debug: 4.4.3(supports-color@10.2.2)
     transitivePeerDependencies:
       - supports-color
+
+  iconv-lite@0.6.3:
+    dependencies:
+      safer-buffer: 2.1.2
 
   ignore@5.3.2: {}
 
@@ -7049,6 +7143,33 @@ snapshots:
   js-yaml@4.3.2:
     dependencies:
       argparse: 2.0.1
+
+  jsdom@27.1.0(supports-color@10.2.2):
+    dependencies:
+      "@acemir/cssom": 0.9.32
+      "@asamuzakjp/dom-selector": 6.8.1
+      cssstyle: 5.3.7
+      data-urls: 6.0.1
+      decimal.js: 10.6.0
+      html-encoding-sniffer: 4.0.0
+      http-proxy-agent: 7.0.2(supports-color@10.2.2)
+      https-proxy-agent: 7.0.6(supports-color@10.2.2)
+      is-potential-custom-element-name: 1.0.1
+      parse5: 8.0.1
+      saxes: 6.0.0
+      symbol-tree: 3.2.4
+      tough-cookie: 6.0.2
+      w3c-xmlserializer: 5.0.0
+      webidl-conversions: 8.0.1
+      whatwg-encoding: 3.1.1
+      whatwg-mimetype: 4.0.0
+      whatwg-url: 15.1.0
+      ws: 8.22.1
+      xml-name-validator: 5.0.0
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
 
   jsdom@27.4.0(@noble/hashes@2.4.0)(supports-color@10.2.2):
     dependencies:
@@ -7415,6 +7536,8 @@ snapshots:
       "@rolldown/binding-win32-arm64-msvc": 1.2.16
       "@rolldown/binding-win32-x64-msvc": 1.2.16
 
+  safer-buffer@2.1.2: {}
+
   sax@1.6.1: {}
 
   saxes@6.0.0:
@@ -7646,6 +7769,28 @@ snapshots:
       redent: 3.0.0
       vitest: 5.0.5(@types/node@22.20.5)(jsdom@27.4.0(@noble/hashes@2.4.0)(supports-color@10.2.2))(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0))
 
+  vitest@5.0.5(@types/node@22.20.5)(jsdom@27.1.0(supports-color@10.2.2))(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)):
+    dependencies:
+      "@types/chai": 5.2.3
+      "@vitest/mocker": 5.0.5(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0))
+      chai: 6.3.0
+      es-module-lexer: 2.3.2
+      expect-type: 1.4.0
+      magic-string: 1.4.5
+      obug: 3.0.0
+      picomatch: 4.0.7
+      std-env: 4.3.0
+      tinybench: 6.2.2
+      tinyexec: 1.3.1
+      tinyglobby: 0.2.17
+      vite: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)
+      why-is-node-running: 3.2.1
+    optionalDependencies:
+      "@types/node": 22.20.5
+      jsdom: 27.1.0(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - msw
+
   vitest@5.0.5(@types/node@22.20.5)(jsdom@27.4.0(@noble/hashes@2.4.0)(supports-color@10.2.2))(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)):
     dependencies:
       "@types/chai": 5.2.3
@@ -7675,6 +7820,10 @@ snapshots:
   webidl-conversions@8.0.1: {}
 
   webpack-virtual-modules@0.6.2: {}
+
+  whatwg-encoding@3.1.1:
+    dependencies:
+      iconv-lite: 0.6.3
 
   whatwg-mimetype@4.0.0: {}
 

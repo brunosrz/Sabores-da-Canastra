@@ -34,17 +34,22 @@ self.addEventListener('install', (event) => {
 	event.waitUntil(
 		(async () => {
 			const name = `${CACHE_PREFIX}${crypto.randomUUID()}`;
-			const cache = await caches.open(name);
-			const shell = await fetch(SHELL, { cache: 'reload' });
-			if (!shell.ok) throw new Error('Shell offline indisponível durante a instalação.');
-			const html = await shell.clone().text();
-			await cache.put(SHELL, shell);
-			const assets = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
-				.map((match) => new URL(match[1], self.location.origin))
-				.filter((url) => url.origin === self.location.origin)
-				.map((url) => `${url.pathname}${url.search}`);
-			await cache.addAll([...new Set([...PUBLIC_FILES.filter((path) => path !== SHELL), ...assets])]);
-			await writeCacheName(INSTALL_KEY, name);
+			try {
+				const cache = await caches.open(name);
+				const shell = await fetch(SHELL, { cache: 'reload' });
+				if (!shell.ok) throw new Error('Shell offline indisponível durante a instalação.');
+				const html = await shell.clone().text();
+				await cache.put(SHELL, shell);
+				const assets = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+					.map((match) => new URL(match[1], self.location.origin))
+					.filter((url) => url.origin === self.location.origin)
+					.map((url) => `${url.pathname}${url.search}`);
+				await cache.addAll([...new Set([...PUBLIC_FILES.filter((path) => path !== SHELL), ...assets])]);
+				await writeCacheName(INSTALL_KEY, name);
+			} catch (error) {
+				await caches.delete(name).catch(() => undefined);
+				throw error;
+			}
 		})(),
 	);
 });
@@ -89,11 +94,14 @@ self.addEventListener('fetch', (event) => {
 					PUBLIC_FILES.includes(url.pathname);
 				if (!isPublicAsset) return fetch(request);
 				const cached = await cache.match(request);
-				if (cached) return cached;
-				const network = fetch(request).then((response) => {
-					if (response.ok && response.type === 'basic') void cache.put(request, response.clone());
+				const network = fetch(request).then(async (response) => {
+					if (response.ok && response.type === 'basic') await cache.put(request, response.clone());
 					return response;
 				});
+				if (cached) {
+					event.waitUntil(network.catch(() => undefined));
+					return cached;
+				}
 				return network.catch(() => Response.error());
 			})
 			.catch(() => fetch(request).catch(() => Response.error())),

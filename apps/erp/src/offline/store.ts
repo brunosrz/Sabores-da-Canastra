@@ -17,6 +17,7 @@ export type ErpSession = {
 };
 export type PriceOperation = {
 	operationId: string;
+	actorUserId?: string;
 	productId: string;
 	basePriceCents: number | null;
 	salePriceCents: number;
@@ -151,8 +152,11 @@ export async function discardPriceConflict(operationId: string) {
 	window.dispatchEvent(new Event('erp-price-queue-changed'));
 }
 export async function enqueuePriceChange(productId: string, salePriceCents: number) {
+	const session = await loadErpSession();
+	if (!session || session.user.role !== 'owner') throw new Error('Entre com uma conta autorizada para alterar preços.');
 	const operation: PriceOperation = {
 		operationId: crypto.randomUUID(),
+		actorUserId: session.user.id,
 		productId,
 		basePriceCents: null,
 		salePriceCents,
@@ -185,17 +189,19 @@ export async function syncPriceQueue() {
 	const session = await loadErpSession();
 	let applied = 0;
 	for (const operation of await listPriceOperations()) {
-		if (operation.state === 'blocked_auth' && session) {
+		if (operation.state === 'blocked_auth' && session && operation.actorUserId === session.user.id && session.user.role === 'owner') {
 			await request('operations', 'readwrite', (store) => store.put({ ...operation, state: 'pending', error: undefined }));
 			operation.state = 'pending';
 		}
 		if (operation.state !== 'pending') continue;
-		if (!session) {
+		if (!session || session.user.role !== 'owner' || operation.actorUserId !== session.user.id) {
 			await request('operations', 'readwrite', (store) =>
 				store.put({
 					...operation,
 					state: 'blocked_auth',
-					error: 'Entre novamente para sincronizar este ajuste.',
+					error: operation.actorUserId
+						? 'Entre com a conta que registrou este ajuste.'
+						: 'Ajuste antigo sem autoria: é necessária revisão manual.',
 				}),
 			);
 			continue;

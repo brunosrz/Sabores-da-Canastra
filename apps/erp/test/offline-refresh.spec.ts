@@ -1,13 +1,14 @@
 import 'fake-indexeddb/auto';
 import { IDBDatabase } from 'fake-indexeddb';
 import { afterEach, expect, it, vi } from 'vitest';
-import { enqueuePriceChange, loadProducts, refreshProducts, type ErpProduct } from '../src/offline/store';
+import { enqueuePriceChange, loadProducts, refreshProducts, saveErpSession, type ErpProduct } from '../src/offline/store';
 
 afterEach(() => {
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
 });
 it('aplica a fila e grava o catálogo numa única transação que inclui operations', async () => {
+	await saveErpSession({ user: { id: 'owner-test', username: 'owner-test', role: 'owner' }, expiresAt: '2099-01-01T00:00:00Z' });
 	const product: ErpProduct = {
 		product_id: 'atomic',
 		name: 'Teste',

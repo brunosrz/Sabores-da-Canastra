@@ -10,7 +10,7 @@
     "test": "vitest run",
     "lint": "eslint src test",
     "typecheck": "tsc --noEmit",
-    "format:check": "prettier --check src test eslint.config.js package.json tsconfig.json vitest.config.ts"
+    "format:check": "prettier --check src test eslint.config.js package.json tsconfig.json vitest.config.ts ../i18n/src/catalog.ts ../i18n/src/index.ts ../i18n/src/preferences.ts ../i18n/messages ../i18n/project.inlang/settings.json ../i18n/project.inlang/paraglide.config.js ../i18n/package.json"
   },
   "peerDependencies": {
     "@tanstack/react-router": "1.170.46",
@@ -34,6 +34,7 @@
     "vitest-axe": "^0.1.0"
   },
   "dependencies": {
-    "motion": "13.2.0"
+    "motion": "13.2.0",
+    "@sabores/i18n": "workspace:*"
   }
 }

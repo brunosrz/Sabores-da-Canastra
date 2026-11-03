@@ -1,3 +1,4 @@
+import { t } from '@sabores/i18n';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@sabores/ui';
@@ -44,7 +45,7 @@ function CatalogPage() {
 		const [p, c] = await Promise.all([api<{ data: Product[] }>('products'), api<{ data: Category[] }>('categories')]);
 		setProducts(p.data);
 		setCategories(c.data);
-		setStatus(`${p.data.length} produtos cadastrados.`);
+		setStatus(t('{p0} produtos cadastrados.', { p0: p.data.length }));
 	}
 	useEffect(() => {
 		const timer = window.setTimeout(() => {
@@ -63,23 +64,23 @@ function CatalogPage() {
 			});
 			setEditing(null);
 			await load();
-			setStatus('Produto salvo.');
+			setStatus(t('Produto salvo.'));
 		} catch (error) {
-			setStatus(error instanceof Error ? error.message : 'Falha ao salvar.');
+			setStatus(error instanceof Error ? error.message : t('Falha ao salvar.'));
 		} finally {
 			setBusy(false);
 		}
 	}
 	return (
 		<div className="demo-page demo-page-wide">
-			<PageHeader title="Cadastro de produtos" description="Produtos ativos e inativos, códigos, preços e categorias." />
-			<p role="status">{status}</p>
+			<PageHeader title={t('Cadastro de produtos')} description={t('Produtos ativos e inativos, códigos, preços e categorias.')} />
+			<p role="status">{t(status)}</p>
 			<label>
-				Buscar produto
+				{t('Buscar produto ')}
 				<input className="demo-input" value={search} onChange={(e) => setSearch(e.target.value)} />
 			</label>
 			<button className="demo-button" type="button" onClick={() => setEditing(empty())}>
-				Novo produto
+				{t('Novo produto ')}
 			</button>
 			<form
 				onSubmit={(event) => {
@@ -100,7 +101,7 @@ function CatalogPage() {
 				}}
 			>
 				<label>
-					Nova categoria
+					{t('Nova categoria ')}
 					<input
 						className="demo-input"
 						required
@@ -110,7 +111,7 @@ function CatalogPage() {
 					/>
 				</label>
 				<button className="demo-button" disabled={busy}>
-					Cadastrar categoria
+					{t('Cadastrar categoria ')}
 				</button>
 			</form>
 			{editing ? (
@@ -120,9 +121,9 @@ function CatalogPage() {
 						void save();
 					}}
 				>
-					<h2>{editing.product_id ? 'Editar produto' : 'Novo produto'}</h2>
+					<h2>{editing.product_id ? t('Editar produto') : t('Novo produto')}</h2>
 					<label>
-						Nome
+						{t('Nome ')}
 						<input
 							className="demo-input"
 							required
@@ -132,14 +133,14 @@ function CatalogPage() {
 						/>
 					</label>
 					<label>
-						Categoria
+						{t('Categoria ')}
 						<select
 							className="demo-input"
 							required
 							value={editing.category_id}
 							onChange={(e) => setEditing({ ...editing, category_id: e.target.value })}
 						>
-							<option value="">Selecione</option>
+							<option value="">{t('Selecione')}</option>
 							{categories.map((c) => (
 								<option key={c.category_id} value={c.category_id}>
 									{c.name}
@@ -149,7 +150,7 @@ function CatalogPage() {
 					</label>
 					{(['unit', 'barcode', 'auxiliary_code', 'notes'] as const).map((key) => (
 						<label key={key}>
-							{{ unit: 'Unidade', barcode: 'Código de barras', auxiliary_code: 'Código auxiliar', notes: 'Observações' }[key]}
+							{t({ unit: 'Unidade', barcode: 'Código de barras', auxiliary_code: 'Código auxiliar', notes: 'Observações' }[key])}
 							<input
 								className="demo-input"
 								value={editing[key] ?? ''}
@@ -159,7 +160,7 @@ function CatalogPage() {
 					))}
 					{(['sale_price_cents', 'unit_cost_cents'] as const).map((key) => (
 						<label key={key}>
-							{key === 'sale_price_cents' ? 'Preço de venda (centavos)' : 'Custo unitário (centavos)'}
+							{key === 'sale_price_cents' ? t('Preço de venda (centavos)') : t('Custo unitário (centavos)')}
 							<input
 								className="demo-input"
 								type="number"
@@ -176,28 +177,28 @@ function CatalogPage() {
 							checked={editing.active === 1}
 							onChange={(e) => setEditing({ ...editing, active: e.target.checked ? 1 : 0 })}
 						/>
-						Disponível para venda
+						{t('Disponível para venda ')}
 					</label>
-					<p>Preço e custo vazios permanecem pendentes.</p>
+					<p>{t('Preço e custo vazios permanecem pendentes.')}</p>
 					<button className="demo-button" disabled={busy}>
-						Salvar produto
+						{t('Salvar produto ')}
 					</button>
 					<button type="button" className="demo-button demo-button-secondary" disabled={busy} onClick={() => setEditing(null)}>
-						Cancelar
+						{t('Cancelar ')}
 					</button>
 				</form>
 			) : null}
 			<ul>
 				{products
 					.filter((p) =>
-						`${p.name} ${p.barcode ?? ''} ${p.auxiliary_code ?? ''}`
+						t('{p0} {p1} {p2}', { p0: p.name, p1: p.barcode ?? '', p2: p.auxiliary_code ?? '' })
 							.toLocaleLowerCase('pt-BR')
 							.includes(search.toLocaleLowerCase('pt-BR').trim()),
 					)
 					.map((p) => (
 						<li key={p.product_id}>
 							<button type="button" className="demo-button demo-button-secondary" onClick={() => setEditing({ ...p })}>
-								{p.name} · {p.active ? 'Ativo' : 'Inativo'}
+								{p.name} · {p.active ? t('Ativo') : t('Inativo')}
 							</button>
 						</li>
 					))}

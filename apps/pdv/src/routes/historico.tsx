@@ -1,3 +1,4 @@
+import { t, formatLocale } from '@sabores/i18n';
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { feeCents } from '@sabores/pdv-sync';
@@ -38,7 +39,7 @@ const day = () =>
 		month: '2-digit',
 		day: '2-digit',
 	}).format(new Date());
-const money = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const money = (cents: number) => (cents / 100).toLocaleString(formatLocale(), { style: 'currency', currency: 'BRL' });
 const METHODS: PaymentMethod[] = ['Dinheiro', 'Débito', 'Crédito', 'Pix'];
 
 function SalesHistory() {
@@ -73,7 +74,7 @@ function SalesHistory() {
 				credentials: 'same-origin',
 				cache: 'no-store',
 			});
-			if (!response.ok) throw new Error(`Histórico indisponível (${response.status}).`);
+			if (!response.ok) throw new Error(t('Histórico indisponível ({p0}).', { p0: response.status }));
 			const body = (await response.json()) as {
 				sales: HistorySale[];
 				paymentFees: Record<PaymentMethod, string>;
@@ -81,7 +82,7 @@ function SalesHistory() {
 			setSales(body.sales);
 			setPaymentFees(body.paymentFees);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : 'Não foi possível consultar o histórico.');
+			setError(cause instanceof Error ? cause.message : t('Não foi possível consultar o histórico.'));
 		} finally {
 			setBusy(false);
 		}
@@ -119,7 +120,7 @@ function SalesHistory() {
 			if (navigator.onLine) await syncQueue();
 			await Promise.all([refreshQueue(), loadHistory()]);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : 'Falha ao solicitar cancelamento.');
+			setError(cause instanceof Error ? cause.message : t('Falha ao solicitar cancelamento.'));
 		}
 	}
 
@@ -138,7 +139,7 @@ function SalesHistory() {
 				position,
 			})),
 		);
-		if (version < 1) setError('Versão de pagamento inválida.');
+		if (version < 1) setError(t('Versão de pagamento inválida.'));
 	}
 
 	async function submitAdjustment(sale: HistorySale) {
@@ -159,7 +160,7 @@ function SalesHistory() {
 			if (navigator.onLine) await syncQueue();
 			await Promise.all([refreshQueue(), loadHistory()]);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : 'Falha ao corrigir os pagamentos.');
+			setError(cause instanceof Error ? cause.message : t('Falha ao corrigir os pagamentos.'));
 		}
 	}
 
@@ -182,21 +183,23 @@ function SalesHistory() {
 		<div className="pdv-page">
 			<section className="pdv-heading">
 				<div>
-					<p className="island-kicker">Vendas e sincronização</p>
-					<h1>Histórico</h1>
-					<p className="demo-muted">O histórico do servidor só é carregado online; offline aparecem as operações deste dispositivo.</p>
+					<p className="island-kicker">{t('Vendas e sincronização')}</p>
+					<h1>{t('Histórico')}</h1>
+					<p className="demo-muted">
+						{t('O histórico do servidor só é carregado online; offline aparecem as operações deste dispositivo.')}
+					</p>
 				</div>
 				<button
 					type="button"
 					className="demo-button"
 					onClick={() => void syncQueue().then(() => Promise.all([refreshQueue(), loadHistory()]))}
 				>
-					Sincronizar agora
+					{t('Sincronizar agora ')}
 				</button>
 			</section>
 			{error ? (
 				<p role="alert" className="pdv-message">
-					{error}
+					{t(error)}
 				</p>
 			) : null}
 			{feedback ? (
@@ -206,44 +209,47 @@ function SalesHistory() {
 			) : null}
 			<section className="pdv-panel">
 				<div className="pdv-section-heading">
-					<h2>Período</h2>
-					<span>{navigator.onLine ? 'Histórico remoto' : 'Modo offline'}</span>
+					<h2>{t('Período')}</h2>
+					<span>{navigator.onLine ? t('Histórico remoto') : t('Modo offline')}</span>
 				</div>
 				<div className="pdv-history-filter">
 					<label>
-						De
+						{t('De ')}
 						<input className="demo-input" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
 					</label>
 					<label>
-						Até
+						{t('Até ')}
 						<input className="demo-input" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
 					</label>
 					<button type="button" className="demo-button" disabled={busy || !navigator.onLine} onClick={() => void loadHistory()}>
-						{busy ? 'Carregando…' : 'Filtrar'}
+						{busy ? t('Carregando…') : t('Filtrar')}
 					</button>
 				</div>
 				{navigator.onLine && !error && sales.length > 0 ? (
-					<section aria-label="Resumo das vendas carregadas" className="pdv-panel">
-						<h3>Resumo das vendas carregadas</h3>
+					<section aria-label={t('Resumo das vendas carregadas')} className="pdv-panel">
+						<h3>{t('Resumo das vendas carregadas')}</h3>
 						{sales.length >= 500 ? (
-							<p role="status">O histórico está limitado a 500 vendas. Reduza o período para obter totais completos.</p>
+							<p role="status">{t('O histórico está limitado a 500 vendas. Reduza o período para obter totais completos.')}</p>
 						) : null}
 						<p>
-							{summary.count} vendas · Bruto {money(summary.gross)} · Taxas {money(summary.fees)} · Recebido {money(summary.net)}
+							{summary.count} {t(' vendas · Bruto ')}
+							{money(summary.gross)} {t(' · Taxas ')}
+							{money(summary.fees)} {t(' · Recebido ')}
+							{money(summary.net)}
 						</p>
-						<p>Recebido por forma de pagamento</p>
+						<p>{t('Recebido por forma de pagamento')}</p>
 						<ul>
 							{summary.payments.map(([method, amount]) => (
-								<li key={method}>
-									{method}: {money(amount)}
+								<li key={t(method)}>
+									{t(method)}: {money(amount)}
 								</li>
 							))}
 						</ul>
-						<p>Itens vendidos</p>
+						<p>{t('Itens vendidos')}</p>
 						<ul>
 							{summary.products.map(([name, item]) => (
 								<li key={name}>
-									{name}: {item.quantity.toLocaleString('pt-BR')} · {money(item.total)}
+									{name}: {item.quantity.toLocaleString(formatLocale())} · {money(item.total)}
 								</li>
 							))}
 						</ul>
@@ -258,10 +264,13 @@ function SalesHistory() {
 								return (
 									<article className="pdv-history-card" key={row.operation.operationId}>
 										<div>
-											<strong>Venda local {payload.saleId}</strong>
-											<p>{payload.items.map((item) => `${item.quantity}× ${item.name}`).join(', ')}</p>
+											<strong>
+												{t('Venda local ')}
+												{payload.saleId}
+											</strong>
+											<p>{payload.items.map((item) => t('{p0}× {p1}', { p0: item.quantity, p1: item.name })).join(', ')}</p>
 											<small>
-												{new Date(row.operation.occurredAt).toLocaleString('pt-BR')} · {queueLabel(row)}
+												{new Date(row.operation.occurredAt).toLocaleString(formatLocale())} · {queueLabel(row)}
 											</small>
 										</div>
 										<b>{money(payload.items.reduce((sum, item) => sum + item.lineTotalCents, 0))}</b>
@@ -271,7 +280,7 @@ function SalesHistory() {
 											onClick={() => void cancelSale(payload.saleId)}
 											disabled={row.state === 'duplicate' || row.state === 'invalid'}
 										>
-											Cancelar
+											{t('Cancelar ')}
 										</button>
 									</article>
 								);
@@ -285,24 +294,35 @@ function SalesHistory() {
 									<strong>
 										{sale.occurred_on} · {sale.sale_id}
 									</strong>
-									<p>{sale.items.map((item) => `${item.quantity}× ${item.product_name_snapshot}`).join(', ')}</p>
+									<p>{sale.items.map((item) => t('{p0}× {p1}', { p0: item.quantity, p1: item.product_name_snapshot })).join(', ')}</p>
 									<small>
-										Pagamentos: {sale.payments.map((payment) => `${payment.method} ${money(payment.amount_cents)}`).join(' · ')} · versão{' '}
-										{sale.payment_version ?? 1}
+										{t('Pagamentos: ')}
+										{sale.payments
+											.map((payment) => t('{p0} {p1}', { p0: payment.method, p1: money(payment.amount_cents) }))
+											.join(' · ')}{' '}
+										{t(' · versão')} {sale.payment_version ?? 1}
 									</small>
-									{sale.cancellation_reason ? <p className="pdv-cancelled">Cancelada: {sale.cancellation_reason}</p> : null}
+									{sale.cancellation_reason ? (
+										<p className="pdv-cancelled">
+											{t('Cancelada: ')}
+											{sale.cancellation_reason}
+										</p>
+									) : null}
 								</div>
 								<div className="pdv-history-total">
 									<strong>{money(sale.gross_cents)}</strong>
-									<small>Líquido {money(sale.net_cents)}</small>
+									<small>
+										{t('Líquido ')}
+										{money(sale.net_cents)}
+									</small>
 								</div>
 								{!sale.cancellation_reason ? (
 									<div className="pdv-history-actions">
 										<button type="button" className="demo-button demo-button-secondary" onClick={() => startAdjustment(sale)}>
-											Corrigir pagamento
+											{t('Corrigir pagamento ')}
 										</button>
 										<button type="button" className="demo-button demo-button-danger" onClick={() => void cancelSale(sale.sale_id)}>
-											Cancelar venda
+											{t('Cancelar venda ')}
 										</button>
 									</div>
 								) : null}
@@ -314,14 +334,14 @@ function SalesHistory() {
 											void submitAdjustment(sale);
 										}}
 									>
-										<h3>Nova versão dos pagamentos</h3>
+										<h3>{t('Nova versão dos pagamentos')}</h3>
 										{adjusted.map((payment, index) => (
 											<div className="pdv-payment-row" key={index}>
 												<label>
-													Forma
+													{t('Forma ')}
 													<select
 														className="demo-select"
-														value={payment.method}
+														value={t(payment.method)}
 														onChange={(event) =>
 															setAdjusted((current) =>
 																current.map((line, lineIndex) =>
@@ -338,12 +358,14 @@ function SalesHistory() {
 														}
 													>
 														{METHODS.map((method) => (
-															<option key={method}>{method}</option>
+															<option key={method} value={method}>
+																{t(method)}
+															</option>
 														))}
 													</select>
 												</label>
 												<label>
-													Valor (centavos)
+													{t('Valor (centavos) ')}
 													<input
 														className="demo-input"
 														type="number"
@@ -368,7 +390,7 @@ function SalesHistory() {
 											</div>
 										))}
 										<label>
-											Motivo obrigatório
+											{t('Motivo obrigatório ')}
 											<input
 												className="demo-input"
 												value={reason}
@@ -379,10 +401,10 @@ function SalesHistory() {
 										</label>
 										<div className="pdv-actions">
 											<button type="button" className="demo-button demo-button-secondary" onClick={() => setAdjusting(null)}>
-												Voltar
+												{t('Voltar ')}
 											</button>
 											<button className="demo-button" type="submit" disabled={!reason.trim()}>
-												Salvar correção
+												{t('Salvar correção ')}
 											</button>
 										</div>
 									</form>
@@ -390,25 +412,29 @@ function SalesHistory() {
 							</article>
 						))}
 						{!sales.length ? (
-							<p className="demo-muted">{navigator.onLine ? 'Nenhuma venda no período.' : 'Sem vendas remotas disponíveis offline.'}</p>
+							<p className="demo-muted">
+								{navigator.onLine ? t('Nenhuma venda no período.') : t('Sem vendas remotas disponíveis offline.')}
+							</p>
 						) : null}
 					</div>
 				)}
 			</section>
 			<section className="pdv-panel">
 				<div className="pdv-section-heading">
-					<h2>Fila neste dispositivo</h2>
-					<span>{queue.length} operação(ões)</span>
+					<h2>{t('Fila neste dispositivo')}</h2>
+					<span>
+						{queue.length} {t(' operação(ões)')}
+					</span>
 				</div>
 				<div className="pdv-history-list">
 					{queue.map((row) => (
 						<article className="pdv-queue-row" key={row.operation.operationId}>
 							<div>
-								<strong>{row.operation.operationType}</strong>
+								<strong>{t(row.operation.operationType)}</strong>
 								<small>
-									{new Date(row.queuedAt).toLocaleString('pt-BR')} · {row.operation.operationId}
+									{new Date(row.queuedAt).toLocaleString(formatLocale())} · {row.operation.operationId}
 								</small>
-								{row.error ? <p role={row.state === 'invalid' || row.state === 'conflict' ? 'alert' : 'status'}>{row.error}</p> : null}
+								{row.error ? <p role={row.state === 'invalid' || row.state === 'conflict' ? 'alert' : 'status'}>{t(row.error)}</p> : null}
 							</div>
 							<span className={`demo-pill state-${row.state}`}>{queueLabel(row)}</span>
 							{['duplicate', 'conflict', 'invalid'].includes(row.state) ? (
@@ -421,12 +447,12 @@ function SalesHistory() {
 											.then(refreshQueue)
 									}
 								>
-									Remover para continuar
+									{t('Remover para continuar ')}
 								</button>
 							) : null}
 						</article>
 					))}
-					{!queue.length ? <p className="demo-muted">Nenhuma operação pendente.</p> : null}
+					{!queue.length ? <p className="demo-muted">{t('Nenhuma operação pendente.')}</p> : null}
 				</div>
 			</section>
 		</div>

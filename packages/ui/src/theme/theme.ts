@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readSharedPreference, writeSharedPreference } from "@sabores/i18n";
 
 export type Theme = "light" | "dark" | "auto";
 
-export const themeInitScript = `(function(){try{var s=localStorage.getItem('theme');var m=s==='light'||s==='dark'||s==='auto'?s:'auto';var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=m==='auto'?(d?'dark':'light'):m;var e=document.documentElement;e.dataset.theme=r;e.style.colorScheme=r;var c=document.querySelector('meta[name="theme-color"]');if(c)c.content=r==='dark'?'#181818':'#fff9f1'}catch(_){}})();`;
+export const themeInitScript = `(function(){try{var c=document.cookie.split(';').map(function(p){return p.trim()}).find(function(p){return p.indexOf('sabores_theme=')===0});var s=c?decodeURIComponent(c.slice(14)):null;if(!s){try{s=localStorage.getItem('theme')}catch(_){}}var m=s==='light'||s==='dark'||s==='auto'?s:'auto';var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=m==='auto'?(d?'dark':'light'):m;var e=document.documentElement;e.dataset.theme=r;e.style.colorScheme=r;var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=r==='dark'?'#181818':'#fff9f1'}catch(_){}})();`;
 
 function resolvedTheme(
   theme: Theme,
@@ -26,9 +27,9 @@ export function useTheme() {
   }, []);
 
   useEffect(() => {
-    let stored: string | null = null;
+    let stored: string | null = readSharedPreference("sabores_theme");
     try {
-      stored = window.localStorage.getItem("theme");
+      stored ??= window.localStorage.getItem("theme");
     } catch {
       // Falha de acesso ao storage mantém o tema no padrão do sistema.
     }
@@ -63,10 +64,27 @@ export function useTheme() {
       setThemeState(next);
       apply(next);
     };
+    const syncSharedTheme = () => {
+      const next = readSharedPreference("sabores_theme");
+      if (
+        (next === "light" || next === "dark" || next === "auto") &&
+        next !== themeRef.current
+      ) {
+        themeRef.current = next;
+        setThemeState(next);
+        apply(next);
+      }
+    };
+    const timer = window.setInterval(syncSharedTheme, 2000);
+    window.addEventListener("focus", syncSharedTheme);
+    document.addEventListener("visibilitychange", syncSharedTheme);
     media.addEventListener("change", onPreferenceChange);
     window.addEventListener("storage", onStorage);
     window.addEventListener("sabores:theme-change", onLocalThemeChange);
     return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", syncSharedTheme);
+      document.removeEventListener("visibilitychange", syncSharedTheme);
       media.removeEventListener("change", onPreferenceChange);
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("sabores:theme-change", onLocalThemeChange);
@@ -74,6 +92,7 @@ export function useTheme() {
   }, [apply]);
 
   const setTheme = useCallback((next: Theme) => {
+    writeSharedPreference("sabores_theme", next);
     setThemeState(next);
     themeRef.current = next;
     try {

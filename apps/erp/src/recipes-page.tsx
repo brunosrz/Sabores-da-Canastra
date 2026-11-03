@@ -1,3 +1,4 @@
+import { t } from '@sabores/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { PageHeader, Price } from '@sabores/ui';
 
@@ -51,7 +52,7 @@ export function RecipesPage() {
 		setRecipes(r.data);
 		setProducts(p.data);
 		setIngredients(i.data);
-		setMessage(`${r.data.length} receitas cadastradas.`);
+		setMessage(t('{p0} receitas cadastradas.', { p0: r.data.length }));
 	}
 	useEffect(() => {
 		const timer = window.setTimeout(() => {
@@ -77,9 +78,9 @@ export function RecipesPage() {
 			});
 			setEditing(null);
 			await load();
-			setMessage(remove ? 'Receita excluída.' : 'Receita salva. Custos recalculados.');
+			setMessage(remove ? t('Receita excluída.') : t('Receita salva. Custos recalculados.'));
 		} catch (e) {
-			setMessage(e instanceof Error ? e.message : 'Falha ao salvar.');
+			setMessage(e instanceof Error ? e.message : t('Falha ao salvar.'));
 		} finally {
 			lock.current = false;
 			setBusy(false);
@@ -87,14 +88,14 @@ export function RecipesPage() {
 	}
 	return (
 		<div className="demo-page demo-page-wide">
-			<PageHeader title="Receitas" description="Composição, rendimento e custos calculados pelas cotações atuais." />
-			<p role="status">{message}</p>
+			<PageHeader title={t('Receitas')} description={t('Composição, rendimento e custos calculados pelas cotações atuais.')} />
+			<p role="status">{t(message)}</p>
 			<label>
-				Buscar receita
+				{t('Buscar receita ')}
 				<input className="demo-input" value={search} onChange={(e) => setSearch(e.target.value)} />
 			</label>
 			<button type="button" className="demo-button" disabled={busy} onClick={() => setEditing(empty())}>
-				Nova receita
+				{t('Nova receita ')}
 			</button>
 			{editing && (
 				<form
@@ -103,10 +104,10 @@ export function RecipesPage() {
 						void save();
 					}}
 				>
-					<h2>{editing.recipe_id ? 'Editar receita' : 'Nova receita'}</h2>
+					<h2>{editing.recipe_id ? t('Editar receita') : t('Nova receita')}</h2>
 					<div className="demo-grid">
 						<label>
-							Produto vinculado
+							{t('Produto vinculado ')}
 							<select
 								className="demo-input"
 								value={editing.product_id ?? ''}
@@ -115,7 +116,7 @@ export function RecipesPage() {
 									setEditing({ ...editing, product_id: p?.product_id ?? null, product_name: p?.name ?? editing.product_name });
 								}}
 							>
-								<option value="">Sem vínculo — receita base</option>
+								<option value="">{t('Sem vínculo — receita base')}</option>
 								{products.map((p) => (
 									<option key={p.product_id} value={p.product_id}>
 										{p.name}
@@ -124,7 +125,7 @@ export function RecipesPage() {
 							</select>
 						</label>
 						<label>
-							Nome
+							{t('Nome ')}
 							<input
 								className="demo-input"
 								required
@@ -135,7 +136,7 @@ export function RecipesPage() {
 							/>
 						</label>
 						<label>
-							Versão
+							{t('Versão ')}
 							<input
 								className="demo-input"
 								required
@@ -145,7 +146,7 @@ export function RecipesPage() {
 							/>
 						</label>
 						<label>
-							Rendimento (unidades)
+							{t('Rendimento (unidades) ')}
 							<input
 								className="demo-input"
 								type="number"
@@ -157,7 +158,7 @@ export function RecipesPage() {
 							/>
 						</label>
 						<label>
-							Fonte
+							{t('Fonte ')}
 							<input
 								className="demo-input"
 								value={editing.source ?? ''}
@@ -165,7 +166,7 @@ export function RecipesPage() {
 							/>
 						</label>
 						<label>
-							Modo de preparo
+							{t('Modo de preparo ')}
 							<textarea
 								className="demo-input"
 								maxLength={10000}
@@ -174,12 +175,15 @@ export function RecipesPage() {
 							/>
 						</label>
 					</div>
-					<h3>Ingredientes</h3>
+					<h3>{t('Ingredientes')}</h3>
 					{editing.lines.map((line, index) => (
 						<fieldset key={index} disabled={busy}>
-							<legend>Item {index + 1}</legend>
+							<legend>
+								{t('Item ')}
+								{index + 1}
+							</legend>
 							<label>
-								Ingrediente
+								{t('Ingrediente ')}
 								<select
 									className="demo-input"
 									required
@@ -189,7 +193,7 @@ export function RecipesPage() {
 										changeLine(index, { ingredient_id: e.target.value, unit: i?.base_unit ?? 'g' });
 									}}
 								>
-									<option value="">Selecione</option>
+									<option value="">{t('Selecione')}</option>
 									{ingredients.map((i) => (
 										<option key={i.ingredient_id} value={i.ingredient_id}>
 											{i.name}
@@ -198,7 +202,8 @@ export function RecipesPage() {
 								</select>
 							</label>
 							<label>
-								Quantidade ({line.unit})
+								{t('Quantidade (')}
+								{line.unit})
 								<input
 									className="demo-input"
 									required
@@ -208,7 +213,7 @@ export function RecipesPage() {
 								/>
 							</label>
 							<label>
-								Etapa
+								{t('Etapa ')}
 								<input
 									className="demo-input"
 									maxLength={200}
@@ -221,7 +226,8 @@ export function RecipesPage() {
 								className="demo-button demo-button-secondary"
 								onClick={() => setEditing({ ...editing, lines: editing.lines.filter((_, n) => n !== index) })}
 							>
-								Remover item {index + 1}
+								{t('Remover item ')}
+								{index + 1}
 							</button>
 						</fieldset>
 					))}
@@ -233,17 +239,17 @@ export function RecipesPage() {
 							setEditing({ ...editing, lines: [...editing.lines, { ingredient_id: '', quantity: '1', unit: 'g', stage: null }] })
 						}
 					>
-						Adicionar ingrediente
+						{t('Adicionar ingrediente ')}
 					</button>
 					<button className="demo-button" disabled={busy || !editing.lines.length}>
-						Salvar receita
+						{t('Salvar receita ')}
 					</button>
 					<button type="button" className="demo-button demo-button-secondary" disabled={busy} onClick={() => setEditing(null)}>
-						Cancelar
+						{t('Cancelar ')}
 					</button>
 					{editing.recipe_id && (
 						<button type="button" className="demo-button demo-button-danger" disabled={busy} onClick={() => void save(true)}>
-							Excluir receita
+							{t('Excluir receita ')}
 						</button>
 					)}
 				</form>
@@ -255,11 +261,25 @@ export function RecipesPage() {
 						<article className="demo-card" key={r.recipe_id}>
 							<h2>{r.product_name}</h2>
 							<p>
-								Versão {r.version} · rendimento {r.yield_units} · custo {r.quality ?? 'Pendente'}
+								{t('Versão ')}
+								{r.version} {t(' · rendimento ')}
+								{r.yield_units} {t(' · custo ')}
+								{r.quality ?? 'Pendente'}
 							</p>
-							<p>Custo do lote: {r.batch_cost_cents == null ? 'Pendente' : <Price cents={r.batch_cost_cents} />}</p>
-							<p>Custo unitário: {r.unit_cost_cents == null ? 'Pendente' : <Price cents={r.unit_cost_cents} />}</p>
-							{!!r.pending_ingredients?.length && <p>Revisar: {r.pending_ingredients.join(', ')}</p>}
+							<p>
+								{t('Custo do lote: ')}
+								{r.batch_cost_cents == null ? t('Pendente') : <Price cents={r.batch_cost_cents} />}
+							</p>
+							<p>
+								{t('Custo unitário: ')}
+								{r.unit_cost_cents == null ? t('Pendente') : <Price cents={r.unit_cost_cents} />}
+							</p>
+							{!!r.pending_ingredients?.length && (
+								<p>
+									{t('Revisar: ')}
+									{r.pending_ingredients.join(', ')}
+								</p>
+							)}
 							<ul>
 								{r.lines.map((l, n) => (
 									<li key={n}>
@@ -273,7 +293,7 @@ export function RecipesPage() {
 								disabled={busy}
 								onClick={() => setEditing({ ...r, lines: r.lines.map((l) => ({ ...l })) })}
 							>
-								Editar receita
+								{t('Editar receita ')}
 							</button>
 						</article>
 					))}

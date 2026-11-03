@@ -1,3 +1,4 @@
+import { t } from '@sabores/i18n';
 import { createFileRoute } from '@tanstack/react-router';
 import { Badge, PageHeader } from '@sabores/ui';
 
@@ -13,29 +14,29 @@ function ErpHome() {
 	return (
 		<div className="erp-home">
 			<section className="erp-welcome" id="inicio">
-				<img src="/brand/logo-sabores-canastra.svg" alt="Sabores da Canastra" width="1600" height="520" />
-				<p className="island-kicker">Gestão do bar</p>
+				<img src="/brand/logo-sabores-canastra.svg" alt={t('Sabores da Canastra')} width="1600" height="520" />
+				<p className="island-kicker">{t('Gestão do bar')}</p>
 				<PageHeader
-					title="ERP"
-					description="Cadastros, operação e acompanhamento financeiro em um só lugar."
-					actions={<Badge>Protótipo</Badge>}
+					title={t('ERP')}
+					description={t('Cadastros, operação e acompanhamento financeiro em um só lugar.')}
+					actions={<Badge>{t('Protótipo')}</Badge>}
 				/>
 			</section>
-			<section className="erp-area-grid" aria-label="Áreas do ERP">
+			<section className="erp-area-grid" aria-label={t('Áreas do ERP')}>
 				{areas.map((area) => (
 					<article className="erp-area-card" id={area.id} key={area.id}>
 						<span aria-hidden="true" className="erp-area-icon">
 							{area.icon}
 						</span>
 						<div>
-							<h2>{area.title}</h2>
-							<p>{area.description}</p>
+							<h2>{t(area.title)}</h2>
+							<p>{t(area.description)}</p>
 						</div>
-						<span className="demo-pill">Área do sistema</span>
+						<span className="demo-pill">{t('Área do sistema')}</span>
 					</article>
 				))}
 			</section>
-			<p className="erp-mobile-hint">Use a navegação inferior para acessar as áreas do ERP.</p>
+			<p className="erp-mobile-hint">{t('Use a navegação inferior para acessar as áreas do ERP.')}</p>
 		</div>
 	);
 }

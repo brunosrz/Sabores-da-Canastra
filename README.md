@@ -26,6 +26,29 @@ rascunhos, catálogo e fila de sincronização no IndexedDB para continuar lanç
 vendas sem internet. Cancelamentos e correções são eventos auditáveis. A
 migração do legado Python/Excel é revisável e não modifica a origem.
 
+### Idioma, tema e preferências compartilhadas
+
+Em **Ajustes → Preferências**, ERP e PDV permitem selecionar português ou inglês
+e o tema claro, escuro ou do sistema. Os seletores ficam somente em Ajustes.
+Cookies `sabores_locale` e `sabores_theme`, com domínio `brunosrz.com`, compartilham
+essas preferências entre os dois aplicativos no mesmo navegador, inclusive entre
+preview e produção. Não contêm identidade nem credenciais. O tema é aplicado ao
+retornar ao app; mudar o idioma recarrega a página para atualizar todas as mensagens.
+Em localhost, os cookies ficam restritos ao host. Navegadores ou dispositivos
+diferentes mantêm suas próprias preferências.
+
+As mensagens Paraglide estão em `packages/i18n/messages/{pt-BR,en}.json`.
+`pnpm install` compila o runtime; `pnpm i18n:compile` permite recompilá-lo
+manualmente, e o plugin Vite acompanha alterações durante o desenvolvimento.
+Traduções afetam a apresentação, preservando nomes cadastrados, códigos, valores
+dos pagamentos e contratos de sincronização. Datas e valores usam o idioma
+escolhido; a moeda continua sendo o real brasileiro.
+
+`uv run python utils/sort_translation_keys.py --write` ordena as chaves sem
+alterar os valores, usando o utilitário do Vectora adaptado aos caminhos deste
+monorepo. O pre-commit executa a ordenação automaticamente e recompila o Paraglide
+quando os catálogos ou sua configuração mudam.
+
 ### Desenvolvimento web
 
 Requisitos: Node.js compatível com o `engines` do projeto e pnpm. Na raiz:

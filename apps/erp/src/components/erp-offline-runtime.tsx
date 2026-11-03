@@ -1,3 +1,4 @@
+import { t } from '@sabores/i18n';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { discardPriceConflict, listPriceOperations, refreshProducts, syncPriceQueue, type PriceOperation } from '../offline/store';
 
@@ -56,12 +57,14 @@ export function ErpOfflineRuntime({ children }: { children: ReactNode }) {
 			{!online || pending > 0 || conflicts > 0 ? (
 				<div className="erp-offline-status" role="status">
 					<span>
-						{online ? `Online · ${pending} ajuste(s) na fila` : `Offline · ${pending} ajuste(s) neste dispositivo`}
-						{conflicts ? ` · ${conflicts} conflito(s) para revisar` : ''}
+						{online
+							? t('Online · {p0} ajuste(s) na fila', { p0: pending })
+							: t('Offline · {p0} ajuste(s) neste dispositivo', { p0: pending })}
+						{conflicts ? t(' · {p0} conflito(s) para revisar', { p0: conflicts }) : ''}
 					</span>
 					{online && pending > 0 ? (
 						<button type="button" onClick={() => void syncNow()} disabled={syncing}>
-							{syncing ? 'Sincronizando…' : 'Sincronizar agora'}
+							{syncing ? t('Sincronizando…') : t('Sincronizar agora')}
 						</button>
 					) : null}
 					{conflictOperations.map((operation) => (
@@ -70,14 +73,15 @@ export function ErpOfflineRuntime({ children }: { children: ReactNode }) {
 							type="button"
 							disabled={!online}
 							onClick={() => {
-								if (!window.confirm('Descartar este ajuste de preço rejeitado?')) return;
+								if (!window.confirm(t('Descartar este ajuste de preço rejeitado?'))) return;
 								void refreshProducts()
 									.then(() => discardPriceConflict(operation.operationId))
 									.then(() => window.dispatchEvent(new Event('erp-catalog-changed')))
 									.catch(() => setFailure('Não foi possível atualizar o catálogo; o ajuste foi preservado.'));
 							}}
 						>
-							Descartar ajuste rejeitado ({operation.productId})
+							{t('Descartar ajuste rejeitado (')}
+							{operation.productId})
 						</button>
 					))}
 					{failure ? <span role="alert">{failure}</span> : null}

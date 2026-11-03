@@ -1,11 +1,12 @@
-import { Badge, Card, CategoryBadge, EmptyState, PageHeader, Price, ResponsiveTable } from '@sabores/ui';
+import { t } from '@sabores/i18n';
+import { Badge, Card, CategoryBadge, EmptyState, PageHeader, Price, ResponsiveTable, Preferences } from '@sabores/ui';
 import { useEffect, useRef, useState } from 'react';
 import { enqueuePriceChange, listPriceOperations, loadProducts, refreshProducts, syncPriceQueue, type ErpProduct } from '../offline/store';
 
 function PrototypeFrame({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
 	return (
 		<div className="demo-page demo-page-wide">
-			<PageHeader title={title} description={description} actions={<Badge>Protótipo</Badge>} />
+			<PageHeader title={title} description={description} actions={<Badge>{t('Protótipo')}</Badge>} />
 			{children}
 		</div>
 	);
@@ -22,20 +23,20 @@ export function ProductsPrototype() {
 		const reloadCatalog = () => {
 			void loadProducts()
 				.then(setProducts)
-				.catch(() => setStatus('Não foi possível atualizar o catálogo local.'));
+				.catch(() => setStatus(t('Não foi possível atualizar o catálogo local.')));
 		};
 		window.addEventListener('erp-catalog-changed', reloadCatalog);
 		void loadProducts()
 			.then((cached) => {
 				setProducts(cached);
-				setStatus(cached.length ? `${cached.length} produtos salvos neste dispositivo` : 'Nenhum catálogo local ainda');
+				setStatus(cached.length ? t('{p0} produtos salvos neste dispositivo', { p0: cached.length }) : t('Nenhum catálogo local ainda'));
 				return refreshProducts();
 			})
 			.then((fresh) => {
 				setProducts(fresh);
-				setStatus(`${fresh.length} produtos sincronizados com o D1`);
+				setStatus(t('{p0} produtos sincronizados com o D1', { p0: fresh.length }));
 			})
-			.catch(() => setStatus('Offline: exibindo o catálogo deste dispositivo.'));
+			.catch(() => setStatus(t('Offline: exibindo o catálogo deste dispositivo.')));
 		return () => window.removeEventListener('erp-catalog-changed', reloadCatalog);
 	}, []);
 	const filtered = products.filter((product) =>
@@ -47,7 +48,7 @@ export function ProductsPrototype() {
 		if (!editing || busy) return;
 		const normalized = price.replace(',', '.');
 		if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
-			setStatus('Informe um preço válido com até duas casas decimais.');
+			setStatus(t('Informe um preço válido com até duas casas decimais.'));
 			return;
 		}
 		const cents = Math.round(Number(normalized) * 100);
@@ -58,47 +59,47 @@ export function ProductsPrototype() {
 			setEditing(null);
 			setStatus(
 				navigator.onLine
-					? 'Preço salvo localmente; sincronizando com o servidor…'
-					: 'Preço enfileirado neste dispositivo para sincronizar quando voltar a internet.',
+					? t('Preço salvo localmente; sincronizando com o servidor…')
+					: t('Preço enfileirado neste dispositivo para sincronizar quando voltar a internet.'),
 			);
 			await syncPriceQueue();
 			const saved = (await listPriceOperations()).find((item) => item.operationId === operation.operationId);
 			setStatus(
 				saved?.state === 'synced'
-					? 'Preço atualizado no D1 e registrado no histórico.'
+					? t('Preço atualizado no D1 e registrado no histórico.')
 					: saved?.state === 'conflict'
-						? 'Conflito: o servidor tem outro preço. Recarregue o catálogo e revise antes de tentar novamente.'
+						? t('Conflito: o servidor tem outro preço. Recarregue o catálogo e revise antes de tentar novamente.')
 						: saved?.state === 'blocked_auth'
-							? 'Preço aguardando uma sessão válida para sincronizar.'
-							: 'Preço salvo neste dispositivo e aguardando sincronização.',
+							? t('Preço aguardando uma sessão válida para sincronizar.')
+							: t('Preço salvo neste dispositivo e aguardando sincronização.'),
 			);
 		} catch (error) {
-			setStatus(error instanceof Error ? error.message : 'Não foi possível salvar o preço.');
+			setStatus(error instanceof Error ? error.message : t('Não foi possível salvar o preço.'));
 		} finally {
 			setBusy(false);
 		}
 	}
 	return (
-		<PrototypeFrame title="Produtos" description="Catálogo do bar com preços, categorias, custos e fichas técnicas.">
+		<PrototypeFrame title={t('Produtos')} description={t('Catálogo do bar com preços, categorias, custos e fichas técnicas.')}>
 			<div className="erp-catalog-tools">
-				<label htmlFor="erp-product-search">Buscar produto</label>
+				<label htmlFor="erp-product-search">{t('Buscar produto')}</label>
 				<input
 					id="erp-product-search"
 					className="demo-input"
 					value={search}
 					onChange={(event) => setSearch(event.target.value)}
-					placeholder="Nome, código de barras ou código auxiliar"
+					placeholder={t('Nome, código de barras ou código auxiliar')}
 				/>
-				<span role="status">{status}</span>
+				<span role="status">{t(status)}</span>
 			</div>
 			<ResponsiveTable
-				caption="Catálogo de produtos"
+				caption={t('Catálogo de produtos')}
 				columns={[
 					{ key: 'name', label: 'Produto' },
 					{
 						key: 'category',
 						label: 'Categoria',
-						render: (row) => <CategoryBadge category={row.category} />,
+						render: (row) => <CategoryBadge category={t(row.category)} />,
 					},
 					{ key: 'detail', label: 'Detalhes' },
 					{
@@ -118,19 +119,19 @@ export function ProductsPrototype() {
 				{filtered.map((product) => (
 					<Card key={product.product_id} className="erp-product-card">
 						<div>
-							<CategoryBadge category={product.category} />
+							<CategoryBadge category={t(product.category)} />
 							<h2>{product.name}</h2>
 							<p>
 								{product.barcode || product.auxiliary_code || 'Sem código'} · {product.unit}
 							</p>
 						</div>
 						<div>
-							<span>Venda</span>
+							<span>{t('Venda')}</span>
 							<Price cents={product.sale_price_cents ?? 0} />
 						</div>
 						<div>
-							<span>Custo</span>
-							<strong>{product.unit_cost_cents == null ? 'Pendente' : <Price cents={product.unit_cost_cents} />}</strong>
+							<span>{t('Custo')}</span>
+							<strong>{product.unit_cost_cents == null ? t('Pendente') : <Price cents={product.unit_cost_cents} />}</strong>
 						</div>
 						<button
 							className="demo-button demo-button-secondary"
@@ -140,15 +141,15 @@ export function ProductsPrototype() {
 								setPrice(((product.sale_price_cents ?? 0) / 100).toFixed(2).replace('.', ','));
 							}}
 						>
-							Editar preço
+							{t('Editar preço ')}
 						</button>
 					</Card>
 				))}
 			</div>
 			{!filtered.length ? (
 				<EmptyState
-					title="Nenhum produto no catálogo local"
-					description="Conecte-se para carregar os produtos cadastrados no banco de dados."
+					title={t('Nenhum produto no catálogo local')}
+					description={t('Conecte-se para carregar os produtos cadastrados no banco de dados.')}
 				/>
 			) : null}
 			{editing ? (
@@ -161,14 +162,14 @@ export function ProductsPrototype() {
 					<section className="erp-price-modal" role="dialog" aria-modal="true" aria-labelledby="erp-price-title">
 						<div className="ui-page-header">
 							<div>
-								<h2 id="erp-price-title">Editar preço</h2>
+								<h2 id="erp-price-title">{t('Editar preço')}</h2>
 								<p>{editing.name}</p>
 							</div>
-							<button type="button" aria-label="Fechar" onClick={() => setEditing(null)}>
-								×
+							<button type="button" aria-label={t('Fechar')} onClick={() => setEditing(null)}>
+								{t('× ')}
 							</button>
 						</div>
-						<label htmlFor="erp-price-input">Preço de venda (R$)</label>
+						<label htmlFor="erp-price-input">{t('Preço de venda (R$)')}</label>
 						<input
 							id="erp-price-input"
 							autoFocus
@@ -180,13 +181,13 @@ export function ProductsPrototype() {
 								if (event.key === 'Enter') void savePrice();
 							}}
 						/>
-						<p className="demo-muted">Sem internet, o valor fica disponível neste dispositivo e entra na fila de sincronização.</p>
+						<p className="demo-muted">{t('Sem internet, o valor fica disponível neste dispositivo e entra na fila de sincronização.')}</p>
 						<div className="erp-modal-actions">
 							<button type="button" className="demo-button demo-button-secondary" onClick={() => setEditing(null)}>
-								Cancelar
+								{t('Cancelar ')}
 							</button>
 							<button type="button" className="demo-button" disabled={busy} onClick={() => void savePrice()}>
-								{busy ? 'Salvando…' : 'Salvar preço'}
+								{busy ? t('Salvando…') : t('Salvar preço')}
 							</button>
 						</div>
 					</section>
@@ -214,15 +215,15 @@ export function InventoryPrototype() {
 		const controller = new AbortController();
 		void fetch('/api/erp/ingredients', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
 			.then(async (response) => {
-				if (!response.ok) throw new Error('Não foi possível carregar os ingredientes.');
+				if (!response.ok) throw new Error(t('Não foi possível carregar os ingredientes.'));
 				return response.json() as Promise<{ data: typeof ingredients }>;
 			})
 			.then((body) => {
 				setIngredients(body.data);
-				setStatus(`${body.data.length} ingredientes cadastrados.`);
+				setStatus(t('{p0} ingredientes cadastrados.', { p0: body.data.length }));
 			})
 			.catch(() => {
-				if (!controller.signal.aborted) setStatus('Ingredientes indisponíveis. Conecte-se e tente novamente.');
+				if (!controller.signal.aborted) setStatus(t('Ingredientes indisponíveis. Conecte-se e tente novamente.'));
 			});
 		return () => controller.abort();
 	}, []);
@@ -230,24 +231,26 @@ export function InventoryPrototype() {
 		ingredient.name.toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR')),
 	);
 	return (
-		<PrototypeFrame title="Ingredientes" description="Consulte os insumos e suas cotações atuais.">
+		<PrototypeFrame title={t('Ingredientes')} description={t('Consulte os insumos e suas cotações atuais.')}>
 			<label>
-				Buscar ingrediente <input className="demo-input" value={search} onChange={(event) => setSearch(event.target.value)} />
+				{t('Buscar ingrediente ')}
+				<input className="demo-input" value={search} onChange={(event) => setSearch(event.target.value)} />
 			</label>
-			<p role="status">{status}</p>
+			<p role="status">{t(status)}</p>
 			<div className="erp-area-grid">
 				{filtered.map((ingredient) => (
 					<Card key={ingredient.ingredient_id}>
 						<Badge>{ingredient.status ?? 'Pendente'}</Badge>
 						<h2>{ingredient.name}</h2>
 						<p className="demo-muted">
-							Pacote: {ingredient.pack_quantity} {ingredient.base_unit} · {ingredient.supplier ?? 'Fornecedor não informado'}
+							{t('Pacote: ')}
+							{ingredient.pack_quantity} {ingredient.base_unit} · {ingredient.supplier ?? 'Fornecedor não informado'}
 						</p>
-						<p>{ingredient.pack_price_cents == null ? 'Preço pendente' : <Price cents={ingredient.pack_price_cents} />}</p>
+						<p>{ingredient.pack_price_cents == null ? t('Preço pendente') : <Price cents={ingredient.pack_price_cents} />}</p>
 					</Card>
 				))}
 			</div>
-			<p className="demo-muted">A quantidade do pacote não indica a quantidade disponível em estoque.</p>
+			<p className="demo-muted">{t('A quantidade do pacote não indica a quantidade disponível em estoque.')}</p>
 		</PrototypeFrame>
 	);
 }
@@ -287,7 +290,7 @@ export function FinancePrototype() {
 	async function loadFinance() {
 		const requestId = ++latestRequest.current;
 		setLoaded(false);
-		setStatus('Consultando…');
+		setStatus(t('Consultando…'));
 		try {
 			const query = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
 			const [response, entryResponse] = await Promise.all([
@@ -297,7 +300,7 @@ export function FinancePrototype() {
 					cache: 'no-store',
 				}),
 			]);
-			if (!response.ok || !entryResponse.ok) throw new Error('Não foi possível consultar o financeiro.');
+			if (!response.ok || !entryResponse.ok) throw new Error(t('Não foi possível consultar o financeiro.'));
 			const body = (await response.json()) as { data: Array<{ entry_type: string; total: number }> };
 			const entryBody = (await entryResponse.json()) as { data: typeof entries; truncated: boolean };
 			if (requestId !== latestRequest.current) return;
@@ -305,36 +308,38 @@ export function FinancePrototype() {
 			setTruncated(entryBody.truncated);
 			setTotals(Object.fromEntries(body.data.map((row) => [row.entry_type, row.total])));
 			setLoaded(true);
-			setStatus(`Período consultado: ${from} a ${to}.`);
+			setStatus(t('Período consultado: {p0} a {p1}.', { p0: from, p1: to }));
 		} catch (error) {
 			if (requestId !== latestRequest.current) return;
 			setTotals({});
 			setEntries([]);
-			setStatus(error instanceof Error ? error.message : 'Financeiro indisponível.');
+			setStatus(error instanceof Error ? error.message : t('Financeiro indisponível.'));
 		}
 	}
 	return (
-		<PrototypeFrame title="Financeiro" description="Movimentações registradas no período.">
+		<PrototypeFrame title={t('Financeiro')} description={t('Movimentações registradas no período.')}>
 			<label>
-				De <input className="demo-input" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+				{t('De ')}
+				<input className="demo-input" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
 			</label>{' '}
 			<label>
-				Até <input className="demo-input" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+				{t('Até ')}
+				<input className="demo-input" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
 			</label>{' '}
 			<label>
-				Tipo{' '}
+				{t('Tipo')}{' '}
 				<select className="demo-input" value={entryType} onChange={(event) => setEntryType(event.target.value)}>
-					<option value="">Todos</option>
-					<option value="sale">Venda</option>
-					<option value="purchase">Compra</option>
-					<option value="expense">Gasto</option>
-					<option value="adjustment">Ajuste</option>
+					<option value="">{t('Todos')}</option>
+					<option value="sale">{t('Venda')}</option>
+					<option value="purchase">{t('Compra')}</option>
+					<option value="expense">{t('Gasto')}</option>
+					<option value="adjustment">{t('Ajuste')}</option>
 				</select>
 			</label>{' '}
 			<button type="button" className="demo-button" onClick={() => void loadFinance()}>
-				Consultar
+				{t('Consultar ')}
 			</button>
-			<p role="status">{status}</p>
+			<p role="status">{t(status)}</p>
 			{loaded ? (
 				<>
 					<div className="erp-area-grid">
@@ -344,22 +349,25 @@ export function FinancePrototype() {
 							['Gastos', totals.expense ?? 0],
 						].map(([label, cents]) => (
 							<Card key={String(label)}>
-								<p className="demo-muted">{label}</p>
+								<p className="demo-muted">{t(label)}</p>
 								<Price cents={Number(cents)} />
 							</Card>
 						))}
 					</div>
 					<section>
-						<h2>Lançamentos</h2>
-						{truncated ? <p role="status">Exibindo os 500 lançamentos mais recentes; reduza o período para consultar os demais.</p> : null}
+						<h2>{t('Lançamentos')}</h2>
+						{truncated ? (
+							<p role="status">{t('Exibindo os 500 lançamentos mais recentes; reduza o período para consultar os demais.')}</p>
+						) : null}
 						{entries.length === 0 ? (
-							<p>Nenhum lançamento encontrado.</p>
+							<p>{t('Nenhum lançamento encontrado.')}</p>
 						) : (
 							<ul>
 								{entries.map((entry) => (
 									<li key={entry.ledger_id}>
-										{entry.occurred_on} · {entry.entry_type} · {entry.description} · {entry.category} · <Price cents={entry.amount_cents} />
-										{entry.cancelled ? <strong> · Venda cancelada</strong> : null}
+										{entry.occurred_on} · {t(entry.entry_type)} · {entry.description} · {t(entry.category)} ·{' '}
+										<Price cents={entry.amount_cents} />
+										{entry.cancelled ? <strong> {t(' · Venda cancelada')}</strong> : null}
 									</li>
 								))}
 							</ul>
@@ -368,8 +376,9 @@ export function FinancePrototype() {
 				</>
 			) : null}
 			<p className="demo-muted">
-				Os totais excluem vendas canceladas; seus lançamentos permanecem identificados na lista para auditoria. Compras e gastos refletem os
-				lançamentos registrados; estes valores não representam lucro.
+				{t(
+					'Os totais excluem vendas canceladas; seus lançamentos permanecem identificados na lista para auditoria. Compras e gastos refletem os lançamentos registrados; estes valores não representam lucro. ',
+				)}
 			</p>
 		</PrototypeFrame>
 	);
@@ -377,11 +386,10 @@ export function FinancePrototype() {
 
 export function SettingsPrototype() {
 	return (
-		<PrototypeFrame title="Ajustes" description="Preferências deste dispositivo e informações sobre a aplicação.">
+		<PrototypeFrame title={t('Ajustes')} description={t('Preferências deste dispositivo e informações sobre a aplicação.')}>
 			<Card>
-				<h2>Preferência visual</h2>
-				<p>Use o seletor de tema na barra superior para escolher claro, escuro ou seguir o sistema.</p>
-				<p className="demo-muted">A preferência fica neste navegador; dados de negócio e credenciais não são armazenados aqui.</p>
+				<h2>{t('Preferências')}</h2>
+				<Preferences />
 			</Card>
 		</PrototypeFrame>
 	);

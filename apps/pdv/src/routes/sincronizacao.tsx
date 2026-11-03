@@ -1,3 +1,4 @@
+import { t, formatLocale } from '@sabores/i18n';
 import { createFileRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Card, EmptyState, PageHeader } from '@sabores/ui';
@@ -25,13 +26,13 @@ function SyncQueuePage() {
 
 	async function synchronize() {
 		setBusy(true);
-		setNotice('Sincronizando operações em ordem…');
+		setNotice(t('Sincronizando operações em ordem…'));
 		try {
 			await syncQueue(refresh);
 			await refresh();
-			setNotice('Sincronização concluída. Confira os estados de cada operação.');
+			setNotice(t('Sincronização concluída. Confira os estados de cada operação.'));
 		} catch {
-			setNotice('Não foi possível sincronizar agora. As operações continuam salvas neste dispositivo.');
+			setNotice(t('Não foi possível sincronizar agora. As operações continuam salvas neste dispositivo.'));
 		} finally {
 			setBusy(false);
 		}
@@ -40,35 +41,38 @@ function SyncQueuePage() {
 	return (
 		<div className="demo-page demo-page-wide">
 			<PageHeader
-				title="Fila de sincronização"
-				description="Operações locais são enviadas em ordem e mantêm o mesmo identificador nas tentativas."
+				title={t('Fila de sincronização')}
+				description={t('Operações locais são enviadas em ordem e mantêm o mesmo identificador nas tentativas.')}
 				actions={
 					<Button variant="primary" busy={busy} onClick={() => void synchronize()}>
-						Sincronizar agora
+						{t('Sincronizar agora ')}
 					</Button>
 				}
 			/>
 			{notice ? (
 				<p role="status" aria-live="polite">
-					{notice}
+					{t(notice)}
 				</p>
 			) : null}
 			{rows.length === 0 ? (
 				<EmptyState
-					title="Nenhuma operação na fila"
-					description="Vendas e ajustes salvos neste dispositivo aparecerão aqui até serem sincronizados."
+					title={t('Nenhuma operação na fila')}
+					description={t('Vendas e ajustes salvos neste dispositivo aparecerão aqui até serem sincronizados.')}
 				/>
 			) : (
 				<div className="erp-area-grid">
 					{rows.map((row) => (
 						<Card key={row.operation.operationId}>
 							<div className="pdv-section-heading">
-								<h2>{row.operation.operationType}</h2>
-								<Badge>{row.state}</Badge>
+								<h2>{t(row.operation.operationType)}</h2>
+								<Badge>{t(row.state)}</Badge>
 							</div>
-							<p>{new Date(row.operation.occurredAt).toLocaleString('pt-BR')}</p>
-							{row.error ? <p role="alert">{row.error}</p> : null}
-							<p className="demo-muted">ID da operação: {row.operation.operationId}</p>
+							<p>{new Date(row.operation.occurredAt).toLocaleString(formatLocale())}</p>
+							{row.error ? <p role="alert">{t(row.error)}</p> : null}
+							<p className="demo-muted">
+								{t('ID da operação: ')}
+								{row.operation.operationId}
+							</p>
 						</Card>
 					))}
 				</div>

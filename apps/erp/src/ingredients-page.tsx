@@ -1,3 +1,4 @@
+import { t, formatLocale } from '@sabores/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { PageHeader } from '@sabores/ui';
 
@@ -41,7 +42,7 @@ export function IngredientsPage() {
 	async function load() {
 		const result = await api<{ data: Ingredient[] }>('');
 		setItems(result.data);
-		setMessage(`${result.data.length} ingredientes cadastrados.`);
+		setMessage(t('{p0} ingredientes cadastrados.', { p0: result.data.length }));
 	}
 	useEffect(() => {
 		const timer = window.setTimeout(() => {
@@ -70,9 +71,9 @@ export function IngredientsPage() {
 			});
 			setEditing(null);
 			await load();
-			setMessage(remove ? 'Ingrediente excluído.' : 'Ingrediente e cotação salvos.');
+			setMessage(remove ? t('Ingrediente excluído.') : t('Ingrediente e cotação salvos.'));
 		} catch (e) {
-			setMessage(e instanceof Error ? e.message : 'Falha ao salvar.');
+			setMessage(e instanceof Error ? e.message : t('Falha ao salvar.'));
 		} finally {
 			lock.current = false;
 			setBusy(false);
@@ -90,24 +91,26 @@ export function IngredientsPage() {
 	);
 	return (
 		<div className="demo-page demo-page-wide">
-			<PageHeader title="Ingredientes e cotações" description="Pesquise, cadastre e edite os ingredientes usados nas receitas." />
-			<p role="status">{message}</p>
+			<PageHeader title={t('Ingredientes e cotações')} description={t('Pesquise, cadastre e edite os ingredientes usados nas receitas.')} />
+			<p role="status">{t(message)}</p>
 			<div className="demo-grid">
 				<label>
-					Buscar nome ou fornecedor
+					{t('Buscar nome ou fornecedor ')}
 					<input className="demo-input" value={search} onChange={(e) => setSearch(e.target.value)} />
 				</label>
 				<label>
-					Status
+					{t('Status ')}
 					<select className="demo-input" value={filter} onChange={(e) => setFilter(e.target.value)}>
 						{['Todos', 'Confirmado', 'Estimado', 'Pendente', 'Desatualizado'].map((s) => (
-							<option key={s}>{s}</option>
+							<option key={s} value={s}>
+								{t(s)}
+							</option>
 						))}
 					</select>
 				</label>
 			</div>
 			<button type="button" className="demo-button" disabled={busy} onClick={() => setEditing(empty())}>
-				Novo ingrediente
+				{t('Novo ingrediente ')}
 			</button>
 			<button
 				type="button"
@@ -117,7 +120,7 @@ export function IngredientsPage() {
 					setFilter('Todos');
 				}}
 			>
-				Limpar filtros
+				{t('Limpar filtros ')}
 			</button>
 			{editing && (
 				<form
@@ -126,10 +129,10 @@ export function IngredientsPage() {
 						void mutate(false);
 					}}
 				>
-					<h2>{editing.ingredient_id ? 'Editar ingrediente' : 'Novo ingrediente'}</h2>
+					<h2>{editing.ingredient_id ? t('Editar ingrediente') : t('Novo ingrediente')}</h2>
 					<div className="demo-grid">
 						<label>
-							Nome
+							{t('Nome ')}
 							<input
 								className="demo-input"
 								required
@@ -139,7 +142,7 @@ export function IngredientsPage() {
 							/>
 						</label>
 						<label>
-							Unidade base
+							{t('Unidade base ')}
 							<select
 								className="demo-input"
 								value={editing.base_unit}
@@ -151,7 +154,7 @@ export function IngredientsPage() {
 							</select>
 						</label>
 						<label>
-							Quantidade no pacote
+							{t('Quantidade no pacote ')}
 							<input
 								className="demo-input"
 								inputMode="decimal"
@@ -161,7 +164,7 @@ export function IngredientsPage() {
 							/>
 						</label>
 						<label>
-							Preço do pacote (centavos)
+							{t('Preço do pacote (centavos) ')}
 							<input
 								className="demo-input"
 								type="number"
@@ -172,19 +175,21 @@ export function IngredientsPage() {
 							/>
 						</label>
 						<label>
-							Status
+							{t('Status ')}
 							<select
 								className="demo-input"
 								value={editing.status ?? 'Pendente'}
 								onChange={(e) => setEditing({ ...editing, status: e.target.value })}
 							>
 								{['Confirmado', 'Estimado', 'Pendente', 'Desatualizado'].map((s) => (
-									<option key={s}>{s}</option>
+									<option key={s} value={s}>
+										{t(s)}
+									</option>
 								))}
 							</select>
 						</label>
 						<label>
-							Data da cotação
+							{t('Data da cotação ')}
 							<input
 								className="demo-input"
 								type="date"
@@ -203,33 +208,34 @@ export function IngredientsPage() {
 							</label>
 						))}
 					</div>
-					<p>Deixe o preço vazio quando ainda estiver pendente. Cada edição preserva a cotação anterior no histórico.</p>
+					<p>{t('Deixe o preço vazio quando ainda estiver pendente. Cada edição preserva a cotação anterior no histórico.')}</p>
 					<button className="demo-button" disabled={busy}>
-						Salvar ingrediente e cotação
+						{t('Salvar ingrediente e cotação ')}
 					</button>
 					<button type="button" className="demo-button demo-button-secondary" disabled={busy} onClick={() => setEditing(null)}>
-						Cancelar
+						{t('Cancelar ')}
 					</button>
 					{editing.ingredient_id && (
 						<button type="button" className="demo-button demo-button-danger" disabled={busy} onClick={() => void mutate(true)}>
-							Excluir ingrediente
+							{t('Excluir ingrediente ')}
 						</button>
 					)}
 				</form>
 			)}
 			<p>
-				{visible.length} de {items.length} ingredientes
+				{visible.length} {t(' de ')}
+				{items.length} {t(' ingredientes ')}
 			</p>
 			<div style={{ overflowX: 'auto' }}>
 				<table className="demo-table">
 					<thead>
 						<tr>
-							<th>Ingrediente</th>
-							<th>Pacote</th>
-							<th>Preço</th>
-							<th>Fornecedor</th>
-							<th>Status</th>
-							<th>Ação</th>
+							<th>{t('Ingrediente')}</th>
+							<th>{t('Pacote')}</th>
+							<th>{t('Preço')}</th>
+							<th>{t('Fornecedor')}</th>
+							<th>{t('Status')}</th>
+							<th>{t('Ação')}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -241,14 +247,15 @@ export function IngredientsPage() {
 								</td>
 								<td>
 									{i.pack_price_cents === null
-										? 'Pendente'
-										: (i.pack_price_cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+										? t('Pendente')
+										: (i.pack_price_cents / 100).toLocaleString(formatLocale(), { style: 'currency', currency: 'BRL' })}
 								</td>
 								<td>{i.supplier ?? '—'}</td>
 								<td>{i.status ?? 'Pendente'}</td>
 								<td>
 									<button type="button" className="demo-button demo-button-secondary" disabled={busy} onClick={() => setEditing({ ...i })}>
-										Editar {i.name}
+										{t('Editar ')}
+										{i.name}
 									</button>
 								</td>
 							</tr>
@@ -256,7 +263,7 @@ export function IngredientsPage() {
 					</tbody>
 				</table>
 			</div>
-			{!visible.length && <p>Nenhum ingrediente encontrado.</p>}
+			{!visible.length && <p>{t('Nenhum ingrediente encontrado.')}</p>}
 		</div>
 	);
 }

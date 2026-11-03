@@ -11,6 +11,7 @@ import { ThemeToggle } from "../src";
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  document.cookie = "sabores_theme=; Path=/; Max-Age=0";
   document.documentElement.removeAttribute("data-theme");
   document.documentElement.style.removeProperty("color-scheme");
 });

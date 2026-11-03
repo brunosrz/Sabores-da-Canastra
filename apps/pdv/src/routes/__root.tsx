@@ -1,4 +1,5 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router';
+import { getLocale } from '@sabores/i18n';
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools';
 import { TanStackDevtools } from '@tanstack/react-devtools';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
@@ -89,7 +90,7 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
-		<html lang="pt-BR" suppressHydrationWarning>
+		<html lang={getLocale()} suppressHydrationWarning>
 			<head>
 				<script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
 				<HeadContent />

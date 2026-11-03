@@ -76,20 +76,32 @@ def _run(
     env: dict[str, str] | None = None,
     input_text: str | None = None,
     capture: bool = False,
+    network_attempts: int = 1,
 ) -> str:
     print(f"\n>> [{cwd.relative_to(ROOT)}] {' '.join(command)}")
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        env={**ROOT_ENV, **(env or {})},
-        input=input_text,
-        capture_output=capture or input_text is not None,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdin=subprocess.DEVNULL if input_text is None else None,
-        check=False,
-    )
+    for attempt in range(network_attempts):
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            env={**ROOT_ENV, **(env or {})},
+            input=input_text,
+            capture_output=capture or input_text is not None or network_attempts > 1,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL if input_text is None else None,
+            check=False,
+        )
+        output = (result.stdout or "") + (result.stderr or "")
+        transient = re.search(r"fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|UND_ERR_CONNECT_TIMEOUT", output, re.IGNORECASE)
+        denied = re.search(r"authentication error|authorization error|invalid.*token|\b(401|403)\b", output, re.IGNORECASE)
+        if not result.returncode or not transient or denied or attempt == network_attempts - 1:
+            break
+        print(f"Falha temporária de rede; nova tentativa {attempt + 2}/{network_attempts} em {2 ** (attempt + 1)} s.")
+        time.sleep(2 ** (attempt + 1))
+    if network_attempts > 1 and not capture and input_text is None:
+        _write_console(result.stdout or "", sys.stdout)
+        _write_console(result.stderr or "", sys.stderr)
     if input_text is not None or (capture and result.returncode != 0):
         if result.stdout:
             _write_console(result.stdout, sys.stdout)
@@ -116,6 +128,7 @@ def _cloudflare_preflight() -> tuple[str, str]:
     identity = _run(
         [PNPM, "--filter", "@sabores/api", "exec", "wrangler", "whoami"],
         capture=True,
+        network_attempts=3,
     )
     if account_id not in identity:
         raise SystemExit(
@@ -301,6 +314,7 @@ def _deploy_api(environment: str) -> None:
             "wrangler.jsonc",
         ],
         cwd=API,
+        network_attempts=3,
     )
     _run(
         [
@@ -318,6 +332,7 @@ def _deploy_api(environment: str) -> None:
         ],
         cwd=API,
         input_text=json.dumps(secrets),
+        network_attempts=3,
     )
     secret_names = _run(
         [
@@ -337,6 +352,7 @@ def _deploy_api(environment: str) -> None:
         ],
         cwd=API,
         capture=True,
+        network_attempts=3,
     )
     try:
         configured_secret_names = {
@@ -355,6 +371,7 @@ def _deploy_api(environment: str) -> None:
         )
     _run(
         [PNPM, "--filter", "@sabores/api", "deploy:" + environment],
+        network_attempts=3,
     )
 
 
@@ -368,6 +385,7 @@ def _deploy_web(app: Path, environment: str) -> None:
         [PNPM, "--filter", f"@sabores/{app.name}", "exec", "wrangler", "deploy"],
         cwd=ROOT,
         env={"CLOUDFLARE_ENV": environment},
+        network_attempts=3,
     )
 
 

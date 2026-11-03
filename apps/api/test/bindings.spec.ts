@@ -193,6 +193,118 @@ async function authenticatedCookie(role = "owner") {
 }
 
 describe("bindings Cloudflare locais", () => {
+  it("edita ingredientes atomicamente e preserva cotações ao recusar unidade ou exclusão referenciada", async () => {
+    const owner = await authenticatedCookie();
+    const operator = await authenticatedCookie("operator");
+    const call = (
+      path: string,
+      method: string,
+      body?: unknown,
+      cookie = owner,
+      origin = "https://erp.example.test",
+    ) =>
+      app.request(
+        `https://api.example.test/api/admin/ingredients${path}`,
+        {
+          method,
+          headers: { cookie, origin, "content-type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        },
+        { ...bindings, AUTH_ALLOWED_ORIGINS: "https://erp.example.test" },
+      );
+    const payload = {
+      name: `Ingrediente ${crypto.randomUUID()}`,
+      base_unit: "g",
+      pack_quantity: "1000",
+      pack_price_cents: 1200,
+      supplier: "Fornecedor",
+      notes: null,
+      source: "Cotação",
+      status: "Confirmado",
+      quoted_on: "2026-11-02",
+    };
+    expect((await call("", "GET", undefined, operator)).status).toBe(403);
+    expect(
+      (await call("", "POST", payload, owner, "https://invalid.test")).status,
+    ).toBe(403);
+    for (const invalid of [
+      { pack_quantity: "0" },
+      { pack_quantity: "1e6" },
+      { base_unit: "kg" },
+      { quoted_on: "2026-02-30" },
+      { pack_price_cents: -1 },
+      { pack_price_cents: null },
+    ]) {
+      expect((await call("", "POST", { ...payload, ...invalid })).status).toBe(
+        422,
+      );
+    }
+    const created = await call("", "POST", payload);
+    expect(created.status).toBe(201);
+    const { ingredient_id: id } = await created.json<{
+      ingredient_id: string;
+    }>();
+    expect(
+      (await call(`/${id}`, "PUT", { ...payload, pack_price_cents: 1400 }))
+        .status,
+    ).toBe(200);
+    const quotes = await bindings.DB.prepare(
+      "SELECT pack_price_cents, is_current FROM ingredient_quotes WHERE ingredient_id = ? ORDER BY pack_price_cents",
+    )
+      .bind(id)
+      .all();
+    expect(quotes.results).toEqual([
+      { pack_price_cents: 1200, is_current: 0 },
+      { pack_price_cents: 1400, is_current: 1 },
+    ]);
+    const recipe = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO recipes (recipe_id, product_name, version, yield_units, created_at, updated_at) VALUES (?, 'Teste', '1', 1, ?, ?)",
+      ).bind(recipe, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, '1', 'g')",
+      ).bind(crypto.randomUUID(), recipe, id),
+    ]);
+    expect(
+      (await call(`/${id}`, "PUT", { ...payload, base_unit: "ml" })).status,
+    ).toBe(409);
+    expect((await call(`/${id}`, "DELETE")).status).toBe(409);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT COUNT(*) AS count FROM ingredient_quotes WHERE ingredient_id = ?",
+      )
+        .bind(id)
+        .first(),
+    ).toEqual({ count: 2 });
+    expect(
+      await bindings.DB.prepare(
+        "SELECT base_unit FROM ingredients WHERE ingredient_id = ?",
+      )
+        .bind(id)
+        .first(),
+    ).toEqual({ base_unit: "g" });
+    const another = await call("", "POST", {
+      ...payload,
+      name: `Remover ${crypto.randomUUID()}`,
+      status: "Pendente",
+      pack_price_cents: null,
+    });
+    const { ingredient_id: removable } = await another.json<{
+      ingredient_id: string;
+    }>();
+    expect((await call(`/${removable}`, "DELETE")).status).toBe(200);
+    expect((await call(`/${removable}`, "DELETE")).status).toBe(404);
+    expect((await call(`/${removable}`, "PUT", payload)).status).toBe(404);
+    const listing = await (
+      await call("", "GET")
+    ).json<{ data: { ingredient_id: string; pack_price_cents: number }[] }>();
+    expect(
+      listing.data.find((i) => i.ingredient_id === id)?.pack_price_cents,
+    ).toBe(1400);
+  });
+
   it("valida cadastro completo, autorização e colisão de produtos", async () => {
     const owner = await authenticatedCookie();
     const operator = await authenticatedCookie("operator");

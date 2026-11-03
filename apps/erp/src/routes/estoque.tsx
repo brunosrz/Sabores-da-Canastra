@@ -1,4 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { InventoryPrototype } from '../prototype/pages';
+import { IngredientsPage } from '../ingredients-page';
 
-export const Route = createFileRoute('/estoque')({ component: InventoryPrototype });
+export const Route = createFileRoute('/estoque')({ component: IngredientsPage });

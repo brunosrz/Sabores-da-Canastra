@@ -24,6 +24,11 @@ async function proxy(request: Request) {
 }
 export const Route = createFileRoute('/api/admin/$')({
 	server: {
-		handlers: { GET: ({ request }) => proxy(request), POST: ({ request }) => proxy(request), PUT: ({ request }) => proxy(request) },
+		handlers: {
+			DELETE: ({ request }) => proxy(request),
+			GET: ({ request }) => proxy(request),
+			POST: ({ request }) => proxy(request),
+			PUT: ({ request }) => proxy(request),
+		},
 	},
 });

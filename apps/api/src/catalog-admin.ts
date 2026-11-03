@@ -31,6 +31,14 @@ admin.onError((error, c) => {
     return c.json({ error: "JSON inválido." }, 400);
   if (String(error).includes("UNIQUE constraint"))
     return c.json({ error: "Nome ou código já cadastrado." }, 409);
+  if (String(error).includes("FOREIGN KEY constraint"))
+    return c.json(
+      {
+        error:
+          "Ingrediente utilizado em receita ou compra; remova os vínculos antes de excluir.",
+      },
+      409,
+    );
   console.error("Falha no cadastro administrativo.", error);
   return c.json({ error: "Cadastro indisponível." }, 503);
 });
@@ -155,4 +163,159 @@ async function saveProduct(
 }
 admin.post("/products", (c) => saveProduct(c, true));
 admin.put("/products/:id", (c) => saveProduct(c, false));
+
+const units = new Set(["g", "ml", "un"]);
+const quoteStatuses = new Set([
+  "Confirmado",
+  "Estimado",
+  "Pendente",
+  "Desatualizado",
+]);
+function positiveDecimal(v: unknown) {
+  return (
+    typeof v === "string" &&
+    v.length <= 30 &&
+    /^\d+(?:\.\d{1,9})?$/.test(v) &&
+    /[1-9]/.test(v)
+  );
+}
+function validDate(v: unknown) {
+  return (
+    v === null ||
+    (typeof v === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(v) &&
+      Number.isFinite(Date.parse(v)) &&
+      new Date(v).toISOString().slice(0, 10) === v)
+  );
+}
+admin.get("/ingredients", async (c) => {
+  const result = await c.env.DB.prepare(
+    `SELECT i.*, q.pack_price_cents, q.status, q.quoted_on, q.source
+    FROM ingredients i LEFT JOIN ingredient_quotes q ON q.ingredient_id = i.ingredient_id AND q.is_current = 1
+    ORDER BY i.name COLLATE NOCASE`,
+  ).all();
+  return c.json({ data: result.results });
+});
+async function saveIngredient(
+  c: import("hono").Context<AdminEnv>,
+  create: boolean,
+) {
+  const b = await object(c.req.raw);
+  if (
+    !b ||
+    !text(b.name, 200) ||
+    !units.has(String(b.base_unit)) ||
+    !positiveDecimal(b.pack_quantity) ||
+    !money(b.pack_price_cents) ||
+    !nullableText(b.supplier, 200) ||
+    !nullableText(b.notes, 2000) ||
+    !nullableText(b.source, 500) ||
+    !validDate(b.quoted_on) ||
+    !quoteStatuses.has(String(b.status)) ||
+    (b.status === "Confirmado" && b.pack_price_cents === null)
+  ) {
+    return c.json(
+      {
+        error:
+          "Informe nome, unidade, quantidade positiva, preço em centavos ou nulo, status e data válida. Cotações confirmadas exigem preço.",
+      },
+      422,
+    );
+  }
+  const id = create ? crypto.randomUUID() : c.req.param("id");
+  const now = new Date().toISOString();
+  if (!create) {
+    const current = await c.env.DB.prepare(
+      "SELECT ingredient_id FROM ingredients WHERE ingredient_id = ?",
+    )
+      .bind(id)
+      .first();
+    if (!current) return c.json({ error: "Ingrediente não encontrado." }, 404);
+  }
+  // The conditional update also enforces unit compatibility inside the transaction.
+  const ingredient = create
+    ? c.env.DB.prepare(
+        "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, supplier, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(
+        id,
+        String(b.name).trim(),
+        b.base_unit,
+        b.pack_quantity,
+        b.supplier,
+        b.notes,
+        now,
+        now,
+      )
+    : c.env.DB.prepare(
+        `UPDATE ingredients SET name = ?, base_unit = ?, pack_quantity = ?, supplier = ?, notes = ?, updated_at = ?
+        WHERE ingredient_id = ? AND NOT EXISTS (SELECT 1 FROM recipe_lines WHERE ingredient_id = ? AND unit != ?)`,
+      ).bind(
+        String(b.name).trim(),
+        b.base_unit,
+        b.pack_quantity,
+        b.supplier,
+        b.notes,
+        now,
+        id,
+        id,
+        b.base_unit,
+      );
+  // All quote writes depend on the preceding update, preventing a partial change.
+  const result = await c.env.DB.batch([
+    ingredient,
+    c.env.DB.prepare(
+      "UPDATE ingredient_quotes SET is_current = 0 WHERE ingredient_id = ? AND is_current = 1 AND changes() > 0",
+    ).bind(id),
+    c.env.DB.prepare(
+      `INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, supplier, quoted_on, status, source, notes, is_current, created_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ? WHERE EXISTS (SELECT 1 FROM ingredients WHERE ingredient_id = ? AND updated_at = ? AND base_unit = ?)
+      AND NOT EXISTS (SELECT 1 FROM recipe_lines WHERE ingredient_id = ? AND unit != ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      id,
+      b.pack_price_cents,
+      b.pack_quantity,
+      b.base_unit,
+      b.supplier,
+      b.quoted_on,
+      b.status,
+      b.source,
+      b.notes,
+      now,
+      id,
+      now,
+      b.base_unit,
+      id,
+      b.base_unit,
+    ),
+  ]);
+  if (!result[0].meta.changes)
+    return c.json(
+      {
+        error:
+          "A unidade não pode divergir das receitas que utilizam este ingrediente.",
+      },
+      409,
+    );
+  await invalidateCatalogCache(c.env.CATALOG_CACHE);
+  return c.json({ ingredient_id: id }, create ? 201 : 200);
+}
+admin.post("/ingredients", (c) => saveIngredient(c, true));
+admin.put("/ingredients/:id", (c) => saveIngredient(c, false));
+admin.delete("/ingredients/:id", async (c) => {
+  const id = c.req.param("id");
+  // Foreign keys roll back the whole batch when a recipe or purchase refers to it.
+  const result = await c.env.DB.batch([
+    c.env.DB.prepare(
+      "DELETE FROM ingredient_quotes WHERE ingredient_id = ?",
+    ).bind(id),
+    c.env.DB.prepare("DELETE FROM ingredients WHERE ingredient_id = ?").bind(
+      id,
+    ),
+  ]);
+  if (!result[1].meta.changes)
+    return c.json({ error: "Ingrediente não encontrado." }, 404);
+  await invalidateCatalogCache(c.env.CATALOG_CACHE);
+  return c.json({ status: "deleted" });
+});
 export default admin;

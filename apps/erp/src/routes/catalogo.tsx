@@ -1,3 +1,4 @@
+import { apiFetch } from '@sabores/ui/platform';
 import { t } from '@sabores/i18n';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
@@ -28,12 +29,12 @@ const empty = (): Product => ({
 	notes: null,
 });
 async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
-	const response = await fetch(`/api/admin/${path}`, { credentials: 'same-origin', cache: 'no-store', ...init });
+	const response = await apiFetch(`/api/admin/${path}`, { credentials: 'same-origin', cache: 'no-store', ...init });
 	const body = (await response.json()) as T & { error?: string };
 	if (!response.ok) throw new Error(body.error ?? `Falha na operação (${response.status}).`);
 	return body;
 }
-function CatalogPage() {
+export function CatalogPage() {
 	const [products, setProducts] = useState<Product[]>([]);
 	const [categories, setCategories] = useState<Category[]>([]);
 	const [search, setSearch] = useState('');

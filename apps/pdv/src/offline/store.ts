@@ -1,4 +1,6 @@
+import { apiFetch } from '@sabores/ui/platform';
 import { canSyncOperation, operationIdentity, operationPayloadHash, type OperationEnvelope, type OperationType } from '@sabores/pdv-sync';
+import Dexie from 'dexie';
 
 export type QueueState = 'pending' | 'syncing' | 'synced' | 'duplicate' | 'conflict' | 'invalid' | 'auth_required';
 export type QueuedOperation = {
@@ -30,6 +32,7 @@ export const DEFAULT_FEES: PaymentFees = {
 const DB_NAME = 'sabores-pdv-offline-v1';
 const DB_VERSION = 2;
 let databasePromise: Promise<IDBDatabase> | undefined;
+let dexiePromise: Promise<Dexie> | undefined;
 
 function openDatabase() {
 	if (typeof indexedDB === 'undefined') return Promise.reject(new Error('Armazenamento local indisponível neste navegador.'));
@@ -46,10 +49,35 @@ function openDatabase() {
 			if (!database.objectStoreNames.contains('drafts')) database.createObjectStore('drafts', { keyPath: 'key' });
 			if (!database.objectStoreNames.contains('auth')) database.createObjectStore('auth', { keyPath: 'key' });
 		};
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error ?? new Error('Falha ao abrir armazenamento local.'));
+		request.onsuccess = () => {
+			const db = request.result;
+			db.onversionchange = () => {
+				db.close();
+				databasePromise = undefined;
+				dexiePromise = undefined;
+			};
+			resolve(db);
+		};
+		request.onerror = () => {
+			databasePromise = undefined;
+			reject(request.error ?? new Error('Falha ao abrir armazenamento local.'));
+		};
 	});
 	return databasePromise;
+}
+
+// Abrir o esquema legado primeiro preserva as versões IndexedDB 1 e 2.
+// Dexie descobre as tabelas existentes sem recriá-las ou alterar suas chaves.
+async function openDexieDatabase() {
+	await openDatabase();
+	if (!dexiePromise) {
+		const database = new Dexie(DB_NAME);
+		dexiePromise = database.open().catch((error: unknown) => {
+			dexiePromise = undefined;
+			throw error;
+		});
+	}
+	return dexiePromise;
 }
 
 async function requestValue<T>(storeName: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
@@ -57,8 +85,13 @@ async function requestValue<T>(storeName: string, mode: IDBTransactionMode, acti
 	return new Promise((resolve, reject) => {
 		const transaction = db.transaction(storeName, mode);
 		const request = action(transaction.objectStore(storeName));
-		request.onsuccess = () => resolve(request.result);
+		let value: T;
+		request.onsuccess = () => {
+			value = request.result;
+		};
+		transaction.oncomplete = () => resolve(value!);
 		request.onerror = () => reject(request.error ?? new Error('Falha ao acessar armazenamento local.'));
+		transaction.onerror = () => reject(transaction.error ?? new Error('Falha ao confirmar armazenamento local.'));
 		transaction.onabort = () => reject(transaction.error ?? new Error('Transação local cancelada.'));
 	});
 }
@@ -72,7 +105,7 @@ export async function getDeviceId() {
 }
 
 export async function listProducts(): Promise<CachedProduct[]> {
-	return (await requestValue('catalog', 'readonly', (store) => store.getAll())) as CachedProduct[];
+	return (await openDexieDatabase()).table<CachedProduct, string>('catalog').toArray();
 }
 
 export async function updateCatalog(): Promise<{
@@ -85,7 +118,7 @@ export async function updateCatalog(): Promise<{
 	const meta = await requestValue<{ key: string; value: string } | undefined>('metadata', 'readonly', (store) => store.get('catalog'));
 	const headers = new Headers();
 	if (meta?.value) headers.set('if-none-match', `"${meta.value}"`);
-	const response = await fetch('/api/pdv/catalog', {
+	const response = await apiFetch('/api/pdv/catalog', {
 		credentials: 'same-origin',
 		cache: 'no-store',
 		headers,
@@ -143,16 +176,16 @@ export async function catalogVersion() {
 }
 
 export async function saveDraft(draft: unknown) {
-	await requestValue('drafts', 'readwrite', (store) => store.put({ key: 'current', value: draft }));
+	await (await openDexieDatabase()).table('drafts').put({ key: 'current', value: draft });
 }
 
 export async function loadDraft<T>() {
-	const value = await requestValue<{ key: string; value: T } | undefined>('drafts', 'readonly', (store) => store.get('current'));
+	const value = await (await openDexieDatabase()).table<{ key: string; value: T }, string>('drafts').get('current');
 	return value?.value;
 }
 
 export async function clearDraft() {
-	await requestValue('drafts', 'readwrite', (store) => store.delete('current'));
+	await (await openDexieDatabase()).table('drafts').delete('current');
 }
 
 export type OfflineAuthSession = {
@@ -218,7 +251,7 @@ export async function commitSaleAndClearDraft(operation: OperationEnvelope) {
 }
 
 export async function listQueue(): Promise<QueuedOperation[]> {
-	const rows = (await requestValue('operations', 'readonly', (store) => store.getAll())) as QueuedOperation[];
+	const rows = await (await openDexieDatabase()).table<QueuedOperation, string>('operations').toArray();
 	return rows.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.queuedAt.localeCompare(b.queuedAt));
 }
 
@@ -300,7 +333,7 @@ export async function syncQueue(onChange?: () => void, actorUserId?: string) {
 			onChange?.();
 			let response: Response;
 			try {
-				response = await fetch('/api/pdv/operations', {
+				response = await apiFetch('/api/pdv/operations', {
 					method: 'POST',
 					credentials: 'same-origin',
 					headers: { 'content-type': 'application/json' },

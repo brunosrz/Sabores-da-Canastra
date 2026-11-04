@@ -49,6 +49,24 @@ alterar os valores, usando o utilitário do Vectora adaptado aos caminhos deste
 monorepo. O pre-commit executa a ordenação automaticamente e recompila o Paraglide
 quando os catálogos ou sua configuração mudam.
 
+### Base nativa em andamento
+
+Os projetos Capacitor do ERP e do PDV estão em `apps/erp/{android,ios}` e
+`apps/pdv/{android,ios}`. A partir da raiz, `pnpm --filter @sabores/pdv
+mobile:sync:android` e `pnpm --filter @sabores/erp mobile:sync:android` geram
+os assets e os copiam para os projetos Android. Os comandos equivalentes com
+`mobile:sync:ios` preparam os projetos iOS em um ambiente com Xcode.
+
+O shell nativo ainda está em desenvolvimento: os endpoints relativos `/api/*`
+dos sites dependem dos Workers, portanto login, API, dados offline e distribuição
+nativa ainda precisam ser integrados e validados. Copiar assets com Capacitor
+não comprova que o aplicativo instalado funciona nem gera um pacote assinado.
+
+ERP e PDV usam Dexie para leitura dos catálogos e das filas já existentes; o
+PDV também usa Dexie para rascunhos. As operações atômicas continuam no
+IndexedDB existente. A abertura preserva os bancos legados e não sincroniza,
+por si só, dispositivos ou origens distintas.
+
 ### Desenvolvimento web
 
 Requisitos: Node.js compatível com o `engines` do projeto e pnpm. Na raiz:

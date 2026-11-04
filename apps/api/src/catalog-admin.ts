@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { hasTrustedOrigin, type AuthBindings, type AuthUser } from "./auth";
 import { invalidateCatalogCache } from "./catalog-cache";
+import { productsWithCosts, type CostProduct } from "./product-cost";
 
 type AdminEnv = {
   Bindings: AuthBindings & { CATALOG_CACHE: KVNamespace };
@@ -107,8 +108,15 @@ admin.put("/categories/:id", async (c) => {
 admin.get("/products", async (c) => {
   const result = await c.env.DB.prepare(
     "SELECT p.*, c.name AS category FROM products p JOIN categories c ON c.category_id = p.category_id ORDER BY p.name COLLATE NOCASE",
-  ).all();
-  return c.json({ data: result.results });
+  ).all<CostProduct>();
+  const enriched = await productsWithCosts(c.env.DB, result.results);
+  return c.json({
+    data: enriched.map((p) => ({
+      ...p,
+      effective_unit_cost_cents: p.unit_cost_cents,
+      unit_cost_cents: p.manual_unit_cost_cents,
+    })),
+  });
 });
 async function saveProduct(
   c: import("hono").Context<AdminEnv>,
@@ -451,6 +459,44 @@ async function saveRecipe(
 }
 admin.post("/recipes", (c) => saveRecipe(c, true));
 admin.put("/recipes/:id", (c) => saveRecipe(c, false));
+admin.put("/recipes/:id/mix", async (c) => {
+  const b = await object(c.req.raw);
+  if (
+    !b ||
+    !Number.isSafeInteger(b.quantity) ||
+    Number(b.quantity) < 0 ||
+    !text(b.selected_version, 80)
+  )
+    return c.json(
+      { error: "Informe quantidade inteira não negativa e versão da receita." },
+      422,
+    );
+  const id = c.req.param("id");
+  const recipe = await c.env.DB.prepare(
+    "SELECT product_id, product_name, version FROM recipes WHERE recipe_id = ?",
+  )
+    .bind(id)
+    .first<{
+      product_id: string | null;
+      product_name: string;
+      version: string;
+    }>();
+  if (!recipe) return c.json({ error: "Receita não encontrada." }, 404);
+  if (b.selected_version !== recipe.version)
+    return c.json({ error: "Selecione a receita da versão desejada." }, 422);
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE daily_mix SET quantity = 0 WHERE recipe_id IN (
+      SELECT recipe_id FROM recipes WHERE (product_id IS NOT NULL AND product_id = ?) OR (product_id IS NULL AND product_name = ?)
+    )`,
+    ).bind(recipe.product_id, recipe.product_name),
+    c.env.DB.prepare(
+      "INSERT INTO daily_mix (recipe_id, quantity, selected_version) VALUES (?, ?, ?) ON CONFLICT(recipe_id) DO UPDATE SET quantity = excluded.quantity, selected_version = excluded.selected_version",
+    ).bind(id, b.quantity, b.selected_version),
+  ]);
+  await invalidateCatalogCache(c.env.CATALOG_CACHE);
+  return c.json({ status: "updated" });
+});
 admin.delete("/recipes/:id", async (c) => {
   const id = c.req.param("id");
   const result = await c.env.DB.batch([

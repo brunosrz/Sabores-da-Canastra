@@ -3,9 +3,9 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
 	feeCents,
-	lineTotalCents,
 	operationIdentity,
 	operationPayloadHash,
+	quantityMilli,
 	splitEqual,
 	validateOperationPayload,
 	type PaymentMethod,
@@ -13,6 +13,8 @@ import {
 	type SalePayment,
 } from '@sabores/pdv-sync';
 import { useAuthUser } from '../auth-gate';
+import { exactCodeMatch, searchProducts } from '../sale-search';
+import { basketAmount, lineAmount, normalizedQuantity } from '../sale-totals';
 import {
 	clearDraft,
 	commitSaleAndClearDraft,
@@ -46,7 +48,7 @@ const centsFromInput = (value: string) => {
 };
 const textMoney = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 
-function PdvHome() {
+export function PdvHome() {
 	const user = useAuthUser();
 	const [products, setProducts] = useState<CachedProduct[]>([]);
 	const [basket, setBasket] = useState<BasketLine[]>([]);
@@ -55,11 +57,15 @@ function PdvHome() {
 	const [customSplit, setCustomSplit] = useState(false);
 	const [splitAmounts, setSplitAmounts] = useState<string[]>(['0,00']);
 	const [search, setSearch] = useState('');
+	const [selectedResult, setSelectedResult] = useState(-1);
+	const [selectedProduct, setSelectedProduct] = useState<CachedProduct | null>(null);
+	const [selectedQuantity, setSelectedQuantity] = useState('1');
 	const [customer, setCustomer] = useState('');
 	const [notes, setNotes] = useState('');
 	const [catalogState, setCatalogState] = useState('Carregando catálogo local…');
 	const [busy, setBusy] = useState(false);
 	const [paymentOpen, setPaymentOpen] = useState(false);
+	const [paymentBasis, setPaymentBasis] = useState<number | null>(null);
 	const [receipt, setReceipt] = useState<{
 		sale: SaleCreatePayload;
 		occurredAt: string;
@@ -69,6 +75,8 @@ function PdvHome() {
 	const [deviceId, setDeviceId] = useState('');
 	const [fees, setFees] = useState(DEFAULT_FEES);
 	const searchInput = useRef<HTMLInputElement>(null);
+	const quantityInput = useRef<HTMLInputElement>(null);
+	const finalizing = useRef(false);
 
 	useEffect(() => {
 		void (async () => {
@@ -82,6 +90,7 @@ function PdvHome() {
 					payments?: PaymentDraft[];
 					customSplit?: boolean;
 					splitAmounts?: string[];
+					paymentBasis?: number | null;
 					draftId?: string;
 				}>(),
 				getDeviceId(),
@@ -99,6 +108,7 @@ function PdvHome() {
 				setPayments(draft.payments ?? [{ method: 'Dinheiro', partNumber: 1, amount: '0,00' }]);
 				setCustomSplit(draft.customSplit ?? false);
 				setSplitAmounts(draft.splitAmounts ?? ['0,00']);
+				setPaymentBasis(draft.paymentBasis ?? null);
 			}
 			setCatalogState(cached.length ? t('{p0} itens salvos neste dispositivo', { p0: cached.length }) : t('Nenhum catálogo local ainda'));
 			try {
@@ -129,13 +139,12 @@ function PdvHome() {
 			payments,
 			customSplit,
 			splitAmounts,
+			paymentBasis,
 		});
-	}, [draftId, basket, customer, notes, partCount, payments, customSplit, splitAmounts]);
+	}, [draftId, basket, customer, notes, partCount, payments, customSplit, splitAmounts, paymentBasis]);
 
-	const total = useMemo(
-		() => basket.reduce((sum, line) => sum + (lineTotalCents(line.quantity, line.product.sale_price_cents ?? 0) ?? 0), 0),
-		[basket],
-	);
+	const calculatedTotal = useMemo(() => basketAmount(basket), [basket]);
+	const total = calculatedTotal ?? 0;
 	const splits = useMemo(() => {
 		if (!customSplit) return splitEqual(total, partCount);
 		const amounts = splitAmounts.map(centsFromInput);
@@ -160,28 +169,44 @@ function PdvHome() {
 		const fee = amount === null ? null : feeCents(amount, rate);
 		return sum + (fee ?? 0);
 	}, 0);
-	const visibleProducts = products
-		.filter((product) =>
-			`${product.barcode ?? ''} ${product.auxiliary_code ?? ''} ${product.name} ${product.category}`
-				.toLocaleLowerCase()
-				.includes(search.trim().toLocaleLowerCase()),
-		)
-		.slice(0, 100);
+	const visibleProducts = searchProducts(products, search);
 
-	function addProduct(product: CachedProduct) {
+	function addProduct(product: CachedProduct, quantity: string) {
 		setBasket((current) => {
 			const existing = current.find((line) => line.product.product_id === product.product_id);
-			if (existing)
-				return current.map((line) =>
-					line.product.product_id === product.product_id ? { ...line, quantity: String(Number(line.quantity) + 1) } : line,
-				);
-			return [...current, { product, quantity: '1' }];
+			if (existing) {
+				const sum = (quantityMilli(normalizedQuantity(existing.quantity)) ?? 0) + (quantityMilli(quantity) ?? 0);
+				return current.map((line) => (line.product.product_id === product.product_id ? { ...line, quantity: String(sum / 1000) } : line));
+			}
+			return [...current, { product, quantity }];
 		});
 	}
 
 	function selectProduct(product: CachedProduct) {
-		addProduct(product);
+		if (product.sale_price_cents == null) {
+			setMessage(t('Preço pendente'));
+			return;
+		}
+		setSelectedProduct(product);
+		setSelectedQuantity('1');
+		setMessage('');
+		requestAnimationFrame(() => quantityInput.current?.focus());
+	}
+
+	function confirmSelectedProduct() {
+		if (!selectedProduct) return;
+		const normalized = selectedQuantity.trim().replace(',', '.');
+		const quantity = quantityMilli(normalized);
+		const existing = basket.find((line) => line.product.product_id === selectedProduct.product_id);
+		const existingQuantity = existing ? quantityMilli(normalizedQuantity(existing.quantity)) : 0;
+		if (!quantity || existingQuantity === null || !Number.isSafeInteger(quantity + existingQuantity)) {
+			setMessage(t('Quantidade inválida'));
+			return;
+		}
+		addProduct(selectedProduct, normalized);
+		setSelectedProduct(null);
 		setSearch('');
+		setSelectedResult(-1);
 		requestAnimationFrame(() => searchInput.current?.focus());
 	}
 
@@ -190,6 +215,7 @@ function PdvHome() {
 	}
 
 	function selectPartCount(value: number) {
+		setPaymentBasis(total);
 		setPartCount(value);
 		setCustomSplit(false);
 		const nextSplits = splitEqual(total, value) ?? [];
@@ -209,8 +235,17 @@ function PdvHome() {
 	}
 
 	function openPayment() {
-		if (!basket.length) return;
+		if (!basket.length || calculatedTotal === null) return;
+		if (paymentBasis === total) {
+			setMessage('');
+			setPaymentOpen(true);
+			return;
+		}
 		const equalParts = splitEqual(total, partCount) ?? [];
+		setCustomSplit(false);
+		setSplitAmounts(equalParts.map((part) => textMoney(part.dueCents)));
+		setMessage(paymentBasis !== null ? t('O total mudou; confira novamente os pagamentos.') : '');
+		setPaymentBasis(total);
 		setPayments(
 			equalParts.map((part) => ({
 				method: 'Dinheiro',
@@ -222,7 +257,15 @@ function PdvHome() {
 	}
 
 	async function finalizeSale() {
-		if (busy || !user) return;
+		if (busy || finalizing.current || !user) return;
+		if (calculatedTotal === null) {
+			setMessage(t('Quantidade inválida'));
+			return;
+		}
+		if (basket.some((line) => line.product.sale_price_cents == null)) {
+			setMessage(t('Preço pendente'));
+			return;
+		}
 		if (!basket.length || paymentTotal !== total || !splits) {
 			setMessage(t('Inclua itens e confira se os pagamentos reconciliam com o total.'));
 			return;
@@ -240,6 +283,7 @@ function PdvHome() {
 				return;
 			}
 		}
+		finalizing.current = true;
 		setBusy(true);
 		setMessage('');
 		try {
@@ -258,10 +302,10 @@ function PdvHome() {
 					productId: line.product.product_id,
 					name: line.product.name,
 					category: line.product.category,
-					quantity: line.quantity,
+					quantity: normalizedQuantity(line.quantity),
 					unitPriceCents: line.product.sale_price_cents ?? 0,
 					unitCostCents: line.product.unit_cost_cents ?? null,
-					lineTotalCents: lineTotalCents(line.quantity, line.product.sale_price_cents ?? 0) ?? 0,
+					lineTotalCents: lineAmount(line) ?? 0,
 					position,
 				})),
 				splits: splits.map((part) => ({ ...part })),
@@ -298,6 +342,7 @@ function PdvHome() {
 			setPayments([{ method: 'Dinheiro', partNumber: 1, amount: '0,00' }]);
 			setCustomSplit(false);
 			setSplitAmounts(['0,00']);
+			setPaymentBasis(null);
 			setDraftId(crypto.randomUUID());
 			setMessage(
 				navigator.onLine
@@ -311,6 +356,7 @@ function PdvHome() {
 		} catch (error) {
 			setMessage(error instanceof Error ? error.message : t('Não foi possível salvar a venda neste dispositivo.'));
 		} finally {
+			finalizing.current = false;
 			setBusy(false);
 		}
 	}
@@ -320,6 +366,7 @@ function PdvHome() {
 		setBasket([]);
 		setPayments([{ method: 'Dinheiro', partNumber: 1, amount: '0,00' }]);
 		setPartCount(1);
+		setPaymentBasis(null);
 		setCustomSplit(false);
 		setSplitAmounts(['0,00']);
 		setCustomer('');
@@ -367,19 +414,76 @@ function PdvHome() {
 						id="product-search"
 						className="demo-input pdv-search"
 						value={search}
-						onChange={(event) => setSearch(event.target.value)}
+						onChange={(event) => {
+							setSearch(event.target.value);
+							setSelectedResult(-1);
+						}}
 						onKeyDown={(event) => {
-							if (event.key === 'Enter' && visibleProducts[0]) {
+							if (event.key === 'ArrowDown' && visibleProducts.length) {
 								event.preventDefault();
-								selectProduct(visibleProducts[0]);
+								setSelectedResult((index) => Math.min(index + 1, visibleProducts.length - 1));
+							} else if (event.key === 'ArrowUp' && visibleProducts.length) {
+								event.preventDefault();
+								setSelectedResult((index) => Math.max(index - 1, 0));
+							} else if (event.key === 'Enter') {
+								event.preventDefault();
+								const product = visibleProducts[selectedResult] ?? exactCodeMatch(visibleProducts, search);
+								if (product) selectProduct(product);
 							}
 						}}
+						role="combobox"
+						aria-expanded={visibleProducts.length > 0}
+						aria-controls="product-search-results"
+						aria-activedescendant={visibleProducts[selectedResult] ? `product-result-${selectedResult}` : undefined}
 						placeholder={t('Código de barras, auxiliar ou nome')}
 						autoComplete="off"
 					/>
-					<div className="pdv-product-list" role="list">
-						{visibleProducts.map((product) => (
-							<button type="button" className="pdv-product" key={product.product_id} onClick={() => selectProduct(product)}>
+					{selectedProduct ? (
+						<form
+							onSubmit={(event) => {
+								event.preventDefault();
+								confirmSelectedProduct();
+							}}
+							className="pdv-section-heading"
+						>
+							<label>
+								<strong>{selectedProduct.name}</strong>
+								<span> {t('Quantidade')} </span>
+								<input
+									ref={quantityInput}
+									className="demo-input"
+									inputMode="decimal"
+									value={selectedQuantity}
+									onChange={(event) => setSelectedQuantity(event.target.value)}
+								/>
+							</label>
+							<button type="submit" className="demo-button">
+								{t('Adicionar')}
+							</button>
+							<button
+								type="button"
+								className="demo-button demo-button-secondary"
+								onClick={() => {
+									setSelectedProduct(null);
+									searchInput.current?.focus();
+								}}
+							>
+								{t('Cancelar')}
+							</button>
+							{message ? <span role="alert">{message}</span> : null}
+						</form>
+					) : null}
+					<div className="pdv-product-list" role="listbox" id="product-search-results" aria-label={t('Produtos')}>
+						{visibleProducts.map((product, index) => (
+							<button
+								type="button"
+								role="option"
+								aria-selected={selectedResult === index}
+								id={`product-result-${index}`}
+								className="pdv-product"
+								key={product.product_id}
+								onClick={() => selectProduct(product)}
+							>
 								<span>
 									<strong>{product.name}</strong>
 									<small>
@@ -393,7 +497,7 @@ function PdvHome() {
 								<span className="pdv-product-prices">
 									<b>
 										{t('Venda ')}
-										{money(product.sale_price_cents ?? 0)}
+										{product.sale_price_cents == null ? t('Preço pendente') : money(product.sale_price_cents)}
 									</b>
 									<small>
 										{t('Custo ')}
@@ -434,10 +538,11 @@ function PdvHome() {
 										className="demo-input pdv-quantity"
 										inputMode="decimal"
 										value={line.quantity}
+										aria-invalid={lineAmount(line) === null}
 										onChange={(event) => setQuantity(line.product.product_id, event.target.value)}
 									/>
 								</label>
-								<b>{money(lineTotalCents(line.quantity, line.product.sale_price_cents ?? 0) ?? 0)}</b>
+								<b>{lineAmount(line) === null ? t('Quantidade inválida') : money(lineAmount(line)!)}</b>
 								<button
 									type="button"
 									aria-label={t('Remover {p0}', { p0: line.product.name })}
@@ -465,11 +570,11 @@ function PdvHome() {
 							<h3>{t('Subtotal')}</h3>
 							<small>{t('Pagamento definido ao finalizar')}</small>
 						</div>
-						<strong>{money(total)}</strong>
+						<strong>{calculatedTotal === null ? t('Quantidade inválida') : money(total)}</strong>
 					</div>
-					<button type="button" className="pdv-confirm" onClick={openPayment} disabled={!basket.length}>
+					<button type="button" className="pdv-confirm" onClick={openPayment} disabled={!basket.length || calculatedTotal === null}>
 						{t('Finalizar venda · ')}
-						{money(total)}
+						{calculatedTotal === null ? t('Quantidade inválida') : money(total)}
 					</button>
 					{message ? (
 						<p role="status" className="pdv-message">
@@ -545,6 +650,11 @@ function PdvHome() {
 										{t('× ')}
 									</button>
 								</div>
+								{message ? (
+									<p role="status" className="pdv-message">
+										{message}
+									</p>
+								) : null}
 								<p className="demo-muted">
 									{t('Taxas: débito ')}
 									{(Number(fees['Débito']) * 100).toLocaleString(formatLocale())}
@@ -580,7 +690,10 @@ function PdvHome() {
 										{money(total)}).
 									</p>
 								) : null}
-								{splits?.map((part) => (
+								{Array.from({ length: partCount }, (_, index) => ({
+									partNumber: index + 1,
+									dueCents: splits?.[index]?.dueCents ?? 0,
+								})).map((part) => (
 									<div className="pdv-payment-part" key={part.partNumber}>
 										<div className="pdv-section-heading">
 											<strong>
@@ -615,7 +728,7 @@ function PdvHome() {
 														{t('Forma ')}
 														<select
 															className="demo-select"
-															value={t(payment.method)}
+															value={payment.method}
 															onChange={(event) =>
 																setPayments((current) =>
 																	current.map((item, currentIndex) =>

@@ -4,8 +4,8 @@ name: Release Please
 # .github/release-lines.json (mesmo modelo do Vectora):
 # - maintenance (master): patches da série estável, ex.: 0.1.x;
 # - development (release/X.Y): próxima minor, promovida para master ao publicar.
-# O push que mescla a PR de release é ignorado para não abrir outra PR. Depois
-# que o Release Please gera a PR, os utilitários em utils/ normalizam o
+# O push que mescla a PR de release deve executar o Release Please para criar
+# a tag e a release. Depois que ele gera a PR, os utilitários em utils/ normalizam o
 # changelog, o corpo da PR e, numa nova minor, a rotação das linhas.
 
 on:
@@ -25,7 +25,6 @@ permissions:
 
 jobs:
   release-please:
-    if: "${{ !contains(github.event.head_commit.message, 'chore: release ') && !contains(github.event.head_commit.message, 'chore(release/') }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

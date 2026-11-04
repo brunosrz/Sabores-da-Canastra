@@ -1,3 +1,7 @@
+import { apiFetch } from '@sabores/ui/platform';
+import { isOnline } from '@sabores/ui/lifecycle';
+import Dexie from 'dexie';
+
 export type ErpProduct = {
 	product_id: string;
 	name: string;
@@ -15,6 +19,7 @@ export type ErpSession = {
 };
 export type PriceOperation = {
 	operationId: string;
+	actorUserId?: string;
 	productId: string;
 	basePriceCents: number | null;
 	salePriceCents: number;
@@ -25,6 +30,7 @@ export type PriceOperation = {
 
 const DATABASE = 'sabores-erp-offline-v1';
 let database: Promise<IDBDatabase> | undefined;
+let dexiePromise: Promise<Dexie> | undefined;
 function openDatabase() {
 	if (typeof indexedDB === 'undefined') return Promise.reject(new Error('Armazenamento offline indisponível.'));
 	database ??= new Promise((resolve, reject) => {
@@ -35,10 +41,33 @@ function openDatabase() {
 			db.createObjectStore('operations', { keyPath: 'operationId' });
 			db.createObjectStore('metadata', { keyPath: 'key' });
 		};
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error ?? new Error('Falha ao abrir o banco offline.'));
+		request.onsuccess = () => {
+			const db = request.result;
+			db.onversionchange = () => {
+				db.close();
+				database = undefined;
+				dexiePromise = undefined;
+			};
+			resolve(db);
+		};
+		request.onerror = () => {
+			database = undefined;
+			reject(request.error ?? new Error('Falha ao abrir o banco offline.'));
+		};
 	});
 	return database;
+}
+
+async function openDexieDatabase() {
+	await openDatabase();
+	if (!dexiePromise) {
+		const instance = new Dexie(DATABASE);
+		dexiePromise = instance.open().catch((error: unknown) => {
+			dexiePromise = undefined;
+			throw error;
+		});
+	}
+	return dexiePromise;
 }
 function request<T>(storeName: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>) {
 	return openDatabase().then(
@@ -68,9 +97,9 @@ export const clearErpSession = () => request('metadata', 'readwrite', (store) =>
 export const hasPendingLogout = () => request('metadata', 'readonly', (store) => store.get('pendingLogout')).then(Boolean);
 export const setPendingLogout = () => request('metadata', 'readwrite', (store) => store.put({ key: 'pendingLogout', value: true }));
 export const clearPendingLogout = () => request('metadata', 'readwrite', (store) => store.delete('pendingLogout'));
-export const loadProducts = () => request<ErpProduct[]>('products', 'readonly', (store) => store.getAll());
+export const loadProducts = async () => (await openDexieDatabase()).table<ErpProduct, string>('products').toArray();
 export async function refreshProducts() {
-	const response = await fetch('/api/erp/catalog/products', {
+	const response = await apiFetch('/api/erp/catalog/products', {
 		credentials: 'same-origin',
 		cache: 'no-store',
 	});
@@ -108,7 +137,7 @@ export function mergePendingPrices(products: ErpProduct[], operations: PriceOper
 		return latest ? { ...product, sale_price_cents: latest.salePriceCents } : product;
 	});
 }
-export const listPriceOperations = () => request<PriceOperation[]>('operations', 'readonly', (store) => store.getAll());
+export const listPriceOperations = async () => (await openDexieDatabase()).table<PriceOperation, string>('operations').toArray();
 export async function discardPriceConflict(operationId: string) {
 	const db = await openDatabase();
 	await new Promise<void>((resolve, reject) => {
@@ -125,8 +154,11 @@ export async function discardPriceConflict(operationId: string) {
 	window.dispatchEvent(new Event('erp-price-queue-changed'));
 }
 export async function enqueuePriceChange(productId: string, salePriceCents: number) {
+	const session = await loadErpSession();
+	if (!session || session.user.role !== 'owner') throw new Error('Entre com uma conta autorizada para alterar preços.');
 	const operation: PriceOperation = {
 		operationId: crypto.randomUUID(),
+		actorUserId: session.user.id,
 		productId,
 		basePriceCents: null,
 		salePriceCents,
@@ -150,33 +182,49 @@ export async function enqueuePriceChange(productId: string, salePriceCents: numb
 	});
 	return operation;
 }
-export async function syncPriceQueue() {
-	if (!navigator.onLine)
+let priceSync: Promise<{ applied: number; pending: number }> | undefined;
+
+export function syncPriceQueue() {
+	if (!priceSync) {
+		const run = () => (navigator.locks ? navigator.locks.request('sabores-erp-price-sync', runPriceSync) : runPriceSync());
+		priceSync = run().finally(() => {
+			priceSync = undefined;
+		});
+	}
+	return priceSync;
+}
+
+async function runPriceSync() {
+	if (!(await isOnline()))
 		return {
 			applied: 0,
-			pending: (await listPriceOperations()).filter((item) => item.state === 'pending').length,
+			pending: (await listPriceOperations()).filter((item) => item.state === 'pending' || item.state === 'blocked_auth').length,
 		};
 	const session = await loadErpSession();
 	let applied = 0;
-	for (const operation of await listPriceOperations()) {
-		if (operation.state === 'blocked_auth' && session) {
+	const queued = await listPriceOperations();
+	queued.sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || a.operationId.localeCompare(b.operationId));
+	for (const operation of queued) {
+		if (operation.state === 'blocked_auth' && session && operation.actorUserId === session.user.id && session.user.role === 'owner') {
 			await request('operations', 'readwrite', (store) => store.put({ ...operation, state: 'pending', error: undefined }));
 			operation.state = 'pending';
 		}
 		if (operation.state !== 'pending') continue;
-		if (!session) {
+		if (!session || session.user.role !== 'owner' || operation.actorUserId !== session.user.id) {
 			await request('operations', 'readwrite', (store) =>
 				store.put({
 					...operation,
 					state: 'blocked_auth',
-					error: 'Entre novamente para sincronizar este ajuste.',
+					error: operation.actorUserId
+						? 'Entre com a conta que registrou este ajuste.'
+						: 'Ajuste antigo sem autoria: é necessária revisão manual.',
 				}),
 			);
 			continue;
 		}
 		let response: Response;
 		try {
-			response = await fetch('/api/erp/product-price', {
+			response = await apiFetch('/api/erp/product-price', {
 				method: 'POST',
 				credentials: 'same-origin',
 				headers: { 'content-type': 'application/json' },
@@ -206,6 +254,8 @@ export async function syncPriceQueue() {
 			continue;
 		}
 		if (!response.ok) break;
+		const result = (await response.json().catch(() => null)) as { status?: unknown } | null;
+		if (result?.status !== 'applied' && result?.status !== 'already_applied') break;
 		await request('operations', 'readwrite', (store) => store.put({ ...operation, state: 'synced' }));
 		applied += 1;
 	}

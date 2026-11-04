@@ -4,7 +4,7 @@ import { Badge, Card, PageHeader, Preferences } from '@sabores/ui';
 
 export const Route = createFileRoute('/ajustes')({ component: PdvSettings });
 
-function PdvSettings() {
+export function PdvSettings() {
 	return (
 		<div className="demo-page">
 			<PageHeader

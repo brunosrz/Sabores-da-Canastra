@@ -193,6 +193,124 @@ async function authenticatedCookie(role = "owner") {
 }
 
 describe("bindings Cloudflare locais", () => {
+  it("resolve custo manual, mix e receita e congela o custo do servidor sem alterar o hash offline", async () => {
+    const { resolveProductCosts } = await import("../src/product-cost");
+    const { applyPdvOperation } = await import("../src/pdv-operations");
+    const operation = await makeOfflineOperation();
+    const item = (operation.payload as SaleCreatePayload).items[0]!;
+    const productId = item.productId;
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "UPDATE products SET unit_cost_cents = NULL WHERE product_id = ?",
+      ).bind(productId),
+      bindings.DB.prepare(
+        "INSERT INTO ingredients (ingredient_id, name, base_unit, pack_quantity, created_at, updated_at) VALUES (?, ?, 'g', '1000', ?, ?)",
+      ).bind(id, id, now, now),
+      bindings.DB.prepare(
+        "INSERT INTO ingredient_quotes (quote_id, ingredient_id, pack_price_cents, pack_quantity, base_unit, status, is_current, created_at) VALUES (?, ?, 1000, '1000', 'g', 'Confirmado', 1, ?)",
+      ).bind(id, id, now),
+      ...["A", "Z"].flatMap((version, index) => [
+        bindings.DB.prepare(
+          "INSERT INTO recipes (recipe_id, product_id, product_name, version, yield_units, created_at, updated_at) VALUES (?, ?, ?, ?, 2, ?, ?)",
+        ).bind(`${id}-${version}`, productId, item.name, version, now, now),
+        bindings.DB.prepare(
+          "INSERT INTO recipe_lines (line_id, recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, ?, 'g')",
+        ).bind(
+          `${id}-${version}`,
+          `${id}-${version}`,
+          id,
+          String(100 * (index + 1)),
+        ),
+      ]),
+    ]);
+    const product = {
+      product_id: productId,
+      name: item.name,
+      unit_cost_cents: null,
+    };
+    const resolve = async () =>
+      (await resolveProductCosts(bindings.DB, [product])).get(productId);
+    expect(await resolve()).toMatchObject({
+      unit_cost_cents: 50,
+      cost_source: "recipe",
+      cost_recipe_id: `${id}-A`,
+    });
+    await bindings.DB.prepare(
+      "INSERT INTO daily_mix (recipe_id, quantity, selected_version) VALUES (?, 1, 'Z')",
+    )
+      .bind(`${id}-Z`)
+      .run();
+    expect(await resolve()).toMatchObject({
+      unit_cost_cents: 100,
+      cost_recipe_id: `${id}-Z`,
+    });
+    expect(
+      (
+        await resolveProductCosts(bindings.DB, [
+          { ...product, unit_cost_cents: 0 },
+        ])
+      ).get(productId),
+    ).toMatchObject({ unit_cost_cents: 0, cost_source: "manual" });
+    await bindings.DB.prepare(
+      "UPDATE ingredient_quotes SET status = 'Pendente' WHERE quote_id = ?",
+    )
+      .bind(id)
+      .run();
+    expect(await resolve()).toMatchObject({
+      unit_cost_cents: null,
+      cost_source: "pending",
+    });
+    await bindings.DB.prepare(
+      "UPDATE ingredient_quotes SET status = 'Estimado' WHERE quote_id = ?",
+    )
+      .bind(id)
+      .run();
+    expect(await resolve()).toMatchObject({
+      unit_cost_cents: 100,
+      cost_quality: "Estimado",
+    });
+    const cookie = await authenticatedCookie();
+    const catalog = await (
+      await app.request(
+        "https://api.example.test/api/pdv/catalog",
+        { headers: { cookie } },
+        bindings,
+      )
+    ).json<{ data: { product_id: string; unit_cost_cents: number }[] }>();
+    expect(
+      catalog.data.find((p) => p.product_id === productId)?.unit_cost_cents,
+    ).toBe(100);
+    item.unitCostCents = 999999;
+    operation.payloadHash = await operationPayloadHash(operation);
+    const originalHash = operation.payloadHash;
+    await applyPdvOperation(bindings.DB, operation, testActorId);
+    await bindings.DB.prepare(
+      "UPDATE ingredient_quotes SET pack_price_cents = 2000 WHERE quote_id = ?",
+    )
+      .bind(id)
+      .run();
+    expect(await resolve()).toMatchObject({ unit_cost_cents: 200 });
+    expect(
+      (await applyPdvOperation(bindings.DB, operation, testActorId)).replayed,
+    ).toBe(true);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT unit_cost_cents FROM sale_items WHERE item_id = ?",
+      )
+        .bind(`${operation.operationId}:item:0`)
+        .first(),
+    ).toEqual({ unit_cost_cents: 100 });
+    expect(
+      await bindings.DB.prepare(
+        "SELECT payload_hash FROM sync_operations WHERE operation_id = ?",
+      )
+        .bind(operation.operationId)
+        .first(),
+    ).toEqual({ payload_hash: originalHash });
+  });
+
   it("rejeita datas inexistentes no financeiro e aceita dia bissexto real", async () => {
     const cookie = await authenticatedCookie();
     for (const query of [

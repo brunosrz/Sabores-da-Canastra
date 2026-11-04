@@ -11,12 +11,21 @@
 		"build": "vite build",
 		"preview": "vite preview --host 127.0.0.1 --port 3002",
 		"lint": "eslint .",
-		"format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"test/**/*.ts\" eslint.config.js index.html package.json tsconfig.json tsr.config.json vite.config.ts vitest.config.mts worker-configuration.d.ts wrangler.jsonc",
+		"format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"test/**/*.ts\" eslint.config.js index.html package.json tsconfig.json tsr.config.json vite.config.ts vite.native.config.ts capacitor.config.ts vitest.config.mts worker-configuration.d.ts wrangler.jsonc",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
-		"cf-typegen": "wrangler types --include-runtime=false"
+		"cf-typegen": "wrangler types --include-runtime=false",
+		"mobile:prepare": "vite build --config vite.native.config.ts",
+		"mobile:sync:android": "pnpm mobile:prepare && cap sync android",
+		"mobile:sync:ios": "pnpm mobile:prepare && cap sync ios"
 	},
 	"dependencies": {
+		"@capacitor/android": "8.6.0",
+		"@capacitor/app": "8.1.2",
+		"@capacitor/core": "8.6.0",
+		"@capacitor/ios": "8.6.0",
+		"@capacitor/network": "8.0.1",
+		"@sabores/i18n": "workspace:*",
 		"@sabores/pdv-sync": "workspace:*",
 		"@sabores/ui": "workspace:*",
 		"@tailwindcss/vite": "^4.1.18",
@@ -28,12 +37,13 @@
 		"@tanstack/react-router-devtools": "1.167.2",
 		"@tanstack/react-router-ssr-query": "1.167.3",
 		"@tanstack/react-start": "1.169.4",
+		"dexie": "4.4.7",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
-		"tailwindcss": "^4.1.18",
-		"@sabores/i18n": "workspace:*"
+		"tailwindcss": "^4.1.18"
 	},
 	"devDependencies": {
+		"@capacitor/cli": "8.6.0",
 		"@cloudflare/vite-plugin": "^1.26.0",
 		"@cloudflare/workers-types": "5.20261101.1",
 		"@eslint/js": "^10.0.1",
@@ -46,6 +56,7 @@
 		"@vitejs/plugin-react": "^6.0.1",
 		"eslint": "^10.14.0",
 		"eslint-plugin-react-hooks": "^7.1.1",
+		"fake-indexeddb": "6.2.4",
 		"globals": "^17.13.0",
 		"prettier": "3.9.10",
 		"typescript": "^6.0.2",

@@ -1,3 +1,4 @@
+import { apiFetch } from '@sabores/ui/platform';
 import { t } from '@sabores/i18n';
 import { Badge, Card, CategoryBadge, EmptyState, PageHeader, Price, ResponsiveTable, Preferences } from '@sabores/ui';
 import { useEffect, useRef, useState } from 'react';
@@ -213,7 +214,7 @@ export function InventoryPrototype() {
 	const [status, setStatus] = useState('Carregando ingredientes…');
 	useEffect(() => {
 		const controller = new AbortController();
-		void fetch('/api/erp/ingredients', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+		void apiFetch('/api/erp/ingredients', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
 			.then(async (response) => {
 				if (!response.ok) throw new Error(t('Não foi possível carregar os ingredientes.'));
 				return response.json() as Promise<{ data: typeof ingredients }>;
@@ -294,8 +295,8 @@ export function FinancePrototype() {
 		try {
 			const query = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
 			const [response, entryResponse] = await Promise.all([
-				fetch(`/api/erp/finance?${query}`, { credentials: 'same-origin', cache: 'no-store' }),
-				fetch(`/api/erp/finance?${query}&entries=1&type=${encodeURIComponent(entryType)}`, {
+				apiFetch(`/api/erp/finance?${query}`, { credentials: 'same-origin', cache: 'no-store' }),
+				apiFetch(`/api/erp/finance?${query}&entries=1&type=${encodeURIComponent(entryType)}`, {
 					credentials: 'same-origin',
 					cache: 'no-store',
 				}),

@@ -1,4 +1,6 @@
 import { t } from '@sabores/i18n';
+import { Capacitor } from '@capacitor/core';
+import { isOnline, watchLifecycle } from '@sabores/ui/lifecycle';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { listQueue, syncQueue } from '../offline/store';
 
@@ -16,19 +18,25 @@ export function PdvRuntime({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		if ('storage' in navigator && 'persist' in navigator.storage) void navigator.storage.persist().catch(() => false);
 		const onControllerChange = () => location.reload();
-		const onlineHandler = () => {
-			setOnline(true);
-			void syncQueue(refreshQueue).then(refreshQueue);
+		let active = true;
+		const resume = () => {
+			void isOnline()
+				.then((connected) => {
+					if (active) setOnline(connected);
+					if (connected) return syncQueue(refreshQueue).then(refreshQueue);
+				})
+				.catch(() => refreshQueue());
 		};
-		const offlineHandler = () => setOnline(false);
+		const stopWatching = watchLifecycle((connected) => {
+			setOnline(connected);
+			if (connected) resume();
+		}, resume);
 		const interval = window.setInterval(() => {
-			if (navigator.onLine) void syncQueue(refreshQueue).then(refreshQueue);
+			resume();
 		}, 20_000);
-		window.addEventListener('online', onlineHandler);
-		window.addEventListener('offline', offlineHandler);
 		if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
-		void syncQueue(refreshQueue).then(refreshQueue);
-		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+		resume();
+		if (import.meta.env.PROD && !Capacitor.isNativePlatform() && 'serviceWorker' in navigator) {
 			void navigator.serviceWorker
 				.register('/sw.js', { updateViaCache: 'none' })
 				.then((activeRegistration) => {
@@ -43,9 +51,9 @@ export function PdvRuntime({ children }: { children: ReactNode }) {
 				.catch((error) => console.error('Falha ao ativar modo instalável.', error));
 		}
 		return () => {
+			active = false;
 			window.clearInterval(interval);
-			window.removeEventListener('online', onlineHandler);
-			window.removeEventListener('offline', offlineHandler);
+			stopWatching();
 			if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
 		};
 	}, []);

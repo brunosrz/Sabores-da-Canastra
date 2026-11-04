@@ -5,7 +5,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./styles.css": "./src/styles.css",
-    "./platform": "./src/platform/api.ts"
+    "./platform": "./src/platform/api.ts",
+    "./lifecycle": "./src/platform/lifecycle.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -35,7 +36,9 @@
     "vitest-axe": "^0.1.0"
   },
   "dependencies": {
+    "@capacitor/app": "8.1.2",
     "@capacitor/core": "8.6.0",
+    "@capacitor/network": "8.0.1",
     "@sabores/i18n": "workspace:*",
     "motion": "13.2.0"
   }

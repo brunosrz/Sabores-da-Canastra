@@ -1,4 +1,5 @@
 import { t } from '@sabores/i18n';
+import { isOnline, watchLifecycle } from '@sabores/ui/lifecycle';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { discardPriceConflict, listPriceOperations, refreshProducts, syncPriceQueue, type PriceOperation } from '../offline/store';
 
@@ -12,10 +13,15 @@ export function ErpOfflineRuntime({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		let active = true;
 		const refresh = async () => {
-			if (navigator.onLine) {
+			if (await isOnline()) {
 				setSyncing(true);
-				await syncPriceQueue();
-				if (active) setSyncing(false);
+				try {
+					await syncPriceQueue();
+				} catch {
+					if (active) setFailure('Não foi possível sincronizar; os ajustes permanecem no dispositivo.');
+				} finally {
+					if (active) setSyncing(false);
+				}
 			}
 			const operations = await listPriceOperations().catch(() => []);
 			if (!active) return;
@@ -23,23 +29,29 @@ export function ErpOfflineRuntime({ children }: { children: ReactNode }) {
 			setConflicts(operations.filter((operation) => operation.state === 'conflict').length);
 			setConflictOperations(operations.filter((operation) => operation.state === 'conflict'));
 		};
-		const onOnline = () => {
-			setOnline(true);
-			void refresh();
-		};
-		const onOffline = () => setOnline(false);
+		const stopWatching = watchLifecycle(
+			(connected) => {
+				setOnline(connected);
+				if (connected) void refresh();
+			},
+			() => {
+				void refresh();
+			},
+		);
+		void isOnline()
+			.then((connected) => {
+				if (active) setOnline(connected);
+			})
+			.catch(() => {});
 		const timer = window.setInterval(() => {
-			if (navigator.onLine) void refresh();
+			void refresh();
 		}, 20_000);
-		window.addEventListener('online', onOnline);
-		window.addEventListener('offline', onOffline);
 		window.addEventListener('erp-price-queue-changed', refresh);
 		void refresh();
 		return () => {
 			active = false;
 			window.clearInterval(timer);
-			window.removeEventListener('online', onOnline);
-			window.removeEventListener('offline', onOffline);
+			stopWatching();
 			window.removeEventListener('erp-price-queue-changed', refresh);
 		};
 	}, []);

@@ -1,4 +1,5 @@
 import { apiFetch } from '@sabores/ui/platform';
+import { isOnline } from '@sabores/ui/lifecycle';
 import Dexie from 'dexie';
 
 export type ErpProduct = {
@@ -194,7 +195,7 @@ export function syncPriceQueue() {
 }
 
 async function runPriceSync() {
-	if (!navigator.onLine)
+	if (!(await isOnline()))
 		return {
 			applied: 0,
 			pending: (await listPriceOperations()).filter((item) => item.state === 'pending' || item.state === 'blocked_auth').length,

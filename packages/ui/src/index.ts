@@ -6,3 +6,4 @@ export * from "./theme/ThemeToggle";
 export * from "./theme/theme";
 export * from "./preferences/Preferences";
 export * from "./platform/api";
+export * from "./platform/lifecycle";
